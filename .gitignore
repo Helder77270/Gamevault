@@ -1,0 +1,21 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# deps / builds
+node_modules/
+dist/
+out/
+build/
+target/
+cache/
+.next/
+
+# foundry
+contracts/broadcast/
+contracts/cache/
+
+# misc
+.DS_Store
+*.log
