@@ -21,22 +21,27 @@
 - [ ] Deploy to World Chain Sepolia, addresses into shared/
 
 ## P2 — Ticket service (ticketd) — promoted from stretch, demo depends on it
-- [ ] POST /ticket: verify SIWE sig → recover secp256k1 pubkey from sig →
-      ownerOf(tokenId) check → ECIES-wrap content key to pubkey →
+- [ ] POST /ticket: verify SIWE sig (message embeds device pubkey) →
+      ownerOf(tokenId) check → ECIES-wrap content key to device pubkey →
       platform-sign ticket → return
 - [ ] Renewal path (same endpoint, existing ticket + fresh SIWE)
-- [ ] Re-wrap on resale (buyer's first SIWE post-purchase triggers issuance)
-- [ ] shared/: ticket types + sign/verify lib (@noble/curves, @noble/ciphers)
+- [ ] Re-wrap on resale (buyer pairs their device post-purchase)
+- [x] shared/: ticket types + sign/verify + ECIES + build crypto, selftest
+      passes (2026-07-22)
 
 ## P3 — Launcher (Tauri v2)
-- [ ] Removable-volume scan for /gamevault/ticket.json (sysinfo)
-- [ ] Ticket platform-signature verify (platform pubkey embedded)
-- [ ] First-launch pairing: QR → web SIWE page → cache owner pubkey + session
-- [ ] Nonce challenge against paired wallet; signer == ticket owner
+- [x] Removable-volume scan for /gamevault/ticket.json (sysinfo) + dev-media
+      override (2026-07-22)
+- [x] Ticket platform-signature verify, dev platform pubkey embedded
+      (2026-07-22)
+- [x] AES-256-GCM decrypt IN MEMORY (Rust), custom protocol game:// serves
+      Phaser bundle from RAM, stop_game purges it (2026-07-22) — M3 ✔
+- [x] Steam-like UI: Accueil/Bibliothèque, session-gated library
+      (2026-07-22 — session still SIMULATED)
+- [ ] REAL pairing: device keypair in OS keystore + QR → web SIWE page →
+      cached pairing session (replaces dev device key + simulated connect)
 - [ ] Hybrid owner check: ownerOf() with 2s timeout when online; sig + expiry
-      offline
-- [ ] AES-256-GCM decrypt IN MEMORY; custom protocol handler serves Phaser
-      bundle from memory — never write plaintext to disk
+      offline (needs contracts deployed)
 - [ ] Rewrite refreshed ticket.json to media on renewal
 
 ## P4 — Marketplace resale ← DEMO LOCKS HERE
