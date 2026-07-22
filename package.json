@@ -1,0 +1,11 @@
+{
+  "name": "gamevault",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "launcher",
+    "ticketd",
+    "web",
+    "station"
+  ]
+}
