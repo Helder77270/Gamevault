@@ -1,0 +1,12 @@
+{
+  "name": "@gamevault/station",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "write": "node --experimental-strip-types src/write.ts"
+  },
+  "dependencies": {
+    "@gamevault/shared": "*"
+  }
+}

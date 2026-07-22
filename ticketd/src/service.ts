@@ -6,6 +6,7 @@ import { worldchainSepolia } from "viem/chains";
 import { signTicket, wrapKey, hex, unhex, type SignedTicket, type Ticket } from "@gamevault/shared";
 import { parsePairingMessage } from "@gamevault/shared/siwe";
 import { DEV_PLATFORM_PRIV, DEV_CONTENT_KEY } from "@gamevault/shared/devkeys";
+import { DEPLOYMENTS } from "@gamevault/shared/deployments";
 
 const TICKET_TTL_SEC = 30 * 24 * 3600; // 30-day offline window
 const MESSAGE_MAX_AGE_MS = 10 * 60 * 1000; // pairing message freshness
@@ -29,7 +30,9 @@ function platformPriv(): Uint8Array {
   return DEV_PLATFORM_PRIV;
 }
 
-const licenseAddress = process.env.GAMELICENSE_ADDRESS as `0x${string}` | undefined;
+const licenseAddress = (process.env.GAMELICENSE_ADDRESS || DEPLOYMENTS.gameLicense || undefined) as
+  | `0x${string}`
+  | undefined;
 if (!licenseAddress) {
   console.warn("⚠ GAMELICENSE_ADDRESS not set — ownerOf() check SKIPPED (dev mode, P1 pending; see TODO.md)");
 }

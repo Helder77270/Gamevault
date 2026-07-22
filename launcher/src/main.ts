@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import QRCode from "qrcode";
+import { createPublicClient, http } from "viem";
 import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/shared";
 import { MOCK_EDITIONS } from "@gamevault/shared/catalog";
+import { DEPLOYMENTS, WORLDCHAIN_SEPOLIA } from "@gamevault/shared/deployments";
 
 // Browsing is data — the full catalog renders natively in the launcher.
 // Only the PAYMENT needs the wallet, so only checkout jumps to the system
@@ -52,6 +54,7 @@ const state = {
   devicePubKey: "",
   pairing: null as Pairing | null,
   lastScan: "",
+  ownerCheck: "",
   playing: null as Game | null,
   playError: "",
 };
@@ -232,6 +235,14 @@ function homeView(): string {
                  Appairer cette machine</button></p>`
             : ""
         }
+        ${
+          g.ticket && isOurs(g) && g.verdict === "expired"
+            ? `<p class="pending">Ticket expiré — le renouvellement re-vérifie la propriété on-chain puis
+                 réécrit un ticket frais sur la cartouche.
+                 <button class="btn pair-btn" data-mount="${esc(g.cartridge.mount_point)}">
+                 Renouveler (en ligne)</button></p>`
+            : ""
+        }
       </article>`,
         )
         .join("")
@@ -289,10 +300,52 @@ function libraryView(): string {
     </div>`;
 }
 
+// ── Hybrid owner check (security-map launch step 5) ───────────
+// Online (2s budget): live ownerOf() -> INSTANT revocation (the demo moment).
+// Offline or contracts not deployed: fall back to sig + expiry, never block.
+
+type OwnerCheck = "ok" | "revoked" | "offline";
+
+const chainClient = DEPLOYMENTS.gameLicense
+  ? createPublicClient({ transport: http(WORLDCHAIN_SEPOLIA.rpcUrl, { timeout: 2000, retryCount: 0 }) })
+  : null;
+
+async function checkOwnerOnline(t: SignedTicket): Promise<OwnerCheck> {
+  if (!chainClient || !DEPLOYMENTS.gameLicense) return "offline"; // P1 pending
+  try {
+    const owner = await chainClient.readContract({
+      address: DEPLOYMENTS.gameLicense,
+      abi: [
+        {
+          name: "ownerOf",
+          type: "function",
+          stateMutability: "view",
+          inputs: [{ name: "tokenId", type: "uint256" }],
+          outputs: [{ type: "address" }],
+        },
+      ] as const,
+      functionName: "ownerOf",
+      args: [BigInt(t.tokenId)],
+    });
+    return owner.toLowerCase() === t.ownerAddress.toLowerCase() ? "ok" : "revoked";
+  } catch {
+    return "offline"; // network unreachable within 2s — offline window applies
+  }
+}
+
 // ── Play ──────────────────────────────────────────────────────
 
 async function play(g: Game): Promise<void> {
   state.playError = "";
+  if (g.ticket) {
+    const check = await checkOwnerOnline(g.ticket);
+    if (check === "revoked") {
+      state.playError = "Révoqué : cette licence a changé de propriétaire on-chain. Le nouveau propriétaire doit appairer sa machine.";
+      state.ownerCheck = "révoqué ⛔";
+      return render();
+    }
+    state.ownerCheck = check === "ok" ? "ownerOf ✔ en direct" : "hors ligne — fenêtre 30 j";
+  }
   try {
     // Rust: unwrap content key with device key -> decrypt build in RAM
     await invoke("play_game", { mountPoint: g.cartridge.mount_point });
@@ -382,8 +435,8 @@ function render(): void {
   document.getElementById("view")!.innerHTML = VIEWS[state.route]();
 
   document.getElementById("statusbar")!.innerHTML = `
-    <span>${state.games.length} cartouche(s) · ${state.lastScan}</span>
-    <span>appareil ${state.devicePubKey ? short(state.devicePubKey) : "…"} · clé au keystore OS</span>`;
+    <span>${state.games.length} cartouche(s) · ${state.lastScan}${state.ownerCheck ? ` · ${state.ownerCheck}` : ""}</span>
+    <span>appareil ${state.devicePubKey ? short(state.devicePubKey) : "…"} · clé au keystore OS${DEPLOYMENTS.gameLicense ? "" : " · contrats non déployés"}</span>`;
 
   document.querySelectorAll<HTMLButtonElement>(".tab[data-route]").forEach((b) =>
     b.addEventListener("click", () => {

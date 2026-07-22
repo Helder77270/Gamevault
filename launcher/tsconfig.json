@@ -12,6 +12,7 @@
     "baseUrl": ".",
     "paths": {
       "@gamevault/shared/catalog": ["../shared/src/catalog.ts"],
+      "@gamevault/shared/deployments": ["../shared/src/deployments.ts"],
       "@gamevault/shared/siwe": ["../shared/src/siwe.ts"],
       "@gamevault/shared": ["../shared/src/index.ts"]
     },
