@@ -1,18 +1,21 @@
 "use client";
 
+import "@rainbow-me/rainbowkit/styles.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider, createConfig, http } from "wagmi";
+import { WagmiProvider } from "wagmi";
 import { worldchainSepolia } from "wagmi/chains";
-// note: not "wagmi/connectors" — that barrel pulls the optional `porto`
-// connector, which breaks the Next build unless porto is installed
-import { injected } from "@wagmi/core";
+import { RainbowKitProvider, darkTheme, getDefaultConfig } from "@rainbow-me/rainbowkit";
 
-export const config = createConfig({
+// WalletConnect Cloud project id — free at https://cloud.walletconnect.com.
+// The placeholder keeps browser-extension wallets working; mobile QR
+// connections need a real id.
+const projectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? "gamevault-dev-placeholder";
+
+export const config = getDefaultConfig({
+  appName: "GameVault",
+  projectId,
   chains: [worldchainSepolia],
-  connectors: [injected()],
-  transports: {
-    [worldchainSepolia.id]: http(),
-  },
+  ssr: true,
 });
 
 const queryClient = new QueryClient();
@@ -20,7 +23,14 @@ const queryClient = new QueryClient();
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider
+          locale="fr"
+          theme={darkTheme({ accentColor: "#d9a441", accentColorForeground: "#14171c", borderRadius: "small" })}
+        >
+          {children}
+        </RainbowKitProvider>
+      </QueryClientProvider>
     </WagmiProvider>
   );
 }
