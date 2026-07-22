@@ -16,6 +16,10 @@ cache/
 contracts/broadcast/
 contracts/cache/
 
+# regenerable artifacts (npm run build -w game && npm run make-dev-ticket -w shared)
+game/dist/
+launcher/dev-media/gamevault/build.enc
+
 # misc
 .DS_Store
 *.log

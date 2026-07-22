@@ -2,10 +2,11 @@
 // ticket. Run: npm run make-dev-ticket -w shared
 
 import { randomBytes } from "@noble/hashes/utils";
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { wrapKey } from "./ecies.ts";
+import { encryptBuild } from "./buildcrypto.ts";
 import { signTicket, hex, type Ticket } from "./ticket.ts";
 import { DEV_PLATFORM_PRIV, DEV_DEVICE_PUB } from "./devkeys.ts";
 
@@ -24,7 +25,18 @@ const ticket: Ticket = {
 };
 
 const signed = signTicket(ticket, DEV_PLATFORM_PRIV);
-const out = join(dirname(fileURLToPath(import.meta.url)), "../../launcher/dev-media/gamevault/ticket.json");
-writeFileSync(out, JSON.stringify(signed, null, 2) + "\n");
-console.log(`Signed dev ticket written to ${out}`);
-console.log(`Expires: ${new Date(ticket.expiresAt * 1000).toISOString()}`);
+const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
+const gv = join(root, "launcher/dev-media/gamevault");
+writeFileSync(join(gv, "ticket.json"), JSON.stringify(signed, null, 2) + "\n");
+console.log(`Signed dev ticket written (expires ${new Date(ticket.expiresAt * 1000).toISOString()})`);
+
+// Encrypt the game build with the SAME content key the ticket wraps —
+// ticket and build.enc must always be regenerated together.
+const bundle = join(root, "game/dist/index.html");
+if (existsSync(bundle)) {
+  const enc = encryptBuild(readFileSync(bundle), contentKey);
+  writeFileSync(join(gv, "build.enc"), enc);
+  console.log(`build.enc written (${(enc.length / 1024 / 1024).toFixed(2)} MB)`);
+} else {
+  console.warn("game/dist/index.html missing — run `npm run build -w game` first; build.enc NOT written");
+}

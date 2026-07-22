@@ -116,6 +116,22 @@ h2.section {
 .game-card .studio { color: var(--soft); font-size: 0.8rem; }
 .game-card .row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: 0.3rem; }
 
+/* ── Player ──────────────────────────────────────────── */
+.player {
+  position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column;
+  background: #000;
+}
+.player header {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.5rem 1.2rem; background: var(--bg-raise); border-bottom: 1px solid var(--line);
+}
+.player .title { font-family: var(--mono); font-size: 0.8rem; color: var(--soft); }
+.player iframe { flex: 1; border: 0; width: 100%; background: #0b0d11; }
+.play-error {
+  color: var(--bad); background: rgba(217, 136, 96, 0.1); border: 1px solid var(--bad);
+  border-radius: 6px; padding: 0.6rem 0.9rem; font-family: var(--mono); font-size: 0.82rem;
+}
+
 /* ── Status bar ──────────────────────────────────────── */
 #statusbar {
   padding: 0.45rem 1.4rem; border-top: 1px solid var(--line);

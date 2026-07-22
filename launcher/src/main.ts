@@ -24,11 +24,16 @@ interface Game {
 
 type Route = "home" | "library";
 
+// Custom-protocol URL — WebView2 (Windows) maps schemes to http://<scheme>.localhost
+const GAME_URL = navigator.userAgent.includes("Windows") ? "http://game.localhost/" : "game://localhost/";
+
 const state = {
   route: "home" as Route,
   games: [] as Game[],
   session: null as { address: string } | null,
   lastScan: "",
+  playing: null as Game | null,
+  playError: "",
 };
 
 // ── Verification ──────────────────────────────────────────────
@@ -144,6 +149,7 @@ function libraryView(): string {
   }
   return `
     <h2 class="section">Ma bibliothèque</h2>
+    ${state.playError ? `<p class="play-error">⛔ Lancement refusé : ${esc(state.playError)}</p>` : ""}
     <div class="game-grid">
       ${playable
         .map((g) => {
@@ -157,8 +163,8 @@ function libraryView(): string {
             <span class="studio">${esc(g.meta.studio ?? "Studio inconnu")}</span>
             <div class="row">
               ${VERDICT_BADGE[g.verdict]}
-              <button class="btn" ${canPlay ? "" : "disabled"}
-                title="${canPlay ? "Lancer" : "Déchiffrement en mémoire — prochaine étape"}">▶ Jouer</button>
+              <button class="btn play-btn" data-mount="${esc(g.cartridge.mount_point)}" ${canPlay ? "" : "disabled"}
+                title="${canPlay ? "Déchiffrer et lancer" : "Ticket invalide ou build.enc manquant"}">▶ Jouer</button>
             </div>
           </div>
         </article>`;
@@ -167,7 +173,43 @@ function libraryView(): string {
     </div>`;
 }
 
+// ── Play ──────────────────────────────────────────────────────
+
+async function play(g: Game): Promise<void> {
+  state.playError = "";
+  try {
+    // Rust: unwrap content key with device key -> decrypt build in RAM
+    await invoke("play_game", { mountPoint: g.cartridge.mount_point });
+    state.playing = g;
+  } catch (e) {
+    state.playError = String(e);
+  }
+  render();
+}
+
+async function quit(): Promise<void> {
+  await invoke("stop_game"); // drop decrypted bundle from memory
+  state.playing = null;
+  render();
+}
+
+function playerView(g: Game): string {
+  return `
+    <div class="player">
+      <header>
+        <span class="title">🎮 ${esc(g.meta.title ?? "Jeu")} — déchiffré en mémoire, licence ${esc(g.ticket?.tokenId ?? "?")}</span>
+        <button class="btn ghost" id="quit-btn">✕ Quitter le jeu</button>
+      </header>
+      <iframe src="${GAME_URL}" title="jeu"></iframe>
+    </div>`;
+}
+
 function render(): void {
+  if (state.playing) {
+    document.getElementById("view")!.innerHTML = playerView(state.playing);
+    document.getElementById("quit-btn")?.addEventListener("click", () => void quit());
+    return;
+  }
   document.getElementById("tabs")!.innerHTML = `
     <button class="tab ${state.route === "home" ? "active" : ""}" data-route="home">Accueil</button>
     <button class="tab ${state.route === "library" ? "active" : ""}" data-route="library">
@@ -194,11 +236,18 @@ function render(): void {
   document.getElementById("connect-btn")?.addEventListener("click", connect);
   document.getElementById("connect-btn-top")?.addEventListener("click", connect);
   document.getElementById("disconnect-btn")?.addEventListener("click", disconnect);
+  document.querySelectorAll<HTMLButtonElement>(".play-btn").forEach((b) =>
+    b.addEventListener("click", () => {
+      const g = state.games.find((x) => x.cartridge.mount_point === b.dataset.mount);
+      if (g) void play(g);
+    }),
+  );
 }
 
 // ── Scan loop ─────────────────────────────────────────────────
 
 async function refresh(): Promise<void> {
+  if (state.playing) return; // don't re-render (and destroy the iframe) mid-game
   try {
     const found = await invoke<Cartridge[]>("scan_cartridges");
     state.games = found.map(judge);
