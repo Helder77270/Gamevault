@@ -7,7 +7,8 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./siwe": "./src/siwe.ts"
+    "./siwe": "./src/siwe.ts",
+    "./catalog": "./src/catalog.ts"
   },
   "scripts": {
     "selftest": "node --experimental-strip-types src/selftest.ts",

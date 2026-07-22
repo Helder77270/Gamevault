@@ -1,41 +1,7 @@
 "use client";
 
 import { useAccount } from "wagmi";
-
-// MOCK — replaced by on-chain reads (GameRegistry + subgraph) once the
-// contracts land (P1). Structure mirrors the future Edition entity.
-const EDITIONS = [
-  {
-    id: 1,
-    title: "GameVault Runner",
-    studio: "GameVault Dev",
-    price: "0.01",
-    royaltyPct: 10,
-    minted: 3,
-    supply: 100,
-    available: true,
-  },
-  {
-    id: 2,
-    title: "Neon Depths",
-    studio: "Studio Abysse",
-    price: "0.025",
-    royaltyPct: 12,
-    minted: 0,
-    supply: 250,
-    available: false,
-  },
-  {
-    id: 3,
-    title: "Pixel Bastion",
-    studio: "Forteresse Games",
-    price: "0.015",
-    royaltyPct: 8,
-    minted: 0,
-    supply: 500,
-    available: false,
-  },
-];
+import { MOCK_EDITIONS as EDITIONS } from "@gamevault/shared/catalog";
 
 export default function Marketplace() {
   const { isConnected } = useAccount();

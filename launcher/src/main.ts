@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/shared";
+import { MOCK_EDITIONS } from "@gamevault/shared/catalog";
 
-// The marketplace stays a separate website ON PURPOSE: the wallet lives in
-// the system browser, and pairing must cross surfaces (launcher shows the
-// device key, the wallet signs elsewhere). This tab just opens it.
+// Browsing is data — the full catalog renders natively in the launcher.
+// Only the PAYMENT needs the wallet, so only checkout jumps to the system
+// browser (where the wallet lives). Same split Steam uses for its checkout.
 const MARKETPLACE_URL = "http://localhost:3000";
 
 // Platform public key embedded in the launcher (dev key for now — swapped
@@ -28,7 +29,7 @@ interface Game {
   verdict: Verdict;
 }
 
-type Route = "home" | "library";
+type Route = "home" | "store" | "library";
 
 // Custom-protocol URL — WebView2 (Windows) maps schemes to http://<scheme>.localhost
 const GAME_URL = navigator.userAgent.includes("Windows") ? "http://game.localhost/" : "game://localhost/";
@@ -210,6 +211,39 @@ function playerView(g: Game): string {
     </div>`;
 }
 
+function storeView(): string {
+  return `
+    <h2 class="section">Boutique</h2>
+    <div class="game-grid">
+      ${MOCK_EDITIONS.map((e) => {
+        const owned = state.games.some((g) => g.meta.title === e.title);
+        return `
+        <article class="game-card">
+          <div class="cover">${esc(e.title.charAt(0))}</div>
+          <div class="body">
+            <h3>${esc(e.title)}</h3>
+            <span class="studio">${esc(e.studio)} · royalties ${e.royaltyPct} % · ${e.minted}/${e.supply} mintés</span>
+            <span class="studio">${esc(e.blurb)}</span>
+            <div class="row">
+              <span class="price">${e.price} ETH</span>
+              ${
+                owned
+                  ? `<span class="badge ok">✔ possédé</span>`
+                  : `<button class="btn buy-btn" ${e.available ? "" : "disabled"}
+                       title="${e.available ? "Le paiement s'ouvre dans le navigateur — là où vit votre wallet" : "Bientôt disponible"}">
+                       Acheter ↗</button>`
+              }
+            </div>
+          </div>
+        </article>`;
+      }).join("")}
+    </div>
+    <p class="store-note">Catalogue affiché nativement (données partagées avec le site). Seul le paiement bascule
+       vers le navigateur : c'est lui qui détient votre wallet — le launcher, lui, ne touche jamais votre clé privée.</p>`;
+}
+
+const VIEWS: Record<Route, () => string> = { home: homeView, store: storeView, library: libraryView };
+
 function render(): void {
   if (state.playing) {
     document.getElementById("view")!.innerHTML = playerView(state.playing);
@@ -218,17 +252,17 @@ function render(): void {
   }
   document.getElementById("tabs")!.innerHTML = `
     <button class="tab ${state.route === "home" ? "active" : ""}" data-route="home">Accueil</button>
+    <button class="tab ${state.route === "store" ? "active" : ""}" data-route="store">Boutique</button>
     <button class="tab ${state.route === "library" ? "active" : ""}" data-route="library">
       Bibliothèque ${state.session ? "" : `<span class="lock">🔒</span>`}
-    </button>
-    <button class="tab" id="shop-tab" title="Ouvre la marketplace dans le navigateur (là où vit votre wallet)">Boutique ↗</button>`;
+    </button>`;
 
   document.getElementById("session-zone")!.innerHTML = state.session
     ? `<div class="session-chip"><span class="dot"></span>${short(state.session.address)}
          <button class="btn ghost" id="disconnect-btn">Quitter</button></div>`
     : `<button class="btn" id="connect-btn-top">Se connecter</button>`;
 
-  document.getElementById("view")!.innerHTML = state.route === "home" ? homeView() : libraryView();
+  document.getElementById("view")!.innerHTML = VIEWS[state.route]();
 
   document.getElementById("statusbar")!.innerHTML = `
     <span>${state.games.length} cartouche(s) · ${state.lastScan}</span>
@@ -240,7 +274,9 @@ function render(): void {
       render();
     }),
   );
-  document.getElementById("shop-tab")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));
+  document.querySelectorAll<HTMLButtonElement>(".buy-btn").forEach((b) =>
+    b.addEventListener("click", () => void openUrl(MARKETPLACE_URL)),
+  );
   document.getElementById("connect-btn")?.addEventListener("click", connect);
   document.getElementById("connect-btn-top")?.addEventListener("click", connect);
   document.getElementById("disconnect-btn")?.addEventListener("click", disconnect);
