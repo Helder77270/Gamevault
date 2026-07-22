@@ -3,9 +3,9 @@
   "contract": "0x0000000000000000000000000000000000000001",
   "chainId": 4801,
   "ownerAddress": "0x000000000000000000000000000000000000dEaD",
-  "devicePubKey": "0x02fixture_not_a_real_key_pairing_will_replace_me",
-  "wrappedContentKey": "0xfixture_not_a_real_wrapped_key",
-  "issuedAt": 1753142400,
-  "expiresAt": 1755820800,
-  "platformSignature": "0xfixture_unsigned_dev_ticket"
+  "devicePubKey": "0x0330fc52d55fa5dc428763daacd054d783ee1535f317ee9d8eef99a46960d177de",
+  "wrappedContentKey": "0x03e8b3a33380b06e667e4ed845c5157a372c571ba1785e1c3f2057b33f3740a77ff55a8948bbd63b37c5d5bd39d1e1888351e1c540530761d3bf7e9515ff809a1930935d854799d65962fc409c33dd1edab5cd1f8651499d4a397baf33",
+  "issuedAt": 1784739537,
+  "expiresAt": 1787331537,
+  "platformSignature": "0x072d8db1b6b5a39d8a88cda1e365719c1c3148145a2526c3b56cc2e569d91a45467941c5e1fc3b57b3c0c140470828abf0821cf9a0291fc63bd6ea2ad331e5ed"
 }

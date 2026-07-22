@@ -4,40 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GameVault Launcher</title>
-    <style>
-      :root {
-        --bg: #16181d; --surface: #1e2128; --ink: #e8e6e1; --soft: #a2a6ad;
-        --line: #2e323b; --accent: #d9a441; --ok: #5cb884; --bad: #d98860;
-        color-scheme: dark;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0; padding: 2.5rem 1.5rem; background: var(--bg); color: var(--ink);
-        font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
-      }
-      main { max-width: 40rem; margin: 0 auto; display: flex; flex-direction: column; gap: 1.2rem; }
-      h1 { font-size: 1.4rem; margin: 0; letter-spacing: -0.01em; }
-      h1 small { display: block; font-weight: 400; font-size: 0.75rem; color: var(--soft); letter-spacing: 0.08em; text-transform: uppercase; font-family: ui-monospace, monospace; }
-      #status { color: var(--soft); font-size: 0.78rem; font-family: ui-monospace, monospace; }
-      .waiting { color: var(--soft); border: 1px dashed var(--line); border-radius: 8px; padding: 2rem; text-align: center; }
-      .cartridge { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; padding: 1.1rem 1.3rem; }
-      .cartridge h2 { margin: 0 0 0.6rem; font-size: 1.05rem; }
-      .cartridge .mount { color: var(--soft); font-size: 0.8rem; font-family: ui-monospace, monospace; }
-      dl { display: grid; grid-template-columns: auto 1fr; gap: 0.25rem 1rem; margin: 0; }
-      dt { color: var(--soft); }
-      dd { margin: 0; }
-      code { font-family: ui-monospace, monospace; font-size: 0.9em; }
-      .ok { color: var(--ok); }
-      .bad { color: var(--bad); }
-      .pending { color: var(--soft); font-size: 0.82rem; border-top: 1px solid var(--line); margin: 0.8rem 0 0; padding-top: 0.6rem; }
-    </style>
+    <link rel="stylesheet" href="/src/styles.css" />
     <script type="module" src="/src/main.ts" defer></script>
   </head>
   <body>
-    <main>
-      <h1>GameVault <small>le support est le véhicule, la blockchain est le verrou</small></h1>
-      <div id="cartridges"></div>
-      <p id="status"></p>
-    </main>
+    <header id="topbar">
+      <div class="brand">GAME<span>VAULT</span></div>
+      <nav id="tabs"></nav>
+      <div id="session-zone"></div>
+    </header>
+    <main id="view"></main>
+    <footer id="statusbar"></footer>
   </body>
 </html>

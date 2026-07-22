@@ -1,0 +1,124 @@
+:root {
+  --bg: #14171c;
+  --bg-raise: #1b2028;
+  --surface: #222834;
+  --ink: #eceae5;
+  --soft: #9aa0aa;
+  --line: #2f3644;
+  --accent: #d9a441;
+  --accent-ink: #14171c;
+  --ok: #5cb884;
+  --bad: #d98860;
+  --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+  background: linear-gradient(180deg, #1b2028 0%, var(--bg) 240px);
+  color: var(--ink);
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* ── Top bar ─────────────────────────────────────────── */
+#topbar {
+  display: flex; align-items: center; gap: 2rem;
+  padding: 0.7rem 1.4rem; background: rgba(10, 12, 16, 0.65);
+  border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5;
+  backdrop-filter: blur(6px);
+}
+.brand { font-weight: 800; letter-spacing: 0.06em; font-size: 1.05rem; }
+.brand span { color: var(--accent); }
+#tabs { display: flex; gap: 0.3rem; flex: 1; }
+.tab {
+  border: 0; background: none; color: var(--soft); font: inherit; font-weight: 600;
+  padding: 0.45rem 0.9rem; border-radius: 4px; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.8rem;
+}
+.tab:hover { color: var(--ink); }
+.tab.active { color: var(--accent); background: rgba(217, 164, 65, 0.1); }
+.tab:disabled { color: #545a66; cursor: not-allowed; }
+.tab .lock { font-size: 0.75em; }
+
+/* ── Session ─────────────────────────────────────────── */
+.btn {
+  border: 0; border-radius: 4px; padding: 0.5rem 1rem; font: inherit; font-weight: 700;
+  cursor: pointer; background: var(--accent); color: var(--accent-ink);
+}
+.btn:hover { filter: brightness(1.08); }
+.btn.ghost { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.session-chip {
+  display: flex; align-items: center; gap: 0.6rem; font-family: var(--mono); font-size: 0.8rem;
+}
+.session-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+
+/* ── Layout ──────────────────────────────────────────── */
+#view { flex: 1; width: min(72rem, 100%); margin: 0 auto; padding: 1.6rem 1.4rem 3rem; }
+.hero {
+  border-radius: 10px; padding: 2.4rem 2.2rem; margin-bottom: 1.6rem;
+  background: linear-gradient(120deg, #232a36 0%, #1b2028 55%, #26210f 100%);
+  border: 1px solid var(--line);
+}
+.hero h1 { margin: 0 0 0.4rem; font-size: 1.7rem; letter-spacing: -0.01em; }
+.hero p { margin: 0; color: var(--soft); max-width: 46rem; }
+.hero .tagline { color: var(--accent); font-style: italic; }
+h2.section {
+  font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--soft); margin: 1.8rem 0 0.8rem; font-weight: 700;
+}
+
+/* ── Cartridge / detail cards ────────────────────────── */
+.cards { display: flex; flex-direction: column; gap: 0.9rem; }
+.cartridge-card {
+  background: var(--bg-raise); border: 1px solid var(--line); border-radius: 8px;
+  padding: 1.1rem 1.3rem;
+}
+.cartridge-card header { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 0.8rem; }
+.cartridge-card h3 { margin: 0; font-size: 1.05rem; flex: 1; }
+.mount { color: var(--soft); font-family: var(--mono); font-size: 0.78rem; }
+.badge {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  padding: 0.25rem 0.6rem; border-radius: 99px; white-space: nowrap;
+}
+.badge.ok { background: rgba(92, 184, 132, 0.15); color: var(--ok); }
+.badge.bad { background: rgba(217, 136, 96, 0.15); color: var(--bad); }
+.badge.warn { background: rgba(217, 164, 65, 0.15); color: var(--accent); }
+.ticket-grid {
+  display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 1.2rem;
+  font-size: 0.86rem; border-top: 1px solid var(--line); padding-top: 0.8rem;
+}
+.ticket-grid dt { color: var(--soft); }
+.ticket-grid dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.waiting {
+  color: var(--soft); border: 1px dashed var(--line); border-radius: 8px;
+  padding: 2.2rem; text-align: center;
+}
+
+/* ── Library ─────────────────────────────────────────── */
+.locked { text-align: center; padding: 4rem 1rem; color: var(--soft); }
+.locked .big { font-size: 2.4rem; }
+.locked p { max-width: 30rem; margin: 0.6rem auto 1.4rem; }
+.game-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 1.1rem;
+}
+.game-card {
+  background: var(--bg-raise); border: 1px solid var(--line); border-radius: 8px;
+  overflow: hidden; display: flex; flex-direction: column;
+}
+.cover {
+  aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #2c3444, #26210f);
+  font-size: 2.6rem; font-weight: 800; color: var(--accent);
+}
+.game-card .body { padding: 0.8rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.game-card h3 { margin: 0; font-size: 0.98rem; }
+.game-card .studio { color: var(--soft); font-size: 0.8rem; }
+.game-card .row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: 0.3rem; }
+
+/* ── Status bar ──────────────────────────────────────── */
+#statusbar {
+  padding: 0.45rem 1.4rem; border-top: 1px solid var(--line);
+  color: var(--soft); font-family: var(--mono); font-size: 0.74rem;
+  display: flex; justify-content: space-between; gap: 1rem;
+}
