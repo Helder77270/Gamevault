@@ -5,6 +5,10 @@
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./siwe": "./src/siwe.ts"
+  },
   "scripts": {
     "selftest": "node --experimental-strip-types src/selftest.ts",
     "make-dev-ticket": "node --experimental-strip-types src/makeDevTicket.ts"
