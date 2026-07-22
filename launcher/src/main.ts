@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/shared";
+
+// The marketplace stays a separate website ON PURPOSE: the wallet lives in
+// the system browser, and pairing must cross surfaces (launcher shows the
+// device key, the wallet signs elsewhere). This tab just opens it.
+const MARKETPLACE_URL = "http://localhost:3000";
 
 // Platform public key embedded in the launcher (dev key for now — swapped
 // for the production key at ticketd deploy time).
@@ -214,7 +220,8 @@ function render(): void {
     <button class="tab ${state.route === "home" ? "active" : ""}" data-route="home">Accueil</button>
     <button class="tab ${state.route === "library" ? "active" : ""}" data-route="library">
       Bibliothèque ${state.session ? "" : `<span class="lock">🔒</span>`}
-    </button>`;
+    </button>
+    <button class="tab" id="shop-tab" title="Ouvre la marketplace dans le navigateur (là où vit votre wallet)">Boutique ↗</button>`;
 
   document.getElementById("session-zone")!.innerHTML = state.session
     ? `<div class="session-chip"><span class="dot"></span>${short(state.session.address)}
@@ -227,12 +234,13 @@ function render(): void {
     <span>${state.games.length} cartouche(s) · ${state.lastScan}</span>
     <span>session simulée — appairage QR/SIWE : prochaine étape</span>`;
 
-  document.querySelectorAll<HTMLButtonElement>(".tab").forEach((b) =>
+  document.querySelectorAll<HTMLButtonElement>(".tab[data-route]").forEach((b) =>
     b.addEventListener("click", () => {
       state.route = b.dataset.route as Route;
       render();
     }),
   );
+  document.getElementById("shop-tab")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));
   document.getElementById("connect-btn")?.addEventListener("click", connect);
   document.getElementById("connect-btn-top")?.addEventListener("click", connect);
   document.getElementById("disconnect-btn")?.addEventListener("click", disconnect);

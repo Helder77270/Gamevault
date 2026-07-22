@@ -5,6 +5,10 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:default"
+    "opener:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "http://localhost:3000/*" }, { "url": "https://*.gamevault.local/*" }]
+    }
   ]
 }
