@@ -1,0 +1,11 @@
+{
+  "tokenId": "1",
+  "contract": "0x0000000000000000000000000000000000000001",
+  "chainId": 4801,
+  "ownerAddress": "0x000000000000000000000000000000000000dEaD",
+  "devicePubKey": "0x02fixture_not_a_real_key_pairing_will_replace_me",
+  "wrappedContentKey": "0xfixture_not_a_real_wrapped_key",
+  "issuedAt": 1753142400,
+  "expiresAt": 1755820800,
+  "platformSignature": "0xfixture_unsigned_dev_ticket"
+}

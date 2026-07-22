@@ -1,9 +1,11 @@
 # TODO — GameVault, ETHGlobal Lisbon (July 24–26, 2026)
 
 ## Pre-flight (BEFORE July 24 — do this week)
-- [ ] Verify Subgraph Studio supports `worldchain-sepolia` as a network.
-      If not → ask The Graph sponsors on Discord day 0; plan B is pitching
-      the indexing story on a supported network.
+- [x] Verify Subgraph Studio supports `worldchain-sepolia` — RESULT 2026-07-22:
+      ❌ "Subgraphs no longer supported on WorldChain". Official path is
+      standalone SUBSTREAMS. → P5 becomes Substreams, scope TBD; confirm
+      approach in #substreams on The Graph Discord day 0. Demo does NOT
+      depend on this (bloc 5, post-lock).
 - [ ] Walk the World ID testnet flow once end-to-end with the simulator
       (https://simulator.worldcoin.org) so mint verification isn't a
       day-1 surprise.
