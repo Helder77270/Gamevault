@@ -40,11 +40,14 @@
       Phaser bundle from RAM, stop_game purges it (2026-07-22) — M3 ✔
 - [x] Steam-like UI: Accueil/Bibliothèque, session-gated library
       (2026-07-22 — session still SIMULATED)
-- [ ] REAL pairing: device keypair in OS keystore + QR → web SIWE page →
-      cached pairing session (replaces dev device key + simulated connect)
-- [ ] Hybrid owner check: ownerOf() with 2s timeout when online; sig + expiry
-      offline (needs contracts deployed)
-- [ ] Rewrite refreshed ticket.json to media on renewal
+- [x] REAL pairing: device keypair in OS keystore (Credential Manager) +
+      in-launcher QR → web SIWE → ticket fetched by nonce, re-verified,
+      written to cartridge (2026-07-22)
+- [x] Hybrid owner check: pre-play live ownerOf() (2s budget) when
+      shared/deployments.ts is filled; offline/undeployed → sig + expiry
+      (2026-07-22) ⚠ inert until P1 addresses are pasted
+- [x] Renewal: expired+ours tickets get a Renouveler button reusing the
+      pairing flow; refreshed ticket rewritten to media (2026-07-22)
 
 ## P4 — Marketplace resale ← DEMO LOCKS HERE
 - [ ] Marketplace.sol: list/buy; read royaltyInfo() for studio 10%, add 5%
@@ -58,9 +61,11 @@
 - [ ] web/ provenance page per token
 
 ## P6 — Station + demo theater
-- [ ] station/: detect removable volume, write /gamevault/ payload
-      (build.enc, ticket.json, meta.json, launcher binaries)
+- [x] station/: list removable volumes + write /gamevault/ payload with
+      sanity checks (2026-07-22) — `npm run write -w station -- E:`
 - [ ] Live "write the cartridge" moment scripted into the demo
+- [ ] Ship launcher binaries onto the cartridge too (needs a release build:
+      npm run tauri build)
 
 ## Stretch (only after P4 rehearsal passes)
 - [ ] ERC-4907 lending (launcher: userOf if set, else ownerOf)
