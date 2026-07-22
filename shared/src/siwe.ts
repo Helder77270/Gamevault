@@ -23,6 +23,46 @@ export interface PairingParams {
   domain?: string;
 }
 
+/**
+ * Inverse of buildPairingMessage — used by ticketd. Fields are extracted FROM
+ * the signed message (never trusted from separate request fields), then the
+ * message is rebuilt and compared byte-for-byte: any smuggled content fails.
+ */
+export function parsePairingMessage(message: string): PairingParams {
+  const lines = message.split("\n");
+  const domain = lines[0]?.split(" ")[0] ?? "";
+  const address = lines[1] ?? "";
+
+  const field = (prefix: string): string => {
+    const line = lines.find((l) => l.startsWith(prefix));
+    if (!line) throw new Error(`pairing message: missing "${prefix.trim()}"`);
+    return line.slice(prefix.length).trim();
+  };
+
+  const devicePubKey = field("- gamevault:device:");
+  const [contract = "", tokenId = ""] = field("- gamevault:license:").split("/");
+
+  const parsed: PairingParams = {
+    address,
+    chainId: Number(field("Chain ID: ")),
+    devicePubKey,
+    nonce: field("Nonce: "),
+    tokenId,
+    contract,
+    issuedAt: field("Issued At: "),
+    domain,
+  };
+
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) throw new Error("pairing message: bad address");
+  if (!/^0x0[23][0-9a-fA-F]{64}$/.test(devicePubKey)) throw new Error("pairing message: bad device pubkey");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(contract)) throw new Error("pairing message: bad contract");
+  if (!/^\d+$/.test(tokenId)) throw new Error("pairing message: bad tokenId");
+  if (!Number.isInteger(parsed.chainId) || parsed.chainId <= 0) throw new Error("pairing message: bad chainId");
+
+  if (buildPairingMessage(parsed) !== message) throw new Error("pairing message: non-canonical format");
+  return parsed;
+}
+
 export function buildPairingMessage(p: PairingParams): string {
   const domain = p.domain ?? "gamevault.local";
   return [

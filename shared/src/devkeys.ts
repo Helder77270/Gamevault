@@ -12,3 +12,8 @@ export const DEV_PLATFORM_PUB = secp256k1.getPublicKey(DEV_PLATFORM_PRIV, true);
 
 export const DEV_DEVICE_PRIV = sha256(utf8ToBytes("gamevault dev device key v1"));
 export const DEV_DEVICE_PUB = secp256k1.getPublicKey(DEV_DEVICE_PRIV, true);
+
+// Dev content key: deterministic so make-dev-ticket (encrypts build.enc) and
+// ticketd (wraps the key into tickets) agree without passing files around.
+// Production: random per-edition keys in ticketd's store.
+export const DEV_CONTENT_KEY = sha256(utf8ToBytes("gamevault dev content key v1"));

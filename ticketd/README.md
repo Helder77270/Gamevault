@@ -10,3 +10,13 @@ Promoted from stretch: the demo climax (resale → revocation) depends on this. 
 5. Return ticket
 
 Same endpoint serves renewal and re-wrap-on-resale (buyer pairs their own device after purchase, which triggers issuance).
+
+## Run
+```
+npm run dev -w ticketd        # http://localhost:8787, --watch
+npm run selftest -w ticketd   # end-to-end issuance proof, no HTTP/chain
+```
+Config via env (see .env.example). Until P1 contracts are deployed,
+GAMELICENSE_ADDRESS is unset → ownerOf() check is SKIPPED (loud warning).
+Guards implemented: signature-vs-address, canonical message format (rebuild
+and byte-compare), 10-min freshness window, nonce replay set.

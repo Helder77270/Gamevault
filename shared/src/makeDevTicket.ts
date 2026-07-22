@@ -1,17 +1,16 @@
 // Regenerates the launcher's dev-media fixture with a properly signed
 // ticket. Run: npm run make-dev-ticket -w shared
 
-import { randomBytes } from "@noble/hashes/utils";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { wrapKey } from "./ecies.ts";
 import { encryptBuild } from "./buildcrypto.ts";
 import { signTicket, hex, type Ticket } from "./ticket.ts";
-import { DEV_PLATFORM_PRIV, DEV_DEVICE_PUB } from "./devkeys.ts";
+import { DEV_PLATFORM_PRIV, DEV_DEVICE_PUB, DEV_CONTENT_KEY } from "./devkeys.ts";
 
 const now = Math.floor(Date.now() / 1000);
-const contentKey = randomBytes(32);
+const contentKey = DEV_CONTENT_KEY; // deterministic — ticketd wraps the same key
 
 const ticket: Ticket = {
   tokenId: "1",

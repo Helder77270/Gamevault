@@ -21,11 +21,13 @@
 - [ ] Deploy to World Chain Sepolia, addresses into shared/
 
 ## P2 — Ticket service (ticketd) — promoted from stretch, demo depends on it
-- [ ] POST /ticket: verify SIWE sig (message embeds device pubkey) →
+- [x] POST /ticket: verify SIWE sig (message embeds device pubkey) →
       ownerOf(tokenId) check → ECIES-wrap content key to device pubkey →
-      platform-sign ticket → return
-- [ ] Renewal path (same endpoint, existing ticket + fresh SIWE)
-- [ ] Re-wrap on resale (buyer pairs their device post-purchase)
+      platform-sign ticket → return (2026-07-22; selftest 6/6 incl. attacks)
+      ⚠ ownerOf() SKIPPED until GAMELICENSE_ADDRESS set (P1)
+- [x] Renewal path = same endpoint with fresh SIWE (2026-07-22)
+- [x] Re-wrap on resale = buyer pairs their device post-purchase, same
+      endpoint (2026-07-22)
 - [x] shared/: ticket types + sign/verify + ECIES + build crypto, selftest
       passes (2026-07-22)
 

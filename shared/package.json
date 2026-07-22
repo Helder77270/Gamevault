@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./siwe": "./src/siwe.ts",
-    "./catalog": "./src/catalog.ts"
+    "./catalog": "./src/catalog.ts",
+    "./devkeys": "./src/devkeys.ts"
   },
   "scripts": {
     "selftest": "node --experimental-strip-types src/selftest.ts",
