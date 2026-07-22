@@ -36,7 +36,7 @@ fn play_game(state: tauri::State<GameSession>, mount_point: String) -> Result<()
         .to_string();
     let envelope = hex::decode(wrapped_hex).map_err(|e| e.to_string())?;
 
-    let device_priv = crypto::dev_device_priv(); // OS keystore once pairing lands
+    let device_priv = crypto::device_priv()?; // OS keystore (Credential Manager)
     let content_key = crypto::ecies_unwrap(&envelope, &device_priv)
         .map_err(|e| format!("clé d'appareil refusée: {e}"))?;
 
@@ -52,6 +52,21 @@ fn play_game(state: tauri::State<GameSession>, mount_point: String) -> Result<()
 #[tauri::command]
 fn stop_game(state: tauri::State<GameSession>) {
     *state.0.lock().unwrap() = None;
+}
+
+/// This machine's device pubkey (creates the keypair on first call).
+#[tauri::command]
+fn get_device_pubkey() -> Result<String, String> {
+    crypto::device_pubkey_hex()
+}
+
+/// Write a freshly issued ticket back onto the cartridge (why USB/SD > CD-R).
+#[tauri::command]
+fn write_ticket(mount_point: String, ticket_json: String) -> Result<(), String> {
+    // sanity: refuse to write something that isn't a JSON object
+    serde_json::from_str::<Value>(&ticket_json).map_err(|e| format!("ticket invalide: {e}"))?;
+    let path = Path::new(&mount_point).join("gamevault").join("ticket.json");
+    std::fs::write(&path, ticket_json).map_err(|e| format!("écriture ticket: {e}"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -73,7 +88,13 @@ pub fn run() {
                     .unwrap(),
             }
         })
-        .invoke_handler(tauri::generate_handler![scan_cartridges, play_game, stop_game])
+        .invoke_handler(tauri::generate_handler![
+            scan_cartridges,
+            play_game,
+            stop_game,
+            get_device_pubkey,
+            write_ticket
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

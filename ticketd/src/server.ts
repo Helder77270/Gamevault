@@ -3,7 +3,7 @@
 //   GET  /health
 
 import { createServer } from "node:http";
-import { issueTicket } from "./service.ts";
+import { issueTicket, takePendingTicket } from "./service.ts";
 
 const PORT = Number(process.env.PORT ?? 8787);
 
@@ -21,6 +21,13 @@ createServer(async (req, res) => {
 
   if (req.method === "OPTIONS") return send(204, {});
   if (req.method === "GET" && req.url === "/health") return send(200, { ok: true });
+
+  // Launcher polls here after showing the pairing QR
+  const pendingMatch = req.method === "GET" && req.url?.match(/^\/pending\/([\w-]+)$/);
+  if (pendingMatch) {
+    const ticket = takePendingTicket(pendingMatch[1]);
+    return ticket ? send(200, ticket) : send(404, { error: "no ticket yet" });
+  }
 
   if (req.method === "POST" && req.url === "/ticket") {
     try {

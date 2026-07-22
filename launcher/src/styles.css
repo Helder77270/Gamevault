@@ -118,6 +118,21 @@ h2.section {
 
 .store-note { color: var(--soft); font-size: 0.82rem; max-width: 44rem; margin-top: 1.2rem; }
 
+/* ── Pairing modal ───────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 15; display: grid; place-items: center;
+  background: rgba(10, 12, 16, 0.75); backdrop-filter: blur(4px);
+}
+.modal {
+  background: var(--bg-raise); border: 1px solid var(--line); border-radius: 10px;
+  padding: 1.6rem 1.8rem; max-width: 24rem; text-align: center;
+  display: flex; flex-direction: column; gap: 0.8rem; align-items: center;
+}
+.modal h2 { margin: 0; font-size: 1.15rem; }
+.modal p { margin: 0; color: var(--soft); font-size: 0.88rem; }
+.modal .qr { border-radius: 8px; background: #fff; padding: 6px; width: 260px; height: 260px; }
+.modal .hint { font-size: 0.78rem; }
+
 /* ── Player ──────────────────────────────────────────── */
 .player {
   position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column;

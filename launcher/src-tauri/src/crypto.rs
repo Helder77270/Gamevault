@@ -13,10 +13,39 @@ use sha2::{Digest, Sha256};
 const EPH_PUB_LEN: usize = 33;
 const NONCE_LEN: usize = 12;
 
-/// DEV ONLY — same derivation as shared/src/devkeys.ts. Replaced by the OS
-/// keystore once real pairing lands.
-pub fn dev_device_priv() -> [u8; 32] {
-    Sha256::digest(b"gamevault dev device key v1").into()
+const KEYRING_SERVICE: &str = "gamevault-launcher";
+const KEYRING_USER: &str = "device-key";
+
+/// Load the device private key from the OS keystore (Windows Credential
+/// Manager), creating it on first use. The key never leaves the keystore
+/// except into this process's memory.
+pub fn device_priv() -> Result<[u8; 32], String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(stored) => hex::decode(&stored)
+            .map_err(|e| e.to_string())?
+            .try_into()
+            .map_err(|_| "stored device key has wrong length".into()),
+        Err(keyring::Error::NoEntry) => {
+            let mut bytes = [0u8; 32];
+            loop {
+                getrandom::getrandom(&mut bytes).map_err(|e| e.to_string())?;
+                if SecretKey::from_slice(&bytes).is_ok() {
+                    break; // valid scalar (overwhelmingly likely first try)
+                }
+            }
+            entry.set_password(&hex::encode(bytes)).map_err(|e| e.to_string())?;
+            Ok(bytes)
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Compressed SEC1 pubkey of this device (0x-hex) — safe to share (QR).
+pub fn device_pubkey_hex() -> Result<String, String> {
+    let sk = SecretKey::from_slice(&device_priv()?).map_err(|e| e.to_string())?;
+    let point = sk.public_key().to_encoded_point(true);
+    Ok(format!("0x{}", hex::encode(point.as_bytes())))
 }
 
 fn aes_key_from_ecdh(scalar_bytes: &[u8; 32], peer_pub: &[u8]) -> Result<[u8; 32], String> {

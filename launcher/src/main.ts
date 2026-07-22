@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import QRCode from "qrcode";
 import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/shared";
 import { MOCK_EDITIONS } from "@gamevault/shared/catalog";
 
@@ -34,10 +35,22 @@ type Route = "home" | "store" | "library";
 // Custom-protocol URL — WebView2 (Windows) maps schemes to http://<scheme>.localhost
 const GAME_URL = navigator.userAgent.includes("Windows") ? "http://game.localhost/" : "game://localhost/";
 
+const TICKETD_URL = "http://localhost:8787";
+
+interface Pairing {
+  nonce: string;
+  url: string;
+  qrDataUrl: string;
+  status: "waiting" | "error";
+  error?: string;
+}
+
 const state = {
   route: "home" as Route,
   games: [] as Game[],
   session: null as { address: string } | null,
+  devicePubKey: "",
+  pairing: null as Pairing | null,
   lastScan: "",
   playing: null as Game | null,
   playError: "",
@@ -63,19 +76,86 @@ function judge(c: Cartridge): Game {
   return { cartridge: c, ticket, meta, verdict: "authentic" };
 }
 
-// ── Session (simulated — replaced by QR/SIWE pairing next) ────
+/** Is this ticket sealed to THIS machine's device key? */
+const isOurs = (g: Game): boolean =>
+  Boolean(g.ticket && state.devicePubKey && g.ticket.devicePubKey.toLowerCase() === state.devicePubKey.toLowerCase());
+
+// ── Real pairing: QR -> owner signs SIWE on web/ -> ticketd seals a ticket
+//    to this device -> launcher fetches it and writes it on the cartridge ──
 
 function loadSession(): void {
   const raw = localStorage.getItem("gv-session");
   state.session = raw ? JSON.parse(raw) : null;
 }
 
-function connect(): void {
-  // Placeholder: the real flow shows a QR embedding the device pubkey and
-  // waits for the owner's SIWE signature. Until then, simulate the result.
-  state.session = { address: "0x000000000000000000000000000000000000dEaD" };
-  localStorage.setItem("gv-session", JSON.stringify(state.session));
+let pollTimer: number | undefined;
+
+async function startPairing(g: Game): Promise<void> {
+  if (!g.ticket) return;
+  const nonce = crypto.randomUUID();
+  const url =
+    `${MARKETPLACE_URL}/pair?device=${encodeURIComponent(state.devicePubKey)}` +
+    `&nonce=${nonce}&token=${encodeURIComponent(g.ticket.tokenId)}&contract=${encodeURIComponent(g.ticket.contract)}`;
+  const qrDataUrl = await QRCode.toDataURL(url, { width: 260, margin: 2 });
+  state.pairing = { nonce, url, qrDataUrl, status: "waiting" };
   render();
+
+  const startedAt = Date.now();
+  pollTimer = window.setInterval(async () => {
+    if (!state.pairing) return stopPolling();
+    if (Date.now() - startedAt > 10 * 60 * 1000) {
+      state.pairing.status = "error";
+      state.pairing.error = "Appairage expiré — relancez depuis le launcher.";
+      stopPolling();
+      return render();
+    }
+    try {
+      const res = await fetch(`${TICKETD_URL}/pending/${state.pairing.nonce}`);
+      if (!res.ok) return; // not signed yet — keep waiting
+      const ticket = (await res.json()) as SignedTicket;
+      await completePairing(g, ticket);
+    } catch {
+      /* ticketd briefly unreachable — keep polling */
+    }
+  }, 1500);
+}
+
+function stopPolling(): void {
+  if (pollTimer !== undefined) window.clearInterval(pollTimer);
+  pollTimer = undefined;
+}
+
+async function completePairing(g: Game, ticket: SignedTicket): Promise<void> {
+  stopPolling();
+  // Trust nothing: platform signature + sealed to OUR device key
+  if (!verifyTicket(ticket, PLATFORM_PUB) || ticket.devicePubKey.toLowerCase() !== state.devicePubKey.toLowerCase()) {
+    if (state.pairing) {
+      state.pairing.status = "error";
+      state.pairing.error = "Ticket reçu invalide ou scellé pour un autre appareil.";
+    }
+    return render();
+  }
+  // The rewritable-media moment: refreshed ticket goes back on the cartridge
+  await invoke("write_ticket", { mountPoint: g.cartridge.mount_point, ticketJson: JSON.stringify(ticket, null, 2) });
+  state.session = { address: ticket.ownerAddress };
+  localStorage.setItem("gv-session", JSON.stringify(state.session));
+  state.pairing = null;
+  await refresh();
+}
+
+function cancelPairing(): void {
+  stopPolling();
+  state.pairing = null;
+  render();
+}
+
+function connect(): void {
+  const g = state.games.find((x) => x.ticket);
+  if (!g) {
+    alert("Insérez une cartouche GameVault : l'appairage autorise cette machine pour une licence précise.");
+    return;
+  }
+  void startPairing(g);
 }
 
 function disconnect(): void {
@@ -96,6 +176,27 @@ const VERDICT_BADGE: Record<Verdict, string> = {
   expired: `<span class="badge warn">⏳ expiré — renouvellement en ligne requis</span>`,
   unreadable: `<span class="badge bad">ticket illisible</span>`,
 };
+
+function pairingView(p: Pairing): string {
+  return `
+    <div class="modal-overlay">
+      <div class="modal">
+        <h2>Appairer cette machine</h2>
+        ${
+          p.status === "error"
+            ? `<p class="play-error">${esc(p.error ?? "Erreur")}</p>`
+            : `
+        <p>Scannez avec votre téléphone, ou ouvrez le lien sur ce PC — puis signez avec le wallet
+           propriétaire de la licence.</p>
+        <img class="qr" src="${p.qrDataUrl}" alt="QR d'appairage" />
+        <button class="btn ghost" id="open-pair-url">Ouvrir dans le navigateur</button>
+        <p class="hint">En attente de la signature… la clé publique de CETTE machine est dans le QR :
+           votre signature autorisera cet appareil et aucun autre.</p>`
+        }
+        <button class="btn ghost" id="cancel-pairing">Annuler</button>
+      </div>
+    </div>`;
+}
 
 function ticketDetails(g: Game): string {
   if (!g.ticket) return "";
@@ -120,9 +221,17 @@ function homeView(): string {
         <header>
           <h3>💾 ${esc(g.meta.title ?? g.cartridge.volume_label ?? "Cartouche")}</h3>
           ${VERDICT_BADGE[g.verdict]}
+          ${g.ticket && !isOurs(g) ? `<span class="badge warn">autre appareil</span>` : ""}
           <span class="mount">${esc(g.cartridge.mount_point)}</span>
         </header>
         ${ticketDetails(g)}
+        ${
+          g.ticket && !isOurs(g)
+            ? `<p class="pending">Le ticket est scellé pour une autre machine — le propriétaire doit
+                 appairer celle-ci. <button class="btn pair-btn" data-mount="${esc(g.cartridge.mount_point)}">
+                 Appairer cette machine</button></p>`
+            : ""
+        }
       </article>`,
         )
         .join("")
@@ -161,7 +270,7 @@ function libraryView(): string {
       ${playable
         .map((g) => {
           const title = g.meta.title ?? "Jeu inconnu";
-          const canPlay = g.verdict === "authentic" && g.cartridge.has_build;
+          const canPlay = g.verdict === "authentic" && g.cartridge.has_build && isOurs(g);
           return `
         <article class="game-card">
           <div class="cover">${esc(title.charAt(0).toUpperCase())}</div>
@@ -171,7 +280,7 @@ function libraryView(): string {
             <div class="row">
               ${VERDICT_BADGE[g.verdict]}
               <button class="btn play-btn" data-mount="${esc(g.cartridge.mount_point)}" ${canPlay ? "" : "disabled"}
-                title="${canPlay ? "Déchiffrer et lancer" : "Ticket invalide ou build.enc manquant"}">▶ Jouer</button>
+                title="${canPlay ? "Déchiffrer et lancer" : isOurs(g) ? "Ticket invalide ou build.enc manquant" : "Ticket scellé pour un autre appareil — appairez cette machine"}">▶ Jouer</button>
             </div>
           </div>
         </article>`;
@@ -250,6 +359,14 @@ function render(): void {
     document.getElementById("quit-btn")?.addEventListener("click", () => void quit());
     return;
   }
+  if (state.pairing) {
+    document.getElementById("view")!.innerHTML = pairingView(state.pairing);
+    document.getElementById("cancel-pairing")?.addEventListener("click", cancelPairing);
+    document
+      .getElementById("open-pair-url")
+      ?.addEventListener("click", () => void openUrl(state.pairing!.url));
+    return;
+  }
   document.getElementById("tabs")!.innerHTML = `
     <button class="tab ${state.route === "home" ? "active" : ""}" data-route="home">Accueil</button>
     <button class="tab ${state.route === "store" ? "active" : ""}" data-route="store">Boutique</button>
@@ -266,7 +383,7 @@ function render(): void {
 
   document.getElementById("statusbar")!.innerHTML = `
     <span>${state.games.length} cartouche(s) · ${state.lastScan}</span>
-    <span>session simulée — appairage QR/SIWE : prochaine étape</span>`;
+    <span>appareil ${state.devicePubKey ? short(state.devicePubKey) : "…"} · clé au keystore OS</span>`;
 
   document.querySelectorAll<HTMLButtonElement>(".tab[data-route]").forEach((b) =>
     b.addEventListener("click", () => {
@@ -276,6 +393,12 @@ function render(): void {
   );
   document.querySelectorAll<HTMLButtonElement>(".buy-btn").forEach((b) =>
     b.addEventListener("click", () => void openUrl(MARKETPLACE_URL)),
+  );
+  document.querySelectorAll<HTMLButtonElement>(".pair-btn").forEach((b) =>
+    b.addEventListener("click", () => {
+      const g = state.games.find((x) => x.cartridge.mount_point === b.dataset.mount);
+      if (g) void startPairing(g);
+    }),
   );
   document.getElementById("connect-btn")?.addEventListener("click", connect);
   document.getElementById("connect-btn-top")?.addEventListener("click", connect);
@@ -302,8 +425,14 @@ async function refresh(): Promise<void> {
   render();
 }
 
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
   loadSession();
+  try {
+    // Creates the device keypair in the OS keystore on first launch
+    state.devicePubKey = await invoke<string>("get_device_pubkey");
+  } catch (e) {
+    state.lastScan = `keystore inaccessible : ${String(e)}`;
+  }
   void refresh();
   setInterval(() => void refresh(), 2000);
 });

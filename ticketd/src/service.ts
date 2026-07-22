@@ -49,6 +49,18 @@ function contentKeyFor(_contract: string, _tokenId: string): Uint8Array {
 
 const usedNonces = new Set<string>();
 
+// Issued tickets waiting for their launcher (the web page signs, the
+// LAUNCHER needs the ticket). Fetched once by nonce, then dropped.
+const PENDING_TTL_MS = 10 * 60 * 1000;
+const pendingTickets = new Map<string, { ticket: SignedTicket; at: number }>();
+
+export function takePendingTicket(nonce: string): SignedTicket | undefined {
+  for (const [k, v] of pendingTickets) if (Date.now() - v.at > PENDING_TTL_MS) pendingTickets.delete(k);
+  const entry = pendingTickets.get(nonce);
+  if (entry) pendingTickets.delete(nonce);
+  return entry?.ticket;
+}
+
 export interface IssueRequest {
   message: string;
   signature: `0x${string}`;
@@ -96,5 +108,7 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
     issuedAt: now,
     expiresAt: now + TICKET_TTL_SEC,
   };
-  return signTicket(ticket, platformPriv());
+  const signed = signTicket(ticket, platformPriv());
+  pendingTickets.set(p.nonce, { ticket: signed, at: Date.now() });
+  return signed;
 }
