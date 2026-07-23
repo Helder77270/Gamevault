@@ -15,6 +15,7 @@ cache/
 # foundry
 contracts/broadcast/
 contracts/cache/
+contracts/lib/
 
 # regenerable artifacts (npm run build -w game && npm run make-dev-ticket -w shared)
 game/dist/
