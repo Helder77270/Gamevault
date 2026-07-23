@@ -31,6 +31,8 @@ export const MOCK_EDITIONS: Edition[] = [
     supply: 100,
     available: true,
     blurb: "Ramassez 10 pièces, évitez les rouges. L'édition de développement.",
+    buildCid: "QmT1xbCCRG3sc3Gju8AGrdXvfnUMuXftmBLjF1uw5vEF1U",
+    buildSha256: "0x701338ec186baa41df25c5be7983e009602a012d4ff7952fbe8bc910bff3e7cb",
   },
   {
     id: 2,
