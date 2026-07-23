@@ -23,9 +23,11 @@ on merit, storage decided (IPFS behind shared/storage.ts). Work top-down.
 - [ ] web/ admin page for studios (upload → encrypt → pin → register)
 
 ## P3 — Launcher verified re-download
-- [ ] Cartridge with ticket but no/corrupt build.enc → "Télécharger le
-      build" → fetchBuild(cid, expectedHash) → write to cartridge
-      (needs P1 for the on-chain CID; catalog.ts carries it meanwhile)
+- [x] Cartridge with ticket but no build.enc → download button →
+      fetchBuild(cid, expectedHash) with integrity check → write_build to
+      cartridge; corrupt-build errors point to the flow (2026-07-23)
+      ⚠ dormant until a real CID is pasted into catalog.ts (needs
+      PINATA_JWT publish); switches to on-chain CID after P1
 
 ## P4 — Resale end-to-end on real contracts (reference demo)
 - [ ] Buy flow against Marketplace.sol in web/
