@@ -35,8 +35,13 @@ on merit, storage decided (IPFS behind shared/storage.ts). Work top-down.
       live (launcher hybrid check goes green the moment P1 lands)
 
 ## P5 — Subgraph (Base Sepolia) + provenance
-- [ ] Entities: Studio, Game, Edition, License, Transfer, RoyaltyPayment
-- [ ] web/ provenance page per token (owner chain, royalties paid)
+- [x] Event spec: contracts/src/interfaces/IGameVaultEvents.sol — Solidity
+      MUST emit exactly these; subgraph ABIs derive from them (2026-07-23)
+- [x] Subgraph project: schema + manifest + mappings, compiles to WASM
+      (2026-07-23) ⚠ deploy needs P1 addresses + startBlock in
+      subgraph.yaml, then Subgraph Studio (base-sepolia)
+- [x] web /provenance/[tokenId] — owner chain + royalties; graceful until
+      NEXT_PUBLIC_SUBGRAPH_URL is set (2026-07-23)
 - [ ] Launcher full library via subgraph (games owned, cartridge or not)
 - [ ] Replace shared/catalog.ts mock with registry+subgraph reads
 
