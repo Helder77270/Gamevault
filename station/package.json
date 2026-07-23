@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "write": "node --experimental-strip-types src/write.ts"
+    "write": "node --experimental-strip-types src/write.ts",
+    "publish": "node --experimental-strip-types src/publish.ts"
   },
   "dependencies": {
     "@gamevault/shared": "*"

@@ -14,6 +14,10 @@ export interface Edition {
   supply: number;
   available: boolean;
   blurb: string;
+  /** IPFS CID of build.enc (from `npm run publish -w station`); on-chain after P1 */
+  buildCid?: string;
+  /** 0x-hex sha256 of build.enc — integrity check for re-downloads */
+  buildSha256?: string;
 }
 
 export const MOCK_EDITIONS: Edition[] = [

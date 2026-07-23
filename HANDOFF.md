@@ -172,3 +172,6 @@ cloud.walletconnect.com); extension wallets work without it.
 | 07-22 | RainbowKit + wagmi v2 | Raw injected connector = extension roulette; EIP-6963 modal + WalletConnect QR |
 | 07-22 | Subgraph → Substreams question opened | Studio dropped WorldChain subgraph support (see pre-flight) |
 | 07-23 | **Chain switch: World Chain Sepolia → BASE SEPOLIA (84532)** | Simpler tooling; subgraphs supported there (Substreams question dissolved); World ID falls back to IDKit cloud verification (no native router on Base — check bridged router, 45-min rule). Single source: shared/src/deployments.ts (CHAIN). All consumers updated (web wagmi, ticketd viem, launcher RPC, fixtures chainId) |
+| 07-23 | **Hackathon dropped** (can't attend Lisbon) | Deadline + sponsor-track obligations gone; hackathon quality bar kept. World ID dropped for now (simple mint) |
+| 07-23 | **Storage: build.enc → IPFS (Pinata), CID+hash on-chain** | build.enc is public bytes (encrypted once, useless without a ticket) so availability and confidentiality are separate problems; content-addressing gives integrity for free. Behind shared/storage.ts — 0G swap later = one file. Cartridge stays primary distribution |
+| 07-23 | **The Graph reintegrated on merit** | Works on Base Sepolia; becomes the single indexed source for provenance pages, full launcher library, and marketplace catalog |

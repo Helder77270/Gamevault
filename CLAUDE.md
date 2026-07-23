@@ -8,21 +8,27 @@ Positioning: NOT DRM — ownership verification. "The physical media is the
 vehicle, the blockchain is the lock."
 
 ## Hard constraints
-- This is a 36-hour hackathon project (July 24–26). Bias toward WORKING over
-  elegant. No premature abstraction, no test coverage beyond critical paths.
+- REFRAMED 2026-07-23: no longer attending ETHGlobal Lisbon — the 36h
+  deadline and sponsor-track obligations (World ID, 0G, The Graph prizes)
+  are DROPPED. Keep the hackathon quality bar anyway: bias toward WORKING
+  over elegant, no premature abstraction.
 - Target chain: BASE SEPOLIA, chainId 84532 (decided 2026-07-23 — simpler
-  tooling than World Chain for now). Single source of truth:
+  tooling than World Chain). Single source of truth:
   shared/src/deployments.ts (CHAIN + contract addresses).
-- World ID: the router is NOT native on Base. Path: IDKit widget in web/
-  with CLOUD verification of the proof at mint time. Pre-flight: check
-  whether a bridged World ID router exists on Base; 45-min rule applies.
-- Sponsor integrations are mandatory (prize tracks): World ID, 0G Storage,
-  The Graph. Never mock these — integrate the real SDKs.
-- The Graph note: subgraphs are NOT supported on WorldChain (verified
-  2026-07-22) but ARE supported on Base Sepolia — the subgraph is OPTIONAL
-  BONUS (P5), not on the demo path.
-- The demo climax is: write an SD cartridge live, transfer the NFT to a
-  judge's wallet, game launches on their machine and no longer on the
+- World ID: dropped for now (was a prize-track requirement). Mint is
+  simple; identity gating can return later if a real need appears.
+- The Graph: REINTEGRATED on its merits (supported on Base Sepolia) — the
+  subgraph feeds the provenance pages, the full on-chain library, and the
+  marketplace catalog. Real infra, not a checkbox.
+- Storage (decided 2026-07-23): build.enc is PUBLIC bytes — encrypted
+  once, useless without a ticket — so it lives on IPFS via a pinning
+  service (Pinata). The edition's on-chain record carries buildCid +
+  buildHash so any launcher can verify integrity. The storage backend sits
+  behind shared/src/storage.ts (putBuild/fetchBuild) — swapping to 0G or
+  another network later is a one-file change. Cartridges remain the
+  PRIMARY distribution; IPFS is recovery/re-download + station source.
+- The reference demo remains: write an SD cartridge live, transfer the NFT
+  to another wallet, game launches on their machine and no longer on the
   seller's. Every architectural decision must protect this flow.
 
 ## Physical media: USB / SD (decided 2026-07-20 — no CD burning)
@@ -118,14 +124,17 @@ vehicle, the blockchain is the lock."
 - World ID on testnet: budget the 45-min rule; know the Worldcoin simulator
   path (https://simulator.worldcoin.org) in advance.
 
-## Priority order (when in doubt, work top-down)
-1. Contracts deployed + mint with World ID proof verification
-2. Ticket service (ticketd): issue / re-wrap / renew — everything consumes it
-3. Launcher: media detect → ticket verify → hybrid online/offline owner
-   check → decrypt → Phaser launch
-4. Marketplace resale → triggers re-wrap → revocation demo works end-to-end
-   ← LOCK THE DEMO HERE; everything after is bonus
-5. Subgraph + provenance page
-6. Station copy flow + printed SD cartridge sleeves
-7. Stretch only: ERC-4907 lending (launcher check becomes userOf-if-set-else-
-   ownerOf), 0G-gated re-download
+## Priority order (when in doubt, work top-down) — updated 2026-07-23
+1. Contracts on Base Sepolia: GameRegistry (editions carry buildCid +
+   buildHash), GameLicense (ERC-721 + EIP-2981), Marketplace. Simple mint
+   (no World ID). Paste addresses into shared/src/deployments.ts.
+2. Studio publish flow: encrypt build → pin to IPFS → register CID+hash
+   on-chain (station/publish + web admin later)
+3. Launcher verified re-download: fetch CID → check hash against registry
+   → rewrite build.enc on cartridge
+4. Resale end-to-end on real contracts → live revocation (the reference
+   demo) — everything upstream already works locally
+5. Subgraph on Base + provenance page + full on-chain library in launcher
+6. WalletConnect purchase in-launcher (Steam-Guard-style approval)
+7. Later ideas: ERC-4907 lending, 0G storage swap, World ID gating,
+   printed SD sleeves

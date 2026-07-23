@@ -10,7 +10,8 @@
     "./siwe": "./src/siwe.ts",
     "./catalog": "./src/catalog.ts",
     "./devkeys": "./src/devkeys.ts",
-    "./deployments": "./src/deployments.ts"
+    "./deployments": "./src/deployments.ts",
+    "./storage": "./src/storage.ts"
   },
   "scripts": {
     "selftest": "node --experimental-strip-types src/selftest.ts",
