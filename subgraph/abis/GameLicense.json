@@ -1,0 +1,22 @@
+[
+  {
+    "type": "event",
+    "name": "Transfer",
+    "inputs": [
+      { "name": "from", "type": "address", "indexed": true },
+      { "name": "to", "type": "address", "indexed": true },
+      { "name": "tokenId", "type": "uint256", "indexed": true }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "LicenseMinted",
+    "inputs": [
+      { "name": "tokenId", "type": "uint256", "indexed": true },
+      { "name": "editionId", "type": "uint256", "indexed": true },
+      { "name": "to", "type": "address", "indexed": true }
+    ],
+    "anonymous": false
+  }
+]

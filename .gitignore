@@ -19,6 +19,8 @@ contracts/cache/
 # regenerable artifacts (npm run build -w game && npm run make-dev-ticket -w shared)
 game/dist/
 launcher/dev-media/gamevault/build.enc
+subgraph/generated/
+subgraph/build/
 
 # misc
 .DS_Store

@@ -1,0 +1,31 @@
+[
+  {
+    "type": "event",
+    "name": "Listed",
+    "inputs": [
+      { "name": "tokenId", "type": "uint256", "indexed": true },
+      { "name": "seller", "type": "address", "indexed": true },
+      { "name": "price", "type": "uint256", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Unlisted",
+    "inputs": [{ "name": "tokenId", "type": "uint256", "indexed": true }],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Sale",
+    "inputs": [
+      { "name": "tokenId", "type": "uint256", "indexed": true },
+      { "name": "seller", "type": "address", "indexed": true },
+      { "name": "buyer", "type": "address", "indexed": true },
+      { "name": "price", "type": "uint256", "indexed": false },
+      { "name": "royaltyAmount", "type": "uint256", "indexed": false },
+      { "name": "platformFee", "type": "uint256", "indexed": false }
+    ],
+    "anonymous": false
+  }
+]

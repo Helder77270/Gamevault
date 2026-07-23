@@ -7,6 +7,7 @@
     "launcher",
     "ticketd",
     "web",
-    "station"
+    "station",
+    "subgraph"
   ]
 }

@@ -1,0 +1,57 @@
+type Studio @entity(immutable: false) {
+  id: ID!
+  owner: Bytes!
+  name: String!
+  games: [Game!]! @derivedFrom(field: "studio")
+}
+
+type Game @entity(immutable: false) {
+  id: ID!
+  studio: Studio!
+  title: String!
+  editions: [Edition!]! @derivedFrom(field: "game")
+}
+
+type Edition @entity(immutable: false) {
+  id: ID!
+  game: Game!
+  supply: BigInt!
+  price: BigInt!
+  royaltyBps: BigInt!
+  buildCid: String!
+  buildHash: Bytes!
+  minted: BigInt!
+  licenses: [License!]! @derivedFrom(field: "edition")
+}
+
+type License @entity(immutable: false) {
+  id: ID!
+  edition: Edition
+  owner: Bytes!
+  mintedAt: BigInt!
+  listed: Boolean!
+  listPrice: BigInt
+  transfers: [Transfer!]! @derivedFrom(field: "license")
+  royaltyPayments: [RoyaltyPayment!]! @derivedFrom(field: "license")
+}
+
+type Transfer @entity(immutable: true) {
+  id: ID!
+  license: License!
+  from: Bytes!
+  to: Bytes!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+type RoyaltyPayment @entity(immutable: true) {
+  id: ID!
+  license: License!
+  seller: Bytes!
+  buyer: Bytes!
+  salePrice: BigInt!
+  royaltyAmount: BigInt!
+  platformFee: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}

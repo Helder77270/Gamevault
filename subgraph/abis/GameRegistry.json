@@ -1,0 +1,36 @@
+[
+  {
+    "type": "event",
+    "name": "StudioRegistered",
+    "inputs": [
+      { "name": "studioId", "type": "uint256", "indexed": true },
+      { "name": "owner", "type": "address", "indexed": true },
+      { "name": "name", "type": "string", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GameCreated",
+    "inputs": [
+      { "name": "gameId", "type": "uint256", "indexed": true },
+      { "name": "studioId", "type": "uint256", "indexed": true },
+      { "name": "title", "type": "string", "indexed": false }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EditionCreated",
+    "inputs": [
+      { "name": "editionId", "type": "uint256", "indexed": true },
+      { "name": "gameId", "type": "uint256", "indexed": true },
+      { "name": "supply", "type": "uint256", "indexed": false },
+      { "name": "price", "type": "uint256", "indexed": false },
+      { "name": "royaltyBps", "type": "uint96", "indexed": false },
+      { "name": "buildCid", "type": "string", "indexed": false },
+      { "name": "buildHash", "type": "bytes32", "indexed": false }
+    ],
+    "anonymous": false
+  }
+]
