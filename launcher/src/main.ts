@@ -3,8 +3,9 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import QRCode from "qrcode";
 import { createPublicClient, http } from "viem";
 import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/shared";
-import { MOCK_EDITIONS } from "@gamevault/shared/catalog";
+import { MOCK_EDITIONS, type Edition } from "@gamevault/shared/catalog";
 import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
+import { fetchBuild } from "@gamevault/shared/storage";
 
 // Browsing is data — the full catalog renders natively in the launcher.
 // Only the PAYMENT needs the wallet, so only checkout jumps to the system
@@ -57,6 +58,8 @@ const state = {
   ownerCheck: "",
   playing: null as Game | null,
   playError: "",
+  /** per-mount-point download status message */
+  dlStatus: {} as Record<string, string>,
 };
 
 // ── Verification ──────────────────────────────────────────────
@@ -236,6 +239,18 @@ function homeView(): string {
             : ""
         }
         ${
+          g.ticket && !g.cartridge.has_build
+            ? editionFor(g)
+              ? `<p class="pending">Build absent — récupérable depuis IPFS, intégrité vérifiée contre le hash
+                   publié. <button class="btn dl-btn" data-mount="${esc(g.cartridge.mount_point)}"
+                   ${state.dlStatus[g.cartridge.mount_point]?.startsWith("Télé") ? "disabled" : ""}>
+                   ⬇ Télécharger le build</button>
+                   ${state.dlStatus[g.cartridge.mount_point] ? `<span class="dl-status">${esc(state.dlStatus[g.cartridge.mount_point])}</span>` : ""}</p>`
+              : `<p class="pending">Build absent et aucun CID publié pour ce titre — écrivez la cartouche
+                   via la station (npm run write -w station).</p>`
+            : ""
+        }
+        ${
           g.ticket && isOurs(g) && g.verdict === "expired"
             ? `<p class="pending">Ticket expiré — le renouvellement re-vérifie la propriété on-chain puis
                  réécrit un ticket frais sur la cartouche.
@@ -276,7 +291,15 @@ function libraryView(): string {
   }
   return `
     <h2 class="section">Ma bibliothèque</h2>
-    ${state.playError ? `<p class="play-error">⛔ Lancement refusé : ${esc(state.playError)}</p>` : ""}
+    ${
+      state.playError
+        ? `<p class="play-error">⛔ Lancement refusé : ${esc(state.playError)}${
+            state.playError.includes("déchiffrement du build")
+              ? ` — le fichier est peut-être corrompu ; repassez par l'Accueil pour re-télécharger le build depuis IPFS.`
+              : ""
+          }</p>`
+        : ""
+    }
     <div class="game-grid">
       ${playable
         .map((g) => {
@@ -298,6 +321,37 @@ function libraryView(): string {
         })
         .join("")}
     </div>`;
+}
+
+// ── P3: verified re-download ──────────────────────────────────
+// "You own the game" made tangible: cartridge damaged/wiped -> pull the
+// PUBLIC encrypted build back from IPFS, verify it against the published
+// hash (the gateway is untrusted), rewrite it on the cartridge. The
+// ticket — not the bytes — is what makes it playable.
+
+function editionFor(g: Game): Edition | undefined {
+  return MOCK_EDITIONS.find((e) => e.buildCid && e.title === (g.meta.title ?? ""));
+}
+
+async function downloadBuild(g: Game): Promise<void> {
+  const ed = editionFor(g);
+  if (!ed?.buildCid) return;
+  const mount = g.cartridge.mount_point;
+  state.dlStatus[mount] = "Téléchargement + vérification d'intégrité…";
+  render();
+  try {
+    const bytes = await fetchBuild(ed.buildCid, ed.buildSha256);
+    // chunked base64 (1 MB+ would blow the stack with a single fromCharCode)
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    await invoke("write_build", { mountPoint: mount, dataB64: btoa(bin) });
+    delete state.dlStatus[mount];
+  } catch (e) {
+    state.dlStatus[mount] = `Échec : ${String(e)}`;
+  }
+  await refresh();
 }
 
 // ── Hybrid owner check (security-map launch step 5) ───────────
@@ -451,6 +505,12 @@ function render(): void {
     b.addEventListener("click", () => {
       const g = state.games.find((x) => x.cartridge.mount_point === b.dataset.mount);
       if (g) void startPairing(g);
+    }),
+  );
+  document.querySelectorAll<HTMLButtonElement>(".dl-btn").forEach((b) =>
+    b.addEventListener("click", () => {
+      const g = state.games.find((x) => x.cartridge.mount_point === b.dataset.mount);
+      if (g) void downloadBuild(g);
     }),
   );
   document.getElementById("connect-btn")?.addEventListener("click", connect);

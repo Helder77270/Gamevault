@@ -117,6 +117,7 @@ h2.section {
 .game-card .row { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-top: 0.3rem; }
 
 .store-note { color: var(--soft); font-size: 0.82rem; max-width: 44rem; margin-top: 1.2rem; }
+.dl-status { font-family: var(--mono); font-size: 0.78rem; color: var(--accent); margin-left: 0.5rem; }
 
 /* ── Pairing modal ───────────────────────────────────── */
 .modal-overlay {

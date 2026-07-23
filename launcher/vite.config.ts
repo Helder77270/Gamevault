@@ -12,6 +12,7 @@ export default defineConfig(async () => ({
       // Subpath entries MUST come before the bare one (order matters).
       "@gamevault/shared/catalog": fileURLToPath(new URL("../shared/src/catalog.ts", import.meta.url)),
       "@gamevault/shared/deployments": fileURLToPath(new URL("../shared/src/deployments.ts", import.meta.url)),
+      "@gamevault/shared/storage": fileURLToPath(new URL("../shared/src/storage.ts", import.meta.url)),
       "@gamevault/shared/siwe": fileURLToPath(new URL("../shared/src/siwe.ts", import.meta.url)),
       "@gamevault/shared": fileURLToPath(new URL("../shared/src/index.ts", import.meta.url)),
     },

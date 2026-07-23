@@ -60,6 +60,22 @@ fn get_device_pubkey() -> Result<String, String> {
     crypto::device_pubkey_hex()
 }
 
+/// Write a re-downloaded build.enc onto the cartridge (P3: verified
+/// re-download). Integrity was already checked TS-side against the
+/// published sha256; the bytes are still just public encrypted data.
+#[tauri::command]
+fn write_build(mount_point: String, data_b64: String) -> Result<(), String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_b64)
+        .map_err(|e| format!("base64: {e}"))?;
+    if bytes.len() < 28 {
+        return Err("build trop petit pour être valide".into());
+    }
+    let path = Path::new(&mount_point).join("gamevault").join("build.enc");
+    std::fs::write(&path, bytes).map_err(|e| format!("écriture build: {e}"))
+}
+
 /// Write a freshly issued ticket back onto the cartridge (why USB/SD > CD-R).
 #[tauri::command]
 fn write_ticket(mount_point: String, ticket_json: String) -> Result<(), String> {
@@ -93,7 +109,8 @@ pub fn run() {
             play_game,
             stop_game,
             get_device_pubkey,
-            write_ticket
+            write_ticket,
+            write_build
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
