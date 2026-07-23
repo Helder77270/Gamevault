@@ -8,6 +8,7 @@ import { wrapKey } from "./ecies.ts";
 import { encryptBuild } from "./buildcrypto.ts";
 import { signTicket, hex, type Ticket } from "./ticket.ts";
 import { DEV_PLATFORM_PRIV, DEV_DEVICE_PUB, DEV_CONTENT_KEY } from "./devkeys.ts";
+import { CHAIN } from "./deployments.ts";
 
 const now = Math.floor(Date.now() / 1000);
 const contentKey = DEV_CONTENT_KEY; // deterministic — ticketd wraps the same key
@@ -15,7 +16,7 @@ const contentKey = DEV_CONTENT_KEY; // deterministic — ticketd wraps the same 
 const ticket: Ticket = {
   tokenId: "1",
   contract: "0x0000000000000000000000000000000000000001",
-  chainId: 4801,
+  chainId: CHAIN.id,
   ownerAddress: "0x000000000000000000000000000000000000dEaD",
   devicePubKey: hex(DEV_DEVICE_PUB),
   wrappedContentKey: hex(wrapKey(contentKey, DEV_DEVICE_PUB)),

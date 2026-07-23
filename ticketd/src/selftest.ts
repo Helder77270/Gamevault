@@ -20,7 +20,7 @@ const owner = privateKeyToAccount(generatePrivateKey());
 
 const params = {
   address: owner.address,
-  chainId: 4801,
+  chainId: 84532, // Base Sepolia
   devicePubKey: hex(DEV_DEVICE_PUB),
   nonce: `selftest-${Math.random().toString(36).slice(2)}`,
   tokenId: "1",

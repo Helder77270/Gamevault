@@ -4,7 +4,7 @@ import QRCode from "qrcode";
 import { createPublicClient, http } from "viem";
 import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/shared";
 import { MOCK_EDITIONS } from "@gamevault/shared/catalog";
-import { DEPLOYMENTS, WORLDCHAIN_SEPOLIA } from "@gamevault/shared/deployments";
+import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
 
 // Browsing is data — the full catalog renders natively in the launcher.
 // Only the PAYMENT needs the wallet, so only checkout jumps to the system
@@ -307,7 +307,7 @@ function libraryView(): string {
 type OwnerCheck = "ok" | "revoked" | "offline";
 
 const chainClient = DEPLOYMENTS.gameLicense
-  ? createPublicClient({ transport: http(WORLDCHAIN_SEPOLIA.rpcUrl, { timeout: 2000, retryCount: 0 }) })
+  ? createPublicClient({ transport: http(CHAIN.rpcUrl, { timeout: 2000, retryCount: 0 }) })
   : null;
 
 async function checkOwnerOnline(t: SignedTicket): Promise<OwnerCheck> {

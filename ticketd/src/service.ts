@@ -2,7 +2,7 @@
 // a playable ticket. Kept HTTP-free for testability (see server.ts).
 
 import { createPublicClient, http, verifyMessage } from "viem";
-import { worldchainSepolia } from "viem/chains";
+import { baseSepolia } from "viem/chains";
 import { signTicket, wrapKey, hex, unhex, type SignedTicket, type Ticket } from "@gamevault/shared";
 import { parsePairingMessage } from "@gamevault/shared/siwe";
 import { DEV_PLATFORM_PRIV, DEV_CONTENT_KEY } from "@gamevault/shared/devkeys";
@@ -38,7 +38,7 @@ if (!licenseAddress) {
 }
 
 const client = createPublicClient({
-  chain: worldchainSepolia,
+  chain: baseSepolia,
   transport: http(process.env.RPC_URL),
 });
 

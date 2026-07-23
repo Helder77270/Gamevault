@@ -1,12 +1,14 @@
-// Deployed contract addresses — THE single place to paste them after P1.
-// Empty string = not deployed yet; consumers degrade gracefully (ticketd
+// Chain + deployed contract addresses — THE single place to update.
+// Decided 2026-07-23: Base Sepolia (simpler tooling than World Chain for
+// now; The Graph works there; World ID via IDKit cloud verification).
+// Empty address = not deployed yet; consumers degrade gracefully (ticketd
 // skips ownerOf with a loud warning, launcher falls back to offline mode).
 // Self-contained module (subpath export: @gamevault/shared/deployments).
 
-export const WORLDCHAIN_SEPOLIA = {
-  id: 4801,
-  name: "World Chain Sepolia",
-  rpcUrl: "https://worldchain-sepolia.g.alchemy.com/public",
+export const CHAIN = {
+  id: 84532,
+  name: "Base Sepolia",
+  rpcUrl: "https://sepolia.base.org",
 } as const;
 
 export const DEPLOYMENTS: {

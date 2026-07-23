@@ -10,9 +10,17 @@ vehicle, the blockchain is the lock."
 ## Hard constraints
 - This is a 36-hour hackathon project (July 24–26). Bias toward WORKING over
   elegant. No premature abstraction, no test coverage beyond critical paths.
-- Target chain: World Chain Sepolia (World ID is native there).
+- Target chain: BASE SEPOLIA, chainId 84532 (decided 2026-07-23 — simpler
+  tooling than World Chain for now). Single source of truth:
+  shared/src/deployments.ts (CHAIN + contract addresses).
+- World ID: the router is NOT native on Base. Path: IDKit widget in web/
+  with CLOUD verification of the proof at mint time. Pre-flight: check
+  whether a bridged World ID router exists on Base; 45-min rule applies.
 - Sponsor integrations are mandatory (prize tracks): World ID, 0G Storage,
   The Graph. Never mock these — integrate the real SDKs.
+- The Graph note: subgraphs are NOT supported on WorldChain (verified
+  2026-07-22) but ARE supported on Base Sepolia — the subgraph is OPTIONAL
+  BONUS (P5), not on the demo path.
 - The demo climax is: write an SD cartridge live, transfer the NFT to a
   judge's wallet, game launches on their machine and no longer on the
   seller's. Every architectural decision must protect this flow.
@@ -62,9 +70,8 @@ vehicle, the blockchain is the lock."
   binaries into `/gamevault/` on a mounted USB/SD volume. Cross-platform file
   copy — detect removable volumes at runtime.
 - `subgraph/` — The Graph, AssemblyScript. Entities: Studio, Game, Edition,
-  License, Transfer, RoyaltyPayment
-  - PRE-FLIGHT (before July 24): verify Subgraph Studio supports
-    `worldchain-sepolia`. If not, ask sponsors on Discord day 0.
+  License, Transfer, RoyaltyPayment. OPTIONAL BONUS on Base Sepolia
+  (supported there; was NOT supported on WorldChain — one reason we moved).
 - `shared/` — TypeScript types + ticket signing/verification lib (used by
   web, launcher, station, ticketd)
 

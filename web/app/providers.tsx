@@ -3,7 +3,7 @@
 import "@rainbow-me/rainbowkit/styles.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
-import { worldchainSepolia } from "wagmi/chains";
+import { baseSepolia } from "wagmi/chains";
 import { RainbowKitProvider, darkTheme, getDefaultConfig } from "@rainbow-me/rainbowkit";
 
 // WalletConnect Cloud project id — free at https://cloud.walletconnect.com.
@@ -14,7 +14,7 @@ const projectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? "gamevault-dev-placeh
 export const config = getDefaultConfig({
   appName: "GameVault",
   projectId,
-  chains: [worldchainSepolia],
+  chains: [baseSepolia],
   ssr: true,
 });
 

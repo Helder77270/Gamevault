@@ -14,11 +14,16 @@
       speed, volume labels).
 - [ ] Print SD cartridge sleeves (demo theater — replaces the CD tray moment).
 
-## P1 — Contracts + World ID mint
+## P1 — Contracts + World ID mint — TARGET: BASE SEPOLIA (switched 07-23)
 - [ ] GameRegistry.sol: studios, games, editions (supply, price, royalty %)
 - [ ] GameLicense.sol: ERC-721 + EIP-2981 royaltyInfo
-- [ ] Mint gated by World ID proof verification (native router on World Chain)
-- [ ] Deploy to World Chain Sepolia, addresses into shared/
+- [ ] Mint gated by World ID: IDKit widget + CLOUD proof verification (no
+      native router on Base — pre-flight: check for a bridged router;
+      45-min rule)
+- [ ] Deploy to Base Sepolia (84532), paste addresses into
+      shared/src/deployments.ts ← this single edit arms ticketd ownerOf()
+      AND launcher live revocation
+- [ ] Fund throwaway deployer with Base Sepolia ETH (faucet)
 
 ## P2 — Ticket service (ticketd) — promoted from stretch, demo depends on it
 - [x] POST /ticket: verify SIWE sig (message embeds device pubkey) →
@@ -56,7 +61,8 @@
 - [ ] End-to-end rehearsal: transfer to second wallet → new machine launches,
       seller machine revoked (online check)
 
-## P5 — Subgraph + provenance
+## P5 — Subgraph + provenance — OPTIONAL BONUS (Base Sepolia IS supported
+##      by Subgraph Studio, unlike WorldChain; do only after M4 rehearses)
 - [ ] Entities: Studio, Game, Edition, License, Transfer, RoyaltyPayment
 - [ ] web/ provenance page per token
 

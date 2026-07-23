@@ -17,7 +17,7 @@ The full pairing + play loop works end-to-end locally, with real crypto:
 3. Real pairing: launcher generates its device keypair in the **Windows
    Credential Manager** (first launch), shows a QR to `web/`'s `/pair` page,
    owner signs a SIWE message that EMBEDS the device pubkey (RainbowKit,
-   worldchain-sepolia), `ticketd` verifies + seals the content key to that
+   Base Sepolia since 07-23), `ticketd` verifies + seals the content key to that
    device (ECIES) + signs the ticket, launcher polls `GET /pending/:nonce`,
    re-verifies everything, writes `ticket.json` back onto the cartridge.
 4. Play: Rust unwraps the content key with the keystore device key, decrypts
@@ -33,9 +33,11 @@ Selftests (run them after any crypto change):
 ## What does NOT exist yet (priority order)
 
 1. **`contracts/` — EMPTY. This is the critical path now** (Helder owns it):
-   GameRegistry, GameLicense (ERC-721 + EIP-2981), World ID-gated mint,
-   Marketplace (reads `royaltyInfo()`, adds 5% platform fee, 85% to seller).
-   Deploy to World Chain Sepolia (chainId 4801).
+   GameRegistry, GameLicense (ERC-721 + EIP-2981), World ID-gated mint
+   (IDKit cloud verification — no native router on Base), Marketplace
+   (reads `royaltyInfo()`, adds 5% platform fee, 85% to seller).
+   Deploy to **Base Sepolia (chainId 84532)** — switched from World Chain
+   on 07-23, see decision log.
 2. Wiring the chain in: set `GAMELICENSE_ADDRESS` in `ticketd/.env`
    (activates the currently-SKIPPED `ownerOf()` check — it's an env var, not
    code) + implement the launcher's hybrid online check (2s timeout
@@ -169,3 +171,4 @@ cloud.walletconnect.com); extension wallets work without it.
 | 07-22 | Marketplace = separate website; launcher gets native read-only store | Wallet lives in the browser; browsing is data, only payment/signature needs the wallet |
 | 07-22 | RainbowKit + wagmi v2 | Raw injected connector = extension roulette; EIP-6963 modal + WalletConnect QR |
 | 07-22 | Subgraph → Substreams question opened | Studio dropped WorldChain subgraph support (see pre-flight) |
+| 07-23 | **Chain switch: World Chain Sepolia → BASE SEPOLIA (84532)** | Simpler tooling; subgraphs supported there (Substreams question dissolved); World ID falls back to IDKit cloud verification (no native router on Base — check bridged router, 45-min rule). Single source: shared/src/deployments.ts (CHAIN). All consumers updated (web wagmi, ticketd viem, launcher RPC, fixtures chainId) |
