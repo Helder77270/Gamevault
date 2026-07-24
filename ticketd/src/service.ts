@@ -91,12 +91,20 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
 
   // 4. The signer really owns the license (live on-chain check)
   if (licenseAddress) {
-    const owner = await client.readContract({
-      address: licenseAddress,
-      abi: ERC721_OWNER_OF,
-      functionName: "ownerOf",
-      args: [BigInt(p.tokenId)],
-    });
+    let owner: string;
+    try {
+      owner = await client.readContract({
+        address: licenseAddress,
+        abi: ERC721_OWNER_OF,
+        functionName: "ownerOf",
+        args: [BigInt(p.tokenId)],
+      });
+    } catch {
+      // ERC721NonexistentToken (or RPC failure) — either way, no proof of ownership
+      throw new Error(
+        `licence #${p.tokenId} introuvable on-chain — elle n'a pas encore été mintée (achat primaire requis)`,
+      );
+    }
     if (owner.toLowerCase() !== p.address.toLowerCase()) {
       throw new Error(`ownerOf(${p.tokenId}) is ${owner}, not the signer`);
     }
