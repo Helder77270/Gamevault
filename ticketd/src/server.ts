@@ -3,7 +3,9 @@
 //   GET  /health
 
 import { createServer } from "node:http";
-import { issueTicket, takePendingTicket } from "./service.ts";
+import { issueTicket, takePendingTicket, publishBuild } from "./service.ts";
+
+const MAX_UPLOAD = 100 * 1024 * 1024; // 100 MB
 
 const PORT = Number(process.env.PORT ?? 8787);
 
@@ -27,6 +29,25 @@ createServer(async (req, res) => {
   if (pendingMatch) {
     const ticket = takePendingTicket(pendingMatch[1]);
     return ticket ? send(200, ticket) : send(404, { error: "no ticket yet" });
+  }
+
+  // Studio publish: raw build bytes in -> encrypted + pinned, key stored
+  if (req.method === "POST" && req.url?.startsWith("/publish")) {
+    try {
+      const name = new URL(req.url, "http://localhost").searchParams.get("name") ?? "build.enc";
+      const chunks: Buffer[] = [];
+      let size = 0;
+      for await (const chunk of req) {
+        size += (chunk as Buffer).length;
+        if (size > MAX_UPLOAD) return send(413, { error: "build trop volumineux (100 Mo max)" });
+        chunks.push(chunk as Buffer);
+      }
+      const stored = await publishBuild(new Uint8Array(Buffer.concat(chunks)), name);
+      return send(200, stored);
+    } catch (e) {
+      console.warn(`⛔ publish refusé: ${e instanceof Error ? e.message : e}`);
+      return send(500, { error: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   if (req.method === "POST" && req.url === "/ticket") {

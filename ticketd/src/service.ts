@@ -3,11 +3,15 @@
 
 import { createPublicClient, http, verifyMessage } from "viem";
 import { baseSepolia } from "viem/chains";
-import { signTicket, wrapKey, hex, unhex, type SignedTicket, type Ticket } from "@gamevault/shared";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+import { signTicket, wrapKey, hex, unhex, encryptBuild, type SignedTicket, type Ticket } from "@gamevault/shared";
 import { parsePairingMessage } from "@gamevault/shared/siwe";
 import { DEV_PLATFORM_PRIV, devContentKeyFor } from "@gamevault/shared/devkeys";
-import { LICENSE_ABI } from "@gamevault/shared/abi";
+import { LICENSE_ABI, REGISTRY_ABI } from "@gamevault/shared/abi";
 import { DEPLOYMENTS } from "@gamevault/shared/deployments";
+import { putBuild, type StoredBuild } from "@gamevault/shared/storage";
 
 const TICKET_TTL_SEC = 30 * 24 * 3600; // 30-day offline window
 const MESSAGE_MAX_AGE_MS = 10 * 60 * 1000; // pairing message freshness
@@ -48,8 +52,36 @@ const client = createPublicClient({
   transport: http(process.env.RPC_URL),
 });
 
-/** Per-edition content keys, resolved via the token's on-chain edition.
- *  Dev: deterministic derivation. Production: random keys in a store. */
+// ── Content keys ─────────────────────────────────────────────────────────
+// Studio-published editions: random key generated at publish time, stored
+// BY BUILD CID (the edition id is unknown until the studio's on-chain tx;
+// the CID links the two). Dev editions 2/3: deterministic derivation.
+
+const KEYSTORE_PATH = join(dirname(fileURLToPath(import.meta.url)), "../data/content-keys.json");
+
+function keyStore(): Record<string, string> {
+  return existsSync(KEYSTORE_PATH) ? JSON.parse(readFileSync(KEYSTORE_PATH, "utf8")) : {};
+}
+
+function saveKey(cid: string, keyHex: string): void {
+  mkdirSync(dirname(KEYSTORE_PATH), { recursive: true });
+  const store = keyStore();
+  store[cid] = keyHex;
+  writeFileSync(KEYSTORE_PATH, JSON.stringify(store, null, 2));
+}
+
+/** Studio publish: encrypt with a fresh random key, pin to IPFS, remember
+ *  the key by CID. The studio then records the CID on-chain themselves. */
+export async function publishBuild(plain: Uint8Array, name: string): Promise<StoredBuild> {
+  const jwt = process.env.PINATA_JWT;
+  if (!jwt) throw new Error("PINATA_JWT manquant dans ticketd/.env");
+  const contentKey = crypto.getRandomValues(new Uint8Array(32));
+  const stored = await putBuild(encryptBuild(plain, contentKey), name, jwt);
+  saveKey(stored.cid, hex(contentKey));
+  console.log(`✔ build publié: ${name} -> ${stored.cid} (clé mémorisée)`);
+  return stored;
+}
+
 async function contentKeyFor(tokenId: string): Promise<Uint8Array> {
   let editionId = "2"; // runner fallback when no chain (selftest)
   if (licenseAddress) {
@@ -60,6 +92,17 @@ async function contentKeyFor(tokenId: string): Promise<Uint8Array> {
       args: [BigInt(tokenId)],
     });
     editionId = ed.toString();
+    // published edition? resolve its on-chain CID -> stored key
+    if (DEPLOYMENTS.gameRegistry) {
+      const edition = await client.readContract({
+        address: DEPLOYMENTS.gameRegistry as `0x${string}`,
+        abi: REGISTRY_ABI,
+        functionName: "editions",
+        args: [BigInt(editionId)],
+      });
+      const stored = keyStore()[edition[4]];
+      if (stored) return unhex(stored);
+    }
   }
   return devContentKeyFor(editionId);
 }

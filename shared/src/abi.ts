@@ -42,6 +42,86 @@ export const LICENSE_ABI = [
   },
 ] as const;
 
+export const REGISTRY_ABI = [
+  {
+    name: "registerStudio",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "name", type: "string" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "createGame",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "studioId", type: "uint256" },
+      { name: "title", type: "string" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "createEdition",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "gameId", type: "uint256" },
+      { name: "supply", type: "uint256" },
+      { name: "price", type: "uint256" },
+      { name: "royaltyBps", type: "uint96" },
+      { name: "buildCid", type: "string" },
+      { name: "buildHash", type: "bytes32" },
+    ],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "editions",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "editionId", type: "uint256" }],
+    outputs: [
+      { name: "gameId", type: "uint256" },
+      { name: "supply", type: "uint256" },
+      { name: "price", type: "uint256" },
+      { name: "royaltyBps", type: "uint96" },
+      { name: "buildCid", type: "string" },
+      { name: "buildHash", type: "bytes32" },
+      { name: "minted", type: "uint256" },
+    ],
+  },
+  {
+    name: "StudioRegistered",
+    type: "event",
+    inputs: [
+      { name: "studioId", type: "uint256", indexed: true },
+      { name: "owner", type: "address", indexed: true },
+      { name: "name", type: "string", indexed: false },
+    ],
+  },
+  {
+    name: "GameCreated",
+    type: "event",
+    inputs: [
+      { name: "gameId", type: "uint256", indexed: true },
+      { name: "studioId", type: "uint256", indexed: true },
+      { name: "title", type: "string", indexed: false },
+    ],
+  },
+  {
+    name: "EditionCreated",
+    type: "event",
+    inputs: [
+      { name: "editionId", type: "uint256", indexed: true },
+      { name: "gameId", type: "uint256", indexed: true },
+      { name: "supply", type: "uint256", indexed: false },
+      { name: "price", type: "uint256", indexed: false },
+      { name: "royaltyBps", type: "uint96", indexed: false },
+      { name: "buildCid", type: "string", indexed: false },
+      { name: "buildHash", type: "bytes32", indexed: false },
+    ],
+  },
+] as const;
+
 export const MARKETPLACE_ABI = [
   {
     name: "listings",

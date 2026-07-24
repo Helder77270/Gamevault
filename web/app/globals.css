@@ -110,3 +110,8 @@ pre.msg {
 .kv dd { margin: 0; font-family: var(--mono); overflow-wrap: anywhere; }
 .steps { color: var(--soft); font-size: 0.9rem; padding-left: 1.2rem; }
 .steps li { margin-bottom: 0.3rem; }
+
+input, input[type="file"] {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 4px;
+  color: var(--ink); font: inherit; padding: 0.45rem 0.7rem; margin: 0 0.4rem 0.4rem 0;
+}
