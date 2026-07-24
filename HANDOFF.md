@@ -118,6 +118,10 @@ not DRM"); platform key is a central signer (hackathon: throwaway in .env).
 - wagmi is v2 (RainbowKit peer requirement — do NOT upgrade to v3). The
   Next build ignores optional `@x402/*` / RN-storage deps via IgnorePlugin
   (see web/next.config.mjs) — coinbase connector baggage.
+- keyring (Rust) v3 keystores are OPT-IN features: without
+  `features = ["windows-native"]` it silently uses an in-memory mock and
+  the device key changes on every call (tickets sealed to ghost keys).
+  Read major-version changelogs of security-touching deps.
 
 ## Pre-flight findings (done)
 
