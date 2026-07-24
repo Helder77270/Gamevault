@@ -341,6 +341,12 @@ function libraryView(): string {
               <button class="btn play-btn" data-mount="${esc(g.cartridge.mount_point)}" ${canPlay ? "" : "disabled"}
                 title="${canPlay ? "Déchiffrer et lancer" : isOurs(g) ? "Ticket invalide ou build.enc manquant" : "Ticket scellé pour un autre appareil — appairez cette machine"}">▶ Jouer</button>
             </div>
+            ${
+              g.ticket && !isOurs(g)
+                ? `<div class="row"><button class="btn ghost pair-btn" data-mount="${esc(g.cartridge.mount_point)}">
+                     🔗 Appairer cette machine</button></div>`
+                : ""
+            }
             ${g.verdict === "authentic" ? marketControls(g) : ""}
           </div>
         </article>`;
@@ -686,7 +692,8 @@ function render(): void {
     <button class="tab ${state.route === "store" ? "active" : ""}" data-route="store">Boutique</button>
     <button class="tab ${state.route === "library" ? "active" : ""}" data-route="library">
       Bibliothèque ${state.session ? "" : `<span class="lock">🔒</span>`}
-    </button>`;
+    </button>
+    <button class="tab" id="refresh-btn" title="Rescanner cartouches + catalogue + marché maintenant">🔄</button>`;
 
   document.getElementById("session-zone")!.innerHTML = state.session
     ? `<div class="session-chip"><span class="dot"></span>${short(state.session.address)}
@@ -705,6 +712,7 @@ function render(): void {
       render();
     }),
   );
+  document.getElementById("refresh-btn")?.addEventListener("click", () => void forceRefresh());
   document.querySelectorAll<HTMLButtonElement>(".buy-btn").forEach((b) =>
     b.addEventListener("click", () => void openUrl(MARKETPLACE_URL)),
   );
@@ -766,6 +774,20 @@ function render(): void {
 // ── Scan loop ─────────────────────────────────────────────────
 
 let scanCount = 0;
+
+/** Manual refresh: cartridges + on-chain catalog + market state, now. */
+async function forceRefresh(): Promise<void> {
+  state.lastScan = "actualisation…";
+  render();
+  try {
+    state.catalog = await fetchOnchainCatalog(chainClient ?? undefined);
+  } catch {
+    /* offline — keep previous catalog */
+  }
+  await refresh();
+  await fetchMarketState();
+  render();
+}
 
 async function refresh(): Promise<void> {
   if (state.playing) return; // don't re-render (and destroy the iframe) mid-game
