@@ -24,7 +24,7 @@ contract Seed is Script {
         uint256 editionId = REGISTRY.createEdition(
             gameId,
             100, // supply
-            0.01 ether, // price
+            0.00001 ether, // price
             1000, // 10% royalty
             BUILD_CID,
             BUILD_HASH

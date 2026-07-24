@@ -25,7 +25,7 @@ export const MOCK_EDITIONS: Edition[] = [
     id: 1,
     title: "GameVault Runner",
     studio: "GameVault Dev",
-    price: "0.01",
+    price: "0.00001",
     royaltyPct: 10,
     minted: 3,
     supply: 100,
