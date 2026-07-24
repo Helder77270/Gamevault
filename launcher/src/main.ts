@@ -6,6 +6,7 @@ import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/sh
 import { MOCK_EDITIONS, type Edition } from "@gamevault/shared/catalog";
 import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
 import { fetchBuild } from "@gamevault/shared/storage";
+import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
 
 // Browsing is data — the full catalog renders natively in the launcher.
 // Only the PAYMENT needs the wallet, so only checkout jumps to the system
@@ -66,6 +67,10 @@ const state = {
   playError: "",
   /** per-mount-point download status message */
   dlStatus: {} as Record<string, string>,
+  /** on-chain market state per tokenId (10s refresh) */
+  market: {} as Record<string, { owner: string; seller: string; price: bigint }>,
+  /** tokenId whose sell-price input is open */
+  selling: null as string | null,
 };
 
 // ── Verification ──────────────────────────────────────────────
@@ -322,6 +327,7 @@ function libraryView(): string {
               <button class="btn play-btn" data-mount="${esc(g.cartridge.mount_point)}" ${canPlay ? "" : "disabled"}
                 title="${canPlay ? "Déchiffrer et lancer" : isOurs(g) ? "Ticket invalide ou build.enc manquant" : "Ticket scellé pour un autre appareil — appairez cette machine"}">▶ Jouer</button>
             </div>
+            ${marketControls(g)}
           </div>
         </article>`;
         })
@@ -358,6 +364,77 @@ async function downloadBuild(g: Game): Promise<void> {
     state.dlStatus[mount] = `Échec : ${String(e)}`;
   }
   await refresh();
+}
+
+// ── Live market state (launcher = the marketplace UI; the browser
+//    is only the signature surface, /trade) ─────────────────────
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+
+async function fetchMarketState(): Promise<void> {
+  if (!chainClient || !DEPLOYMENTS.gameLicense || !DEPLOYMENTS.marketplace) return;
+  for (const g of state.games) {
+    if (!g.ticket) continue;
+    const id = BigInt(g.ticket.tokenId);
+    try {
+      const [owner, listing] = await Promise.all([
+        chainClient.readContract({
+          address: DEPLOYMENTS.gameLicense,
+          abi: LICENSE_ABI,
+          functionName: "ownerOf",
+          args: [id],
+        }),
+        chainClient.readContract({
+          address: DEPLOYMENTS.marketplace,
+          abi: MARKETPLACE_ABI,
+          functionName: "listings",
+          args: [id],
+        }),
+      ]);
+      state.market[g.ticket.tokenId] = { owner, seller: listing[0], price: listing[1] };
+    } catch {
+      /* offline or token unknown — leave previous state */
+    }
+  }
+}
+
+function tradeUrl(action: "list" | "unlist" | "buy", tokenId: string, priceEth?: string): string {
+  const p = priceEth ? `&price=${encodeURIComponent(priceEth)}` : "";
+  return `${MARKETPLACE_URL}/trade?action=${action}&token=${encodeURIComponent(tokenId)}${p}`;
+}
+
+/** Market block for a library card: sell / unlist / resold states. */
+function marketControls(g: Game): string {
+  if (!g.ticket || !DEPLOYMENTS.marketplace) return "";
+  const m = state.market[g.ticket.tokenId];
+  if (!m) return "";
+  const t = g.ticket.tokenId;
+
+  // Resold: chain owner no longer matches the ticket — the buyer must pair
+  if (m.owner.toLowerCase() !== g.ticket.ownerAddress.toLowerCase()) {
+    return `<p class="market resold">⛔ Revendue on-chain — le nouveau propriétaire (${short(m.owner)})
+      doit appairer sa machine (bouton Appairer sur l'Accueil).</p>`;
+  }
+  if (!isOurs(g)) return "";
+
+  // Listed by us
+  if (m.seller.toLowerCase() !== ZERO_ADDR) {
+    return `<p class="market">🏷 En vente — <b>${formatEth(m.price)} ETH</b>
+      <button class="btn ghost unlist-btn" data-token="${esc(t)}">Retirer ↗</button></p>`;
+  }
+  // Not listed: sell flow (inline price input)
+  if (state.selling === t) {
+    return `<p class="market">
+      <input id="sell-price" type="text" inputmode="decimal" placeholder="prix en ETH" />
+      <button class="btn confirm-sell-btn" data-token="${esc(t)}">Mettre en vente ↗</button>
+      <button class="btn ghost cancel-sell-btn">Annuler</button></p>`;
+  }
+  return `<p class="market"><button class="btn ghost sell-btn" data-token="${esc(t)}">💰 Vendre</button></p>`;
+}
+
+function formatEth(wei: bigint): string {
+  const s = (Number(wei) / 1e18).toString();
+  return s.length > 10 ? s.slice(0, 10) : s;
 }
 
 // ── Hybrid owner check (security-map launch step 5) ───────────
@@ -528,9 +605,37 @@ function render(): void {
       if (g) void play(g);
     }),
   );
+  document.querySelectorAll<HTMLButtonElement>(".sell-btn").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.selling = b.dataset.token ?? null;
+      render();
+      document.getElementById("sell-price")?.focus();
+    }),
+  );
+  document.querySelector<HTMLButtonElement>(".cancel-sell-btn")?.addEventListener("click", () => {
+    state.selling = null;
+    render();
+  });
+  document.querySelectorAll<HTMLButtonElement>(".confirm-sell-btn").forEach((b) =>
+    b.addEventListener("click", () => {
+      const price = (document.getElementById("sell-price") as HTMLInputElement | null)?.value.trim() ?? "";
+      if (!/^\d*\.?\d+$/.test(price)) {
+        alert("Prix invalide — exemple : 0.00002");
+        return;
+      }
+      state.selling = null;
+      void openUrl(tradeUrl("list", b.dataset.token!, price));
+      render();
+    }),
+  );
+  document.querySelectorAll<HTMLButtonElement>(".unlist-btn").forEach((b) =>
+    b.addEventListener("click", () => void openUrl(tradeUrl("unlist", b.dataset.token!))),
+  );
 }
 
 // ── Scan loop ─────────────────────────────────────────────────
+
+let scanCount = 0;
 
 async function refresh(): Promise<void> {
   if (state.playing) return; // don't re-render (and destroy the iframe) mid-game
@@ -538,6 +643,8 @@ async function refresh(): Promise<void> {
     const found = await invoke<Cartridge[]>("scan_cartridges");
     state.games = found.map(judge);
     state.lastScan = `scan ${new Date().toLocaleTimeString()}`;
+    // market state every 5th scan (~10s) — the public RPC is not a websocket
+    if (scanCount++ % 5 === 0) await fetchMarketState();
   } catch (e) {
     state.lastScan = `erreur de scan : ${String(e)}`;
   }

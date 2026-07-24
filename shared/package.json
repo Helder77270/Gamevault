@@ -11,7 +11,8 @@
     "./catalog": "./src/catalog.ts",
     "./devkeys": "./src/devkeys.ts",
     "./deployments": "./src/deployments.ts",
-    "./storage": "./src/storage.ts"
+    "./storage": "./src/storage.ts",
+    "./abi": "./src/abi.ts"
   },
   "scripts": {
     "selftest": "node --experimental-strip-types src/selftest.ts",

@@ -118,6 +118,16 @@ h2.section {
 
 .store-note { color: var(--soft); font-size: 0.82rem; max-width: 44rem; margin-top: 1.2rem; }
 .dl-status { font-family: var(--mono); font-size: 0.78rem; color: var(--accent); margin-left: 0.5rem; }
+.market {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  border-top: 1px solid var(--line); margin: 0.6rem 0 0; padding-top: 0.6rem;
+  font-size: 0.85rem;
+}
+.market.resold { color: var(--bad); }
+.market input {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 4px;
+  color: var(--ink); font: inherit; padding: 0.4rem 0.6rem; width: 9rem;
+}
 
 /* ── Pairing modal ───────────────────────────────────── */
 .modal-overlay {
