@@ -12,9 +12,15 @@ import { fetchBuild } from "@gamevault/shared/storage";
 // browser (where the wallet lives). Same split Steam uses for its checkout.
 const MARKETPLACE_URL = "http://localhost:3000";
 
-// Platform public key embedded in the launcher (dev key for now — swapped
-// for the production key at ticketd deploy time).
-const PLATFORM_PUB = unhex("0x038d78e7c9ea67e401f6e9dbf8fccae4563dc21c0e3f569338012ba95c50700f2b");
+// Platform public keys embedded in the launcher. First: the real platform
+// key (matches ticketd/.env PLATFORM_PRIVKEY). Second: the deterministic
+// dev key, kept so local fixtures (make-dev-ticket) still verify.
+const PLATFORM_PUBS = [
+  unhex("0x0314864d3e6672b07e9a046c044f329cc38c7ad7c3af7075b4d54e273bddbc1149"),
+  unhex("0x038d78e7c9ea67e401f6e9dbf8fccae4563dc21c0e3f569338012ba95c50700f2b"),
+];
+
+const verifyPlatformSig = (t: SignedTicket): boolean => PLATFORM_PUBS.some((k) => verifyTicket(t, k));
 
 interface Cartridge {
   mount_point: string;
@@ -77,7 +83,7 @@ function judge(c: Cartridge): Game {
   } catch {
     return { cartridge: c, ticket: null, meta, verdict: "unreadable" };
   }
-  if (!verifyTicket(ticket, PLATFORM_PUB)) return { cartridge: c, ticket, meta, verdict: "tampered" };
+  if (!verifyPlatformSig(ticket)) return { cartridge: c, ticket, meta, verdict: "tampered" };
   if (isExpired(ticket)) return { cartridge: c, ticket, meta, verdict: "expired" };
   return { cartridge: c, ticket, meta, verdict: "authentic" };
 }
@@ -134,7 +140,7 @@ function stopPolling(): void {
 async function completePairing(g: Game, ticket: SignedTicket): Promise<void> {
   stopPolling();
   // Trust nothing: platform signature + sealed to OUR device key
-  if (!verifyTicket(ticket, PLATFORM_PUB) || ticket.devicePubKey.toLowerCase() !== state.devicePubKey.toLowerCase()) {
+  if (!verifyPlatformSig(ticket) || ticket.devicePubKey.toLowerCase() !== state.devicePubKey.toLowerCase()) {
     if (state.pairing) {
       state.pairing.status = "error";
       state.pairing.error = "Ticket reçu invalide ou scellé pour un autre appareil.";
