@@ -8,11 +8,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./siwe": "./src/siwe.ts",
-    "./catalog": "./src/catalog.ts",
     "./devkeys": "./src/devkeys.ts",
     "./deployments": "./src/deployments.ts",
     "./storage": "./src/storage.ts",
-    "./abi": "./src/abi.ts"
+    "./abi": "./src/abi.ts",
+    "./registryCatalog": "./src/registryCatalog.ts"
   },
   "scripts": {
     "selftest": "node --experimental-strip-types src/selftest.ts",
@@ -21,6 +21,7 @@
   "dependencies": {
     "@noble/ciphers": "^1.0.0",
     "@noble/curves": "^1.6.0",
-    "@noble/hashes": "^1.5.0"
+    "@noble/hashes": "^1.5.0",
+    "viem": "^2.55.8"
   }
 }

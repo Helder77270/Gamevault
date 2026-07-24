@@ -10,7 +10,7 @@ export default defineConfig(async () => ({
     alias: {
       // Import shared/ as first-party TS source so Vite transpiles it directly.
       // Subpath entries MUST come before the bare one (order matters).
-      "@gamevault/shared/catalog": fileURLToPath(new URL("../shared/src/catalog.ts", import.meta.url)),
+      "@gamevault/shared/registryCatalog": fileURLToPath(new URL("../shared/src/registryCatalog.ts", import.meta.url)),
       "@gamevault/shared/deployments": fileURLToPath(new URL("../shared/src/deployments.ts", import.meta.url)),
       "@gamevault/shared/storage": fileURLToPath(new URL("../shared/src/storage.ts", import.meta.url)),
       "@gamevault/shared/abi": fileURLToPath(new URL("../shared/src/abi.ts", import.meta.url)),

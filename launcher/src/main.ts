@@ -3,7 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import QRCode from "qrcode";
 import { createPublicClient, http } from "viem";
 import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/shared";
-import { MOCK_EDITIONS, type Edition } from "@gamevault/shared/catalog";
+import { fetchOnchainCatalog, BLURBS, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
 import { fetchBuild } from "@gamevault/shared/storage";
 import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
@@ -42,7 +42,7 @@ interface Volume {
 interface Game {
   cartridge: Cartridge;
   ticket: SignedTicket | null;
-  meta: { title?: string; studio?: string };
+  meta: { title?: string; studio?: string; edition?: string };
   verdict: Verdict;
 }
 
@@ -78,7 +78,9 @@ const state = {
   /** tokenId whose sell-price input is open */
   selling: null as string | null,
   /** SD-card install flow in progress */
-  installing: null as { edition: Edition; volumes: Volume[]; status: string } | null,
+  installing: null as { edition: OnchainEdition; volumes: Volume[]; status: string } | null,
+  /** on-chain catalog (editionCount enumeration) — no mock data */
+  catalog: [] as OnchainEdition[],
 };
 
 // ── Verification ──────────────────────────────────────────────
@@ -237,6 +239,7 @@ function ticketDetails(g: Game): string {
       <dt>Clé scellée (ECIES)</dt><dd>${short(t.wrappedContentKey, 16)}</dd>
       <dt>Expire le</dt><dd>${new Date(t.expiresAt * 1000).toLocaleString()}</dd>
       <dt>Build chiffré</dt><dd>${g.cartridge.has_build ? "présent" : "build.enc manquant"}</dd>
+      <dt>Édition</dt><dd>#${esc(g.meta.edition ?? editionFor(g)?.editionId ?? "?")} · chaîne ${t.chainId}</dd>
     </dl>`;
 }
 
@@ -352,8 +355,11 @@ function libraryView(): string {
 // hash (the gateway is untrusted), rewrite it on the cartridge. The
 // ticket — not the bytes — is what makes it playable.
 
-function editionFor(g: Game): Edition | undefined {
-  return MOCK_EDITIONS.find((e) => e.buildCid && e.title === (g.meta.title ?? ""));
+function editionFor(g: Game): OnchainEdition | undefined {
+  return (
+    state.catalog.find((e) => e.editionId === g.meta.edition) ??
+    state.catalog.find((e) => e.title === (g.meta.title ?? ""))
+  );
 }
 
 async function downloadBuild(g: Game): Promise<void> {
@@ -381,7 +387,7 @@ async function downloadBuild(g: Game): Promise<void> {
 // THE product flow: blank card in the reader -> verified encrypted build
 // written onto it + a placeholder ticket the pairing flow replaces.
 
-async function openInstall(edition: Edition): Promise<void> {
+async function openInstall(edition: OnchainEdition): Promise<void> {
   const volumes = await invoke<Volume[]>("list_removable_volumes");
   state.installing = { edition, volumes, status: "" };
   render();
@@ -603,40 +609,46 @@ function playerView(g: Game): string {
 }
 
 function storeView(): string {
+  if (!state.catalog.length) {
+    return `<h2 class="section">Boutique</h2>
+      <p class="waiting">${DEPLOYMENTS.gameRegistry ? "Lecture du catalogue on-chain…" : "Contrats non déployés — aucun catalogue."}</p>`;
+  }
   return `
-    <h2 class="section">Boutique</h2>
+    <h2 class="section">Boutique — ${state.catalog.length} édition(s) on-chain</h2>
     <div class="game-grid">
-      ${MOCK_EDITIONS.map((e) => {
-        const owned = state.games.some((g) => g.meta.title === e.title);
-        return `
+      ${state.catalog
+        .map((e) => {
+          const owned = state.games.some(
+            (g) => g.verdict === "authentic" && (g.meta.edition === e.editionId || g.meta.title === e.title),
+          );
+          const soldOut = e.minted >= e.supply;
+          return `
         <article class="game-card">
           <div class="cover">${esc(e.title.charAt(0))}</div>
           <div class="body">
             <h3>${esc(e.title)}</h3>
-            <span class="studio">${esc(e.studio)} · royalties ${e.royaltyPct} % · ${e.minted}/${e.supply} mintés</span>
-            <span class="studio">${esc(e.blurb)}</span>
+            <span class="studio">${esc(e.studio)} · royalties ${e.royaltyBps / 100} % · ${e.minted}/${e.supply} mintés</span>
+            ${BLURBS[e.editionId] ? `<span class="studio">${esc(BLURBS[e.editionId])}</span>` : ""}
+            <span class="debug">éd. #${e.editionId} · jeu #${e.gameId} · studio #${e.studioId} · cid ${esc(e.buildCid.slice(0, 10))}…${esc(e.buildCid.slice(-4))}</span>
             <div class="row">
-              <span class="price">${e.price} ETH</span>
+              <span class="price">${formatEth(e.priceWei)} ETH</span>
               ${
                 owned
                   ? `<span class="badge ok">✔ possédé</span>`
-                  : `<button class="btn buy-btn" ${e.available ? "" : "disabled"}
-                       title="${e.available ? "Le paiement s'ouvre dans le navigateur — là où vit votre wallet" : "Bientôt disponible"}">
+                  : `<button class="btn buy-btn" ${soldOut ? "disabled" : ""}
+                       title="${soldOut ? "Épuisé" : "Le paiement s'ouvre dans le navigateur — là où vit votre wallet"}">
                        Acheter ↗</button>`
               }
             </div>
-            ${
-              e.buildCid
-                ? `<div class="row"><button class="btn ghost install-btn" data-edition="${e.id}">
-                     💾 Installer sur une carte SD</button></div>`
-                : ""
-            }
+            <div class="row"><button class="btn ghost install-btn" data-edition="${esc(e.editionId)}">
+              💾 Installer sur une carte SD</button></div>
           </div>
         </article>`;
-      }).join("")}
+        })
+        .join("")}
     </div>
-    <p class="store-note">Catalogue affiché nativement (données partagées avec le site). Seul le paiement bascule
-       vers le navigateur : c'est lui qui détient votre wallet — le launcher, lui, ne touche jamais votre clé privée.</p>`;
+    <p class="store-note">Catalogue lu directement sur Base Sepolia (GameRegistry ${esc(short(DEPLOYMENTS.gameRegistry || ""))}) —
+       aucune donnée factice. Seul le paiement bascule vers le navigateur : c'est lui qui détient votre wallet.</p>`;
 }
 
 const VIEWS: Record<Route, () => string> = { home: homeView, store: storeView, library: libraryView };
@@ -745,7 +757,7 @@ function render(): void {
   );
   document.querySelectorAll<HTMLButtonElement>(".install-btn").forEach((b) =>
     b.addEventListener("click", () => {
-      const e = MOCK_EDITIONS.find((x) => x.id === Number(b.dataset.edition));
+      const e = state.catalog.find((x) => x.editionId === b.dataset.edition);
       if (e) void openInstall(e);
     }),
   );
@@ -761,7 +773,15 @@ async function refresh(): Promise<void> {
     const found = await invoke<Cartridge[]>("scan_cartridges");
     state.games = found.map(judge);
     state.lastScan = `scan ${new Date().toLocaleTimeString()}`;
-    // market state every 5th scan (~10s) — the public RPC is not a websocket
+    // market state every 5th scan (~10s), catalog every 15th (~30s) —
+    // the public RPC is not a websocket
+    if (scanCount % 15 === 0) {
+      void fetchOnchainCatalog(chainClient ?? undefined)
+        .then((c) => {
+          state.catalog = c;
+        })
+        .catch(() => {});
+    }
     if (scanCount++ % 5 === 0) await fetchMarketState();
   } catch (e) {
     state.lastScan = `erreur de scan : ${String(e)}`;

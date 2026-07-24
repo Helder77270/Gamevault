@@ -124,6 +124,7 @@ h2.section {
   font-size: 0.85rem;
 }
 .market.resold { color: var(--bad); }
+.debug { font-family: var(--mono); font-size: 0.7rem; color: #6a7080; overflow-wrap: anywhere; }
 .market input {
   background: var(--surface); border: 1px solid var(--line); border-radius: 4px;
   color: var(--ink); font: inherit; padding: 0.4rem 0.6rem; width: 9rem;

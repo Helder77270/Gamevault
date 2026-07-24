@@ -40,6 +40,15 @@ export const LICENSE_ABI = [
     inputs: [{ name: "tokenId", type: "uint256" }],
     outputs: [{ type: "uint256" }],
   },
+  {
+    name: "LicenseMinted",
+    type: "event",
+    inputs: [
+      { name: "tokenId", type: "uint256", indexed: true },
+      { name: "editionId", type: "uint256", indexed: true },
+      { name: "to", type: "address", indexed: true },
+    ],
+  },
 ] as const;
 
 export const REGISTRY_ABI = [
@@ -87,6 +96,33 @@ export const REGISTRY_ABI = [
       { name: "buildCid", type: "string" },
       { name: "buildHash", type: "bytes32" },
       { name: "minted", type: "uint256" },
+    ],
+  },
+  {
+    name: "editionCount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "games",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "gameId", type: "uint256" }],
+    outputs: [
+      { name: "studioId", type: "uint256" },
+      { name: "title", type: "string" },
+    ],
+  },
+  {
+    name: "studios",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "studioId", type: "uint256" }],
+    outputs: [
+      { name: "owner", type: "address" },
+      { name: "name", type: "string" },
     ],
   },
   {
