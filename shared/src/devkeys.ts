@@ -13,7 +13,14 @@ export const DEV_PLATFORM_PUB = secp256k1.getPublicKey(DEV_PLATFORM_PRIV, true);
 export const DEV_DEVICE_PRIV = sha256(utf8ToBytes("gamevault dev device key v1"));
 export const DEV_DEVICE_PUB = secp256k1.getPublicKey(DEV_DEVICE_PRIV, true);
 
-// Dev content key: deterministic so make-dev-ticket (encrypts build.enc) and
-// ticketd (wraps the key into tickets) agree without passing files around.
+// Dev content keys: deterministic so publish (encrypts builds) and ticketd
+// (wraps keys into tickets) agree without passing files around.
 // Production: random per-edition keys in ticketd's store.
 export const DEV_CONTENT_KEY = sha256(utf8ToBytes("gamevault dev content key v1"));
+
+/** Per-edition dev content key. Edition 2 = the original runner key
+ *  (pinned before this scheme existed); later editions derive from their id. */
+export function devContentKeyFor(editionId: string): Uint8Array {
+  if (editionId === "2") return DEV_CONTENT_KEY;
+  return sha256(utf8ToBytes(`gamevault dev content key ed${editionId}`));
+}

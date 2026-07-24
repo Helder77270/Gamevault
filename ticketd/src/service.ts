@@ -5,7 +5,8 @@ import { createPublicClient, http, verifyMessage } from "viem";
 import { baseSepolia } from "viem/chains";
 import { signTicket, wrapKey, hex, unhex, type SignedTicket, type Ticket } from "@gamevault/shared";
 import { parsePairingMessage } from "@gamevault/shared/siwe";
-import { DEV_PLATFORM_PRIV, DEV_CONTENT_KEY } from "@gamevault/shared/devkeys";
+import { DEV_PLATFORM_PRIV, devContentKeyFor } from "@gamevault/shared/devkeys";
+import { LICENSE_ABI } from "@gamevault/shared/abi";
 import { DEPLOYMENTS } from "@gamevault/shared/deployments";
 
 const TICKET_TTL_SEC = 30 * 24 * 3600; // 30-day offline window
@@ -47,10 +48,20 @@ const client = createPublicClient({
   transport: http(process.env.RPC_URL),
 });
 
-/** Per-edition content keys. Dev: the deterministic fixture key. Production:
- *  random keys in a store, one per edition. */
-function contentKeyFor(_contract: string, _tokenId: string): Uint8Array {
-  return DEV_CONTENT_KEY;
+/** Per-edition content keys, resolved via the token's on-chain edition.
+ *  Dev: deterministic derivation. Production: random keys in a store. */
+async function contentKeyFor(tokenId: string): Promise<Uint8Array> {
+  let editionId = "2"; // runner fallback when no chain (selftest)
+  if (licenseAddress) {
+    const ed = await client.readContract({
+      address: licenseAddress,
+      abi: LICENSE_ABI,
+      functionName: "editionOf",
+      args: [BigInt(tokenId)],
+    });
+    editionId = ed.toString();
+  }
+  return devContentKeyFor(editionId);
 }
 
 // --- Issuance ---------------------------------------------------------------
@@ -120,7 +131,7 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
     chainId: p.chainId,
     ownerAddress: p.address,
     devicePubKey: p.devicePubKey,
-    wrappedContentKey: hex(wrapKey(contentKeyFor(p.contract, p.tokenId), unhex(p.devicePubKey))),
+    wrappedContentKey: hex(wrapKey(await contentKeyFor(p.tokenId), unhex(p.devicePubKey))),
     issuedAt: now,
     expiresAt: now + TICKET_TTL_SEC,
   };

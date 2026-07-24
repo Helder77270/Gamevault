@@ -32,7 +32,7 @@ console.log(`Signed dev ticket written (expires ${new Date(ticket.expiresAt * 10
 
 // Encrypt the game build with the SAME content key the ticket wraps —
 // ticket and build.enc must always be regenerated together.
-const bundle = join(root, "game/dist/index.html");
+const bundle = join(root, "game/dist/runner.html");
 if (existsSync(bundle)) {
   const enc = encryptBuild(readFileSync(bundle), contentKey);
   writeFileSync(join(gv, "build.enc"), enc);

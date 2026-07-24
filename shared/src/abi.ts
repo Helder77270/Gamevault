@@ -33,6 +33,13 @@ export const LICENSE_ABI = [
     inputs: [{ name: "editionId", type: "uint256" }],
     outputs: [{ type: "uint256" }],
   },
+  {
+    name: "editionOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ type: "uint256" }],
+  },
 ] as const;
 
 export const MARKETPLACE_ABI = [

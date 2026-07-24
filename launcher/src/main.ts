@@ -31,7 +31,13 @@ interface Cartridge {
   has_build: boolean;
 }
 
-type Verdict = "authentic" | "tampered" | "expired" | "unreadable";
+type Verdict = "authentic" | "tampered" | "expired" | "unreadable" | "unpaired";
+
+interface Volume {
+  mount_point: string;
+  volume_label: string;
+  has_gamevault: boolean;
+}
 
 interface Game {
   cartridge: Cartridge;
@@ -71,6 +77,8 @@ const state = {
   market: {} as Record<string, { owner: string; seller: string; price: bigint }>,
   /** tokenId whose sell-price input is open */
   selling: null as string | null,
+  /** SD-card install flow in progress */
+  installing: null as { edition: Edition; volumes: Volume[]; status: string } | null,
 };
 
 // ── Verification ──────────────────────────────────────────────
@@ -88,6 +96,8 @@ function judge(c: Cartridge): Game {
   } catch {
     return { cartridge: c, ticket: null, meta, verdict: "unreadable" };
   }
+  // Freshly installed cartridge: placeholder ticket awaiting first pairing
+  if (ticket.platformSignature === "0x") return { cartridge: c, ticket, meta, verdict: "unpaired" };
   if (!verifyPlatformSig(ticket)) return { cartridge: c, ticket, meta, verdict: "tampered" };
   if (isExpired(ticket)) return { cartridge: c, ticket, meta, verdict: "expired" };
   return { cartridge: c, ticket, meta, verdict: "authentic" };
@@ -192,6 +202,7 @@ const VERDICT_BADGE: Record<Verdict, string> = {
   tampered: `<span class="badge bad">⛔ signature invalide</span>`,
   expired: `<span class="badge warn">⏳ expiré — renouvellement en ligne requis</span>`,
   unreadable: `<span class="badge bad">ticket illisible</span>`,
+  unpaired: `<span class="badge warn">🆕 installée — à appairer</span>`,
 };
 
 function pairingView(p: Pairing): string {
@@ -327,7 +338,7 @@ function libraryView(): string {
               <button class="btn play-btn" data-mount="${esc(g.cartridge.mount_point)}" ${canPlay ? "" : "disabled"}
                 title="${canPlay ? "Déchiffrer et lancer" : isOurs(g) ? "Ticket invalide ou build.enc manquant" : "Ticket scellé pour un autre appareil — appairez cette machine"}">▶ Jouer</button>
             </div>
-            ${marketControls(g)}
+            ${g.verdict === "authentic" ? marketControls(g) : ""}
           </div>
         </article>`;
         })
@@ -364,6 +375,87 @@ async function downloadBuild(g: Game): Promise<void> {
     state.dlStatus[mount] = `Échec : ${String(e)}`;
   }
   await refresh();
+}
+
+// ── Install onto a real SD/USB card ───────────────────────────
+// THE product flow: blank card in the reader -> verified encrypted build
+// written onto it + a placeholder ticket the pairing flow replaces.
+
+async function openInstall(edition: Edition): Promise<void> {
+  const volumes = await invoke<Volume[]>("list_removable_volumes");
+  state.installing = { edition, volumes, status: "" };
+  render();
+}
+
+async function installTo(volume: Volume): Promise<void> {
+  const inst = state.installing;
+  if (!inst?.edition.buildCid) return;
+  const tokenId = (document.getElementById("install-token") as HTMLInputElement | null)?.value.trim() || "1";
+  inst.status = `Téléchargement IPFS + vérification d'intégrité…`;
+  render();
+  try {
+    const bytes = await fetchBuild(inst.edition.buildCid, inst.edition.buildSha256);
+    inst.status = `Écriture sur ${volume.mount_point}…`;
+    render();
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    const meta = {
+      title: inst.edition.title,
+      studio: inst.edition.studio,
+      edition: inst.edition.editionId,
+      version: "0.1.0",
+    };
+    // Placeholder ticket: carries tokenId+contract so the pairing flow can
+    // run; platformSignature "0x" marks it as awaiting its real ticket.
+    const placeholder = {
+      tokenId,
+      contract: DEPLOYMENTS.gameLicense || "0x0000000000000000000000000000000000000001",
+      chainId: CHAIN.id,
+      ownerAddress: ZERO_ADDR,
+      devicePubKey: "0x",
+      wrappedContentKey: "0x",
+      issuedAt: 0,
+      expiresAt: 0,
+      platformSignature: "0x",
+    };
+    await invoke("install_cartridge", {
+      mountPoint: volume.mount_point,
+      metaJson: JSON.stringify(meta, null, 2),
+      ticketJson: JSON.stringify(placeholder, null, 2),
+      dataB64: btoa(bin),
+    });
+    state.installing = null;
+    state.route = "home"; // the new cartridge appears there within 2s
+  } catch (e) {
+    inst.status = `Échec : ${String(e)}`;
+  }
+  await refresh();
+}
+
+function installView(inst: NonNullable<typeof state.installing>): string {
+  return `
+    <div class="modal-overlay">
+      <div class="modal">
+        <h2>💾 Installer « ${esc(inst.edition.title)} » sur une carte</h2>
+        <p>Le build chiffré est téléchargé depuis IPFS, vérifié contre le hash publié, puis écrit sur le
+           support. Il faudra ensuite appairer la machine (licence requise).</p>
+        <p><label>N° de licence possédée (tokenId) :
+          <input id="install-token" type="text" inputmode="numeric" value="1" style="width:5rem" /></label></p>
+        ${
+          inst.volumes.length
+            ? inst.volumes
+                .map(
+                  (v) => `<button class="btn install-target-btn" data-mount="${esc(v.mount_point)}">
+                    ${esc(v.volume_label || "Volume")} — ${esc(v.mount_point)}
+                    ${v.has_gamevault ? " (cartouche existante — sera remplacée)" : ""}</button>`,
+                )
+                .join("")
+            : `<p class="hint">Aucun volume amovible détecté — insérez une carte SD ou une clé USB.</p>`
+        }
+        ${inst.status ? `<p class="hint">${esc(inst.status)}</p>` : ""}
+        <button class="btn ghost" id="cancel-install">Annuler</button>
+      </div>
+    </div>`;
 }
 
 // ── Live market state (launcher = the marketplace UI; the browser
@@ -533,6 +625,12 @@ function storeView(): string {
                        Acheter ↗</button>`
               }
             </div>
+            ${
+              e.buildCid
+                ? `<div class="row"><button class="btn ghost install-btn" data-edition="${e.id}">
+                     💾 Installer sur une carte SD</button></div>`
+                : ""
+            }
           </div>
         </article>`;
       }).join("")}
@@ -555,6 +653,20 @@ function render(): void {
     document
       .getElementById("open-pair-url")
       ?.addEventListener("click", () => void openUrl(state.pairing!.url));
+    return;
+  }
+  if (state.installing) {
+    document.getElementById("view")!.innerHTML = installView(state.installing);
+    document.getElementById("cancel-install")?.addEventListener("click", () => {
+      state.installing = null;
+      render();
+    });
+    document.querySelectorAll<HTMLButtonElement>(".install-target-btn").forEach((b) =>
+      b.addEventListener("click", () => {
+        const v = state.installing?.volumes.find((x) => x.mount_point === b.dataset.mount);
+        if (v) void installTo(v);
+      }),
+    );
     return;
   }
   document.getElementById("tabs")!.innerHTML = `
@@ -630,6 +742,12 @@ function render(): void {
   );
   document.querySelectorAll<HTMLButtonElement>(".unlist-btn").forEach((b) =>
     b.addEventListener("click", () => void openUrl(tradeUrl("unlist", b.dataset.token!))),
+  );
+  document.querySelectorAll<HTMLButtonElement>(".install-btn").forEach((b) =>
+    b.addEventListener("click", () => {
+      const e = MOCK_EDITIONS.find((x) => x.id === Number(b.dataset.edition));
+      if (e) void openInstall(e);
+    }),
   );
 }
 

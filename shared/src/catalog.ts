@@ -18,6 +18,8 @@ export interface Edition {
   buildCid?: string;
   /** 0x-hex sha256 of build.enc — integrity check for re-downloads */
   buildSha256?: string;
+  /** On-chain edition id in GameRegistry (content-key derivation + pairing) */
+  editionId?: string;
 }
 
 export const MOCK_EDITIONS: Edition[] = [
@@ -33,6 +35,21 @@ export const MOCK_EDITIONS: Edition[] = [
     blurb: "Ramassez 10 pièces, évitez les rouges. L'édition de développement.",
     buildCid: "QmT1xbCCRG3sc3Gju8AGrdXvfnUMuXftmBLjF1uw5vEF1U",
     buildSha256: "0x701338ec186baa41df25c5be7983e009602a012d4ff7952fbe8bc910bff3e7cb",
+    editionId: "2",
+  },
+  {
+    id: 4,
+    title: "GameVault Snake",
+    studio: "GameVault Dev",
+    price: "0.00001",
+    royaltyPct: 10,
+    minted: 0,
+    supply: 100,
+    available: true,
+    blurb: "Le classique, 15 pommes pour gagner. Deuxième jeu du catalogue.",
+    buildCid: "QmT7MtaYwCSweKmVL9ETMncXcEmHe5UB4twUNNLMWcAr8w",
+    buildSha256: "0x9c4c641b96401f45f888ee3690fcb6089335dc6e156812b9924080172943414f",
+    editionId: "3",
   },
   {
     id: 2,

@@ -30,6 +30,38 @@ fn read_cartridge(root: &Path, label: String) -> Option<Cartridge> {
     })
 }
 
+#[derive(Serialize, Clone, Debug)]
+pub struct Volume {
+    pub mount_point: String,
+    pub volume_label: String,
+    /// true if a /gamevault/ folder already exists on it
+    pub has_gamevault: bool,
+}
+
+/// Every removable volume, cartridge or blank — install targets.
+pub fn list_removable() -> Vec<Volume> {
+    let mut found = Vec::new();
+    if let Ok(dev_dir) = std::env::var("GAMEVAULT_DEV_MEDIA_DIR") {
+        let p = PathBuf::from(&dev_dir);
+        found.push(Volume {
+            mount_point: p.to_string_lossy().into_owned(),
+            volume_label: "DEV".into(),
+            has_gamevault: p.join("gamevault").is_dir(),
+        });
+    }
+    for disk in Disks::new_with_refreshed_list().list() {
+        if !disk.is_removable() {
+            continue;
+        }
+        found.push(Volume {
+            mount_point: disk.mount_point().to_string_lossy().into_owned(),
+            volume_label: disk.name().to_string_lossy().into_owned(),
+            has_gamevault: disk.mount_point().join("gamevault").is_dir(),
+        });
+    }
+    found
+}
+
 pub fn scan() -> Vec<Cartridge> {
     let mut found = Vec::new();
 

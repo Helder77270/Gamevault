@@ -60,6 +60,37 @@ fn get_device_pubkey() -> Result<String, String> {
     crypto::device_pubkey_hex()
 }
 
+/// Every removable volume (cartridge or blank) — install targets.
+#[tauri::command]
+fn list_removable_volumes() -> Vec<media::Volume> {
+    media::list_removable()
+}
+
+/// THE physical moment: write a full /gamevault/ payload onto an SD/USB
+/// volume — verified encrypted build + metadata + a placeholder ticket
+/// that the pairing flow will replace with a real one.
+#[tauri::command]
+fn install_cartridge(
+    mount_point: String,
+    meta_json: String,
+    ticket_json: String,
+    data_b64: String,
+) -> Result<(), String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_b64)
+        .map_err(|e| format!("base64: {e}"))?;
+    serde_json::from_str::<Value>(&meta_json).map_err(|e| format!("meta invalide: {e}"))?;
+    serde_json::from_str::<Value>(&ticket_json).map_err(|e| format!("ticket invalide: {e}"))?;
+
+    let gv = Path::new(&mount_point).join("gamevault");
+    std::fs::create_dir_all(&gv).map_err(|e| format!("création dossier: {e}"))?;
+    std::fs::write(gv.join("build.enc"), bytes).map_err(|e| format!("build.enc: {e}"))?;
+    std::fs::write(gv.join("meta.json"), meta_json).map_err(|e| format!("meta.json: {e}"))?;
+    std::fs::write(gv.join("ticket.json"), ticket_json).map_err(|e| format!("ticket.json: {e}"))?;
+    Ok(())
+}
+
 /// Write a re-downloaded build.enc onto the cartridge (P3: verified
 /// re-download). Integrity was already checked TS-side against the
 /// published sha256; the bytes are still just public encrypted data.
@@ -110,7 +141,9 @@ pub fn run() {
             stop_game,
             get_device_pubkey,
             write_ticket,
-            write_build
+            write_build,
+            list_removable_volumes,
+            install_cartridge
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
