@@ -1,6 +1,9 @@
 {
   "name": "gamevault",
   "private": true,
+  "scripts": {
+    "dev": "dev.cmd"
+  },
   "workspaces": [
     "shared",
     "game",
