@@ -402,7 +402,31 @@ async function openInstall(edition: OnchainEdition): Promise<void> {
 async function installTo(volume: Volume): Promise<void> {
   const inst = state.installing;
   if (!inst?.edition.buildCid) return;
-  const tokenId = (document.getElementById("install-token") as HTMLInputElement | null)?.value.trim() || "1";
+  const tokenId = (document.getElementById("install-token") as HTMLInputElement | null)?.value.trim() ?? "";
+  if (!/^\d+$/.test(tokenId)) {
+    inst.status = "Indiquez le n° de votre licence (affiché à l'achat : « token #N minté »)";
+    return render();
+  }
+  // Guard: the licence must belong to THIS edition, or pairing would seal
+  // the wrong game's content key (undecipherable build, cryptic error)
+  if (chainClient && DEPLOYMENTS.gameLicense) {
+    try {
+      const ed = await chainClient.readContract({
+        address: DEPLOYMENTS.gameLicense,
+        abi: LICENSE_ABI,
+        functionName: "editionOf",
+        args: [BigInt(tokenId)],
+      });
+      if (ed.toString() !== inst.edition.editionId) {
+        const other = state.catalog.find((c) => c.editionId === ed.toString());
+        inst.status = `⛔ Le token #${tokenId} est une licence de l'édition #${ed}${other ? ` (« ${other.title} »)` : ""}, pas de « ${inst.edition.title} » (éd. #${inst.edition.editionId}).`;
+        return render();
+      }
+    } catch {
+      inst.status = `⛔ Token #${tokenId} introuvable on-chain — achetez d'abord la licence sur la marketplace.`;
+      return render();
+    }
+  }
   inst.status = `Téléchargement IPFS + vérification d'intégrité…`;
   render();
   try {
@@ -451,8 +475,8 @@ function installView(inst: NonNullable<typeof state.installing>): string {
         <h2>💾 Installer « ${esc(inst.edition.title)} » sur une carte</h2>
         <p>Le build chiffré est téléchargé depuis IPFS, vérifié contre le hash publié, puis écrit sur le
            support. Il faudra ensuite appairer la machine (licence requise).</p>
-        <p><label>N° de licence possédée (tokenId) :
-          <input id="install-token" type="text" inputmode="numeric" value="1" style="width:5rem" /></label></p>
+        <p><label>N° de votre licence (tokenId, affiché à l'achat) :
+          <input id="install-token" type="text" inputmode="numeric" placeholder="ex. 2" style="width:6rem" /></label></p>
         ${
           inst.volumes.length
             ? inst.volumes
