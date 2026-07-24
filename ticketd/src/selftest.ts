@@ -4,11 +4,14 @@
 // device key, yielding the exact key that encrypted the game build.
 // Run: npm run selftest -w ticketd
 
+process.env.GAMEVAULT_SKIP_OWNER_CHECK = "1"; // no chain in the selftest
+
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { verifyTicket, unwrapKey, unhex, hex } from "@gamevault/shared";
 import { buildPairingMessage } from "@gamevault/shared/siwe";
 import { DEV_PLATFORM_PUB, DEV_DEVICE_PRIV, DEV_DEVICE_PUB, DEV_CONTENT_KEY } from "@gamevault/shared/devkeys";
-import { issueTicket } from "./service.ts";
+
+const { issueTicket } = await import("./service.ts"); // after the env flag
 
 let failures = 0;
 const check = (label: string, ok: boolean) => {

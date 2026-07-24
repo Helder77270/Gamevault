@@ -30,11 +30,16 @@ function platformPriv(): Uint8Array {
   return DEV_PLATFORM_PRIV;
 }
 
-const licenseAddress = (process.env.GAMELICENSE_ADDRESS || DEPLOYMENTS.gameLicense || undefined) as
-  | `0x${string}`
-  | undefined;
+// GAMEVAULT_SKIP_OWNER_CHECK=1 is for the selftest only (no chain there)
+const skipOwnerCheck = process.env.GAMEVAULT_SKIP_OWNER_CHECK === "1";
+const licenseAddress =
+  !skipOwnerCheck && (process.env.GAMELICENSE_ADDRESS || DEPLOYMENTS.gameLicense)
+    ? ((process.env.GAMELICENSE_ADDRESS || DEPLOYMENTS.gameLicense) as `0x${string}`)
+    : undefined;
 if (!licenseAddress) {
-  console.warn("⚠ GAMELICENSE_ADDRESS not set — ownerOf() check SKIPPED (dev mode, P1 pending; see TODO.md)");
+  console.warn("⚠ ownerOf() check SKIPPED (no license address or selftest mode)");
+} else {
+  console.log(`ownerOf() check ACTIVE against ${licenseAddress} (Base Sepolia)`);
 }
 
 const client = createPublicClient({

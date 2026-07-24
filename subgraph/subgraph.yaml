@@ -8,9 +8,9 @@ dataSources:
     name: GameRegistry
     network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000"
+      address: "0xa1401b1bbf85202F88E59F54701F541f41656665"
       abi: GameRegistry
-      startBlock: 0
+      startBlock: 44563428
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -31,9 +31,9 @@ dataSources:
     name: GameLicense
     network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000"
+      address: "0x202cF87C36B29469F8A1fe383aBA9C72C0465Aba"
       abi: GameLicense
-      startBlock: 0
+      startBlock: 44563428
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -52,9 +52,9 @@ dataSources:
     name: Marketplace
     network: base-sepolia
     source:
-      address: "0x0000000000000000000000000000000000000000"
+      address: "0x7a0BE706772186eE84fB69f630b23E5af2e515f2"
       abi: Marketplace
-      startBlock: 0
+      startBlock: 44563428
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
