@@ -78,10 +78,17 @@ const state = {
   /** tokenId whose sell-price input is open */
   selling: null as string | null,
   /** SD-card install flow in progress */
-  installing: null as { edition: OnchainEdition; volumes: Volume[]; status: string } | null,
+  installing: null as { edition: OnchainEdition; volumes: Volume[]; status: string; tokenId: string } | null,
   /** on-chain catalog (editionCount enumeration) — no mock data */
   catalog: [] as OnchainEdition[],
+  /** licences owned by the session/watched address (nextTokenId sweep) */
+  owned: [] as { tokenId: string; editionId: string }[],
 };
+
+/** Address whose licences we display: paired session, else watch-only. */
+function libraryAddress(): string {
+  return state.session?.address ?? localStorage.getItem("gv-watch") ?? "";
+}
 
 // ── Verification ──────────────────────────────────────────────
 
@@ -298,24 +305,56 @@ function homeView(): string {
     <div class="cards">${cards}</div>`;
 }
 
+function ownedSection(): string {
+  const addr = libraryAddress();
+  if (!addr) return "";
+  const rows = state.owned
+    .map((o) => {
+      const cat = state.catalog.find((c) => c.editionId === o.editionId);
+      const onCard = state.games.some((g) => g.ticket?.tokenId === o.tokenId && g.verdict !== "tampered");
+      return `<li>
+        🎫 Licence <b>#${esc(o.tokenId)}</b> — ${esc(cat?.title ?? `édition #${o.editionId}`)}
+        <span class="debug">éd. #${esc(o.editionId)}</span>
+        ${
+          onCard
+            ? `<span class="badge ok">sur cartouche</span>`
+            : cat
+              ? `<button class="btn install-owned-btn" data-token="${esc(o.tokenId)}" data-edition="${esc(o.editionId)}">
+                   💾 Installer sur une carte SD</button>`
+              : `<span class="badge warn">édition inconnue du catalogue</span>`
+        }
+      </li>`;
+    })
+    .join("");
+  return `
+    <h2 class="section">Mes licences on-chain — ${short(addr)}</h2>
+    ${state.owned.length ? `<ul class="owned">${rows}</ul>` : `<p class="waiting">Aucune licence pour cette adresse (🔄 après un achat).</p>`}`;
+}
+
 function libraryView(): string {
-  if (!state.session) {
+  if (!libraryAddress()) {
     return `
       <div class="locked">
         <div class="big">🔒</div>
         <h2>Bibliothèque verrouillée</h2>
-        <p>Connectez votre wallet pour voir vos jeux. L'appairage lie cette machine
-           à votre adresse — ensuite, tout fonctionne hors ligne.</p>
+        <p>Appairez une cartouche pour vous connecter — ou suivez votre adresse en lecture seule
+           pour voir vos licences et les installer.</p>
         <button class="btn" id="connect-btn">Se connecter</button>
+        <p style="margin-top:1rem">
+          <input id="watch-addr" placeholder="0x… votre adresse wallet" style="width:22rem" />
+          <button class="btn ghost" id="watch-btn">Suivre</button>
+        </p>
       </div>`;
   }
   const playable = state.games;
   if (!playable.length) {
-    return `<h2 class="section">Ma bibliothèque</h2>
-      <p class="waiting">Aucun jeu détecté — insérez une cartouche.</p>`;
+    return `${ownedSection()}
+      <h2 class="section">Cartouches insérées</h2>
+      <p class="waiting">Aucune cartouche détectée — installez une licence ci-dessus sur une carte SD.</p>`;
   }
   return `
-    <h2 class="section">Ma bibliothèque</h2>
+    ${ownedSection()}
+    <h2 class="section">Cartouches insérées</h2>
     ${
       state.playError
         ? `<p class="play-error">⛔ Lancement refusé : ${esc(state.playError)}${
@@ -393,9 +432,9 @@ async function downloadBuild(g: Game): Promise<void> {
 // THE product flow: blank card in the reader -> verified encrypted build
 // written onto it + a placeholder ticket the pairing flow replaces.
 
-async function openInstall(edition: OnchainEdition): Promise<void> {
+async function openInstall(edition: OnchainEdition, prefillTokenId = ""): Promise<void> {
   const volumes = await invoke<Volume[]>("list_removable_volumes");
-  state.installing = { edition, volumes, status: "" };
+  state.installing = { edition, volumes, status: "", tokenId: prefillTokenId };
   render();
 }
 
@@ -476,7 +515,8 @@ function installView(inst: NonNullable<typeof state.installing>): string {
         <p>Le build chiffré est téléchargé depuis IPFS, vérifié contre le hash publié, puis écrit sur le
            support. Il faudra ensuite appairer la machine (licence requise).</p>
         <p><label>N° de votre licence (tokenId, affiché à l'achat) :
-          <input id="install-token" type="text" inputmode="numeric" placeholder="ex. 2" style="width:6rem" /></label></p>
+          <input id="install-token" type="text" inputmode="numeric" placeholder="ex. 2"
+            value="${esc(inst.tokenId)}" style="width:6rem" /></label></p>
         ${
           inst.volumes.length
             ? inst.volumes
@@ -523,6 +563,48 @@ async function fetchMarketState(): Promise<void> {
     } catch {
       /* offline or token unknown — leave previous state */
     }
+  }
+}
+
+/** Sweep 1..nextTokenId for licences owned by the library address. */
+async function fetchOwned(): Promise<void> {
+  const addr = libraryAddress();
+  if (!chainClient || !DEPLOYMENTS.gameLicense || !addr) {
+    state.owned = [];
+    return;
+  }
+  try {
+    const next = await chainClient.readContract({
+      address: DEPLOYMENTS.gameLicense,
+      abi: LICENSE_ABI,
+      functionName: "nextTokenId",
+      args: [],
+    });
+    const owned: { tokenId: string; editionId: string }[] = [];
+    for (let i = 1n; i <= next; i++) {
+      try {
+        const o = await chainClient.readContract({
+          address: DEPLOYMENTS.gameLicense,
+          abi: LICENSE_ABI,
+          functionName: "ownerOf",
+          args: [i],
+        });
+        if (o.toLowerCase() === addr.toLowerCase()) {
+          const ed = await chainClient.readContract({
+            address: DEPLOYMENTS.gameLicense,
+            abi: LICENSE_ABI,
+            functionName: "editionOf",
+            args: [i],
+          });
+          owned.push({ tokenId: i.toString(), editionId: ed.toString() });
+        }
+      } catch {
+        /* burned/nonexistent — skip */
+      }
+    }
+    state.owned = owned;
+  } catch {
+    /* offline — keep previous */
   }
 }
 
@@ -737,6 +819,21 @@ function render(): void {
     }),
   );
   document.getElementById("refresh-btn")?.addEventListener("click", () => void forceRefresh());
+  document.getElementById("watch-btn")?.addEventListener("click", () => {
+    const addr = (document.getElementById("watch-addr") as HTMLInputElement | null)?.value.trim() ?? "";
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
+      alert("Adresse invalide — format 0x + 40 caractères hexadécimaux");
+      return;
+    }
+    localStorage.setItem("gv-watch", addr);
+    void forceRefresh();
+  });
+  document.querySelectorAll<HTMLButtonElement>(".install-owned-btn").forEach((b) =>
+    b.addEventListener("click", () => {
+      const e = state.catalog.find((x) => x.editionId === b.dataset.edition);
+      if (e) void openInstall(e, b.dataset.token ?? "");
+    }),
+  );
   document.querySelectorAll<HTMLButtonElement>(".buy-btn").forEach((b) =>
     b.addEventListener("click", () => void openUrl(MARKETPLACE_URL)),
   );
@@ -810,6 +907,7 @@ async function forceRefresh(): Promise<void> {
   }
   await refresh();
   await fetchMarketState();
+  await fetchOwned();
   render();
 }
 
@@ -828,7 +926,10 @@ async function refresh(): Promise<void> {
         })
         .catch(() => {});
     }
-    if (scanCount++ % 5 === 0) await fetchMarketState();
+    if (scanCount++ % 5 === 0) {
+      await fetchMarketState();
+      await fetchOwned();
+    }
   } catch (e) {
     state.lastScan = `erreur de scan : ${String(e)}`;
   }

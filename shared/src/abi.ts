@@ -41,6 +41,13 @@ export const LICENSE_ABI = [
     outputs: [{ type: "uint256" }],
   },
   {
+    name: "nextTokenId",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ type: "uint256" }],
+  },
+  {
     name: "LicenseMinted",
     type: "event",
     inputs: [

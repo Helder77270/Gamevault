@@ -125,6 +125,15 @@ h2.section {
 }
 .market.resold { color: var(--bad); }
 .debug { font-family: var(--mono); font-size: 0.7rem; color: #6a7080; overflow-wrap: anywhere; }
+.owned { list-style: none; margin: 0 0 1.4rem; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.owned li {
+  background: var(--bg-raise); border: 1px solid var(--line); border-radius: 8px;
+  padding: 0.7rem 1rem; display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;
+}
+.locked input {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 4px;
+  color: var(--ink); font: inherit; padding: 0.45rem 0.7rem;
+}
 .market input {
   background: var(--surface); border: 1px solid var(--line); border-radius: 4px;
   color: var(--ink); font: inherit; padding: 0.4rem 0.6rem; width: 9rem;
