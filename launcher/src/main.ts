@@ -81,7 +81,6 @@ const state = {
   /** selected editionId for detail/insert screens */
   sel: null as string | null,
   filter: "all" as "all" | "play",
-  homeVar: (localStorage.getItem("gv-clock") ?? "A") as "A" | "B",
   fatal: null as { title: string; msg: string; code: string; back: Screen } | null,
 };
 
@@ -478,23 +477,58 @@ function bootView(): string {
     </div>`;
 }
 
-const homeBg = (): string => `
+// ── The PS1-style orbital clock (from the design's clockBars/clockBeads):
+// 12 faceted bars around the core — the HOUR bar is white and long, the
+// 5-minute bar is cyan, the rest dim; 6 beads pulse with the seconds.
+
+const BAR_TILT = [-1.5, 2.5, -3, 1.5, 4, -2, 0.5, 3, -4, 2, -1, 3.5];
+const FACE_HOUR =
+  "linear-gradient(94deg, rgba(255,255,255,0.98) 0 18%, oklch(0.95 0.03 210) 18% 46%, oklch(0.86 0.07 215) 46% 74%, rgba(255,255,255,0.92) 74% 100%)";
+const FACE_MIN =
+  "linear-gradient(94deg, rgba(238,250,255,0.95) 0 16%, oklch(0.82 0.11 205) 16% 44%, oklch(0.6 0.13 225) 44% 74%, rgba(224,246,255,0.8) 74% 100%)";
+const FACE_DIM =
+  "linear-gradient(94deg, rgba(226,248,255,0.9) 0 15%, oklch(0.76 0.12 203) 15% 42%, oklch(0.5 0.13 232) 42% 73%, rgba(206,240,255,0.7) 73% 100%)";
+const GLOW_HOUR = "0 0 34px oklch(0.95 0.05 215 / 0.95), 0 0 70px oklch(0.85 0.1 220 / 0.6)";
+const GLOW_DIM = "0 0 22px oklch(0.78 0.13 215 / 0.65), 0 0 48px oklch(0.62 0.14 235 / 0.4)";
+
+function barGeometry(i: number, now: Date): { wrap: string; bar: string } {
+  const isHour = i === now.getHours() % 12;
+  const isMin = i === Math.floor(now.getMinutes() / 5) % 12 && !isHour;
+  const len = isHour ? 138 : 124;
+  const w = isHour ? 26 : 23;
+  return {
+    wrap: `width:${w}px;height:${len}px;margin-left:${-w / 2}px;margin-top:${-len / 2}px;transform:rotate(${i * 30 + BAR_TILT[i]}deg) translateY(-${isHour ? 196 : 200}px)`,
+    bar: `background:${isHour ? FACE_HOUR : isMin ? FACE_MIN : FACE_DIM};box-shadow:${isHour ? GLOW_HOUR : GLOW_DIM};opacity:${isHour ? 1 : isMin ? 0.95 : 0.8}`,
+  };
+}
+
+function homeBg(): string {
+  const now = new Date();
+  const bars = BAR_TILT.map((_, i) => {
+    const g = barGeometry(i, now);
+    return `<div class="orb-barwrap" data-i="${i}" style="${g.wrap}"><div class="orb-bar" style="${g.bar}"></div></div>`;
+  }).join("");
+  const beads = [0, 1, 2, 3, 4, 5]
+    .map((i) => {
+      const rad = ((150 + i * 26) * Math.PI) / 180;
+      const on = (now.getSeconds() + i) % 6 < 4;
+      return `<div class="orb-bead" data-i="${i}" style="transform:translate(${(Math.cos(rad) * 62).toFixed(1)}px,${(Math.sin(rad) * 62).toFixed(1)}px);opacity:${on ? 1 : 0.35}"></div>`;
+    })
+    .join("");
+  return `
     <div class="homebg">
       <div class="orb-wrap">
         <div class="orb-halo"></div>
+        ${bars}
         <div class="orb-core">
           <div class="sphere"></div><div class="orb-ring1"></div><div class="orb-ring2"></div>
+          <div class="orb-spin">${beads}</div>
         </div>
       </div>
       <div class="blob-a"></div><div class="blob-b"></div>
       <div class="homefade-l"></div><div class="homefade-t"></div>
     </div>`;
-
-const clockToggle = (): string => `
-    <div class="clock-toggle">
-      <button class="pillbtn ${state.homeVar === "A" ? "active" : ""}" id="pick-a">CLOCK A</button>
-      <button class="pillbtn ${state.homeVar === "B" ? "active" : ""}" id="pick-b">CLOCK B</button>
-    </div>`;
+}
 
 function homeView(): string {
   const now = new Date();
@@ -509,45 +543,18 @@ function homeView(): string {
   const lastEd = localStorage.getItem("gv-lastplayed") ?? "";
   const last = state.catalog.find((e) => e.editionId === lastEd);
 
-  if (state.homeVar === "B") {
-    return `
-    ${homeBg()}
-    <div class="home">
-      <div class="home-top">
-        <div class="big-clock">
-          <div class="big-time" id="home-time-b">${hh}<span class="big-colon">:</span>${mm}</div>
-          <div class="big-side">
-            <div class="big-sec" id="home-sec">${ss}</div>
-            <div class="big-date" id="home-date">${esc(date)}</div>
-          </div>
-        </div>
-        ${clockToggle()}
-      </div>
-      <div class="homeb-bottom">
-        <div class="homeb-blurb">Rien à installer d'autre. Rien à mettre à jour. Insérez une carte, entendez le clic, jouez.</div>
-        <div class="homeb-ctas">
-          <button class="cta" data-go="shelf">Game Shelf</button>
-          <button class="cta violet" id="home-insert">Insert Card</button>
-          <button class="cta ghost" id="home-continue" ${last ? `data-edition="${esc(last.editionId)}"` : "disabled"}>Continue${last ? ` · ${esc(last.title)}` : ""}</button>
-        </div>
-      </div>
-    </div>`;
-  }
-
   return `
     ${homeBg()}
     <div class="home">
       <div class="home-top">
         <div>
           <div class="mono-label">WELCOME BACK, ${addr ? `PLAYER ${esc(short(addr, 6).toUpperCase())}` : "PLAYER 01"}</div>
-          <div class="home-title">Your shelf is warm<br>and waiting.</div>
-          <div class="home-sub">Insérez une carte quand vous voulez — le launcher lit sa licence et pose le jeu directement sur votre étagère.</div>
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:14px">
-          ${clockToggle()}
-          <div class="home-clock">
-            <div class="home-time" id="home-time">${hh}<span style="animation:auraBlink 2s steps(1,end) infinite;color:oklch(0.85 0.11 310)">:</span>${mm}</div>
-            <div class="home-date" id="home-date">${esc(date)}</div>
+          <div class="big-clock" style="margin-top:14px">
+            <div class="big-time" id="home-time-b">${hh}<span class="big-colon">:</span>${mm}</div>
+            <div class="big-side">
+              <div class="big-sec" id="home-sec">${ss}</div>
+              <div class="big-date" id="home-date">${esc(date)}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -881,16 +888,27 @@ function renderChrome(): void {
   const clockEl = document.getElementById("bar-clock");
   if (clockEl)
     clockEl.innerHTML = `${hh}<span class="colon">:</span>${mm}<span class="sec">:${String(now.getSeconds()).padStart(2, "0")}</span>`;
-  // Home-screen clocks tick WITHOUT rebuilding the screen (animations live on)
-  const homeTime = document.getElementById("home-time");
-  if (homeTime)
-    homeTime.innerHTML = `${hh}<span style="animation:auraBlink 2s steps(1,end) infinite;color:oklch(0.85 0.11 310)">:</span>${mm}`;
+  // Home-screen clock ticks WITHOUT rebuilding the screen (animations live on)
   const homeTimeB = document.getElementById("home-time-b");
   if (homeTimeB) homeTimeB.innerHTML = `${hh}<span class="big-colon">:</span>${mm}`;
   const homeSec = document.getElementById("home-sec");
   if (homeSec) homeSec.textContent = String(now.getSeconds()).padStart(2, "0");
   const homeDate = document.getElementById("home-date");
   if (homeDate) homeDate.textContent = dateStr;
+
+  // Orbital PS1 clock: surgical style updates — CSS transitions animate the
+  // hour/minute bar hand-off, beads pulse with the seconds.
+  document.querySelectorAll<HTMLElement>(".orb-barwrap").forEach((el) => {
+    const i = Number(el.dataset.i);
+    const g = barGeometry(i, now);
+    el.style.cssText = g.wrap + ";position:absolute;left:50%;top:50%;transition:transform 0.8s ease";
+    const bar = el.firstElementChild as HTMLElement | null;
+    if (bar) bar.style.cssText = g.bar + ";position:absolute;inset:0;clip-path:polygon(0 5%, 42% 0, 100% 5%, 100% 95%, 55% 100%, 0 95%);transition:all 0.6s ease";
+  });
+  document.querySelectorAll<HTMLElement>(".orb-bead").forEach((el) => {
+    const i = Number(el.dataset.i);
+    el.style.opacity = (now.getSeconds() + i) % 6 < 4 ? "1" : "0.35";
+  });
 }
 
 // Re-render ONLY when meaningful state changed — a naive rebuild every 2s
@@ -902,7 +920,6 @@ function sigOf(): string {
     s: state.screen,
     sel: state.sel,
     f: state.filter,
-    hv: state.homeVar,
     sll: state.selling,
     g: state.games.map((g) => [g.cartridge.mount_point, g.verdict, g.cartridge.has_build, g.ticket?.tokenId, isOurs(g), g.meta.edition]),
     c: state.catalog.map((e) => [e.editionId, e.minted, e.title]),
@@ -946,16 +963,6 @@ function wire(root: HTMLElement): void {
     }),
   );
   document.getElementById("skip-boot")?.addEventListener("click", () => go("home"));
-  document.getElementById("pick-a")?.addEventListener("click", () => {
-    state.homeVar = "A";
-    localStorage.setItem("gv-clock", "A");
-    render();
-  });
-  document.getElementById("pick-b")?.addEventListener("click", () => {
-    state.homeVar = "B";
-    localStorage.setItem("gv-clock", "B");
-    render();
-  });
   document.getElementById("filt-all")?.addEventListener("click", () => {
     state.filter = "all";
     render();
