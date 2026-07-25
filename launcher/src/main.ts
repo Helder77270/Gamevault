@@ -81,6 +81,7 @@ const state = {
   /** selected editionId for detail/insert screens */
   sel: null as string | null,
   filter: "all" as "all" | "play",
+  homeVar: (localStorage.getItem("gv-clock") ?? "A") as "A" | "B",
   fatal: null as { title: string; msg: string; code: string; back: Screen } | null,
 };
 
@@ -477,18 +478,7 @@ function bootView(): string {
     </div>`;
 }
 
-function homeView(): string {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  const date = now
-    .toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "short" })
-    .toUpperCase();
-  const addr = libraryAddress();
-  const playable = state.catalog.filter(playableNow).length;
-  const lastEd = localStorage.getItem("gv-lastplayed") ?? "";
-  const last = state.catalog.find((e) => e.editionId === lastEd);
-  return `
+const homeBg = (): string => `
     <div class="homebg">
       <div class="orb-wrap">
         <div class="orb-halo"></div>
@@ -498,7 +488,54 @@ function homeView(): string {
       </div>
       <div class="blob-a"></div><div class="blob-b"></div>
       <div class="homefade-l"></div><div class="homefade-t"></div>
-    </div>
+    </div>`;
+
+const clockToggle = (): string => `
+    <div class="clock-toggle">
+      <button class="pillbtn ${state.homeVar === "A" ? "active" : ""}" id="pick-a">CLOCK A</button>
+      <button class="pillbtn ${state.homeVar === "B" ? "active" : ""}" id="pick-b">CLOCK B</button>
+    </div>`;
+
+function homeView(): string {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  const ss = String(now.getSeconds()).padStart(2, "0");
+  const date = now
+    .toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "short" })
+    .toUpperCase();
+  const addr = libraryAddress();
+  const playable = state.catalog.filter(playableNow).length;
+  const lastEd = localStorage.getItem("gv-lastplayed") ?? "";
+  const last = state.catalog.find((e) => e.editionId === lastEd);
+
+  if (state.homeVar === "B") {
+    return `
+    ${homeBg()}
+    <div class="home">
+      <div class="home-top">
+        <div class="big-clock">
+          <div class="big-time" id="home-time-b">${hh}<span class="big-colon">:</span>${mm}</div>
+          <div class="big-side">
+            <div class="big-sec" id="home-sec">${ss}</div>
+            <div class="big-date" id="home-date">${esc(date)}</div>
+          </div>
+        </div>
+        ${clockToggle()}
+      </div>
+      <div class="homeb-bottom">
+        <div class="homeb-blurb">Rien à installer d'autre. Rien à mettre à jour. Insérez une carte, entendez le clic, jouez.</div>
+        <div class="homeb-ctas">
+          <button class="cta" data-go="shelf">Game Shelf</button>
+          <button class="cta violet" id="home-insert">Insert Card</button>
+          <button class="cta ghost" id="home-continue" ${last ? `data-edition="${esc(last.editionId)}"` : "disabled"}>Continue${last ? ` · ${esc(last.title)}` : ""}</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  return `
+    ${homeBg()}
     <div class="home">
       <div class="home-top">
         <div>
@@ -506,9 +543,12 @@ function homeView(): string {
           <div class="home-title">Your shelf is warm<br>and waiting.</div>
           <div class="home-sub">Insérez une carte quand vous voulez — le launcher lit sa licence et pose le jeu directement sur votre étagère.</div>
         </div>
-        <div class="home-clock">
-          <div class="home-time" id="home-time">${hh}<span style="animation:auraBlink 2s steps(1,end) infinite;color:oklch(0.85 0.11 310)">:</span>${mm}</div>
-          <div class="home-date" id="home-date">${esc(date)}</div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:14px">
+          ${clockToggle()}
+          <div class="home-clock">
+            <div class="home-time" id="home-time">${hh}<span style="animation:auraBlink 2s steps(1,end) infinite;color:oklch(0.85 0.11 310)">:</span>${mm}</div>
+            <div class="home-date" id="home-date">${esc(date)}</div>
+          </div>
         </div>
       </div>
       <div class="home-cards">
@@ -841,10 +881,14 @@ function renderChrome(): void {
   const clockEl = document.getElementById("bar-clock");
   if (clockEl)
     clockEl.innerHTML = `${hh}<span class="colon">:</span>${mm}<span class="sec">:${String(now.getSeconds()).padStart(2, "0")}</span>`;
-  // Home-screen clock ticks WITHOUT rebuilding the screen (animations live on)
+  // Home-screen clocks tick WITHOUT rebuilding the screen (animations live on)
   const homeTime = document.getElementById("home-time");
   if (homeTime)
     homeTime.innerHTML = `${hh}<span style="animation:auraBlink 2s steps(1,end) infinite;color:oklch(0.85 0.11 310)">:</span>${mm}`;
+  const homeTimeB = document.getElementById("home-time-b");
+  if (homeTimeB) homeTimeB.innerHTML = `${hh}<span class="big-colon">:</span>${mm}`;
+  const homeSec = document.getElementById("home-sec");
+  if (homeSec) homeSec.textContent = String(now.getSeconds()).padStart(2, "0");
   const homeDate = document.getElementById("home-date");
   if (homeDate) homeDate.textContent = dateStr;
 }
@@ -858,6 +902,7 @@ function sigOf(): string {
     s: state.screen,
     sel: state.sel,
     f: state.filter,
+    hv: state.homeVar,
     sll: state.selling,
     g: state.games.map((g) => [g.cartridge.mount_point, g.verdict, g.cartridge.has_build, g.ticket?.tokenId, isOurs(g), g.meta.edition]),
     c: state.catalog.map((e) => [e.editionId, e.minted, e.title]),
@@ -901,6 +946,16 @@ function wire(root: HTMLElement): void {
     }),
   );
   document.getElementById("skip-boot")?.addEventListener("click", () => go("home"));
+  document.getElementById("pick-a")?.addEventListener("click", () => {
+    state.homeVar = "A";
+    localStorage.setItem("gv-clock", "A");
+    render();
+  });
+  document.getElementById("pick-b")?.addEventListener("click", () => {
+    state.homeVar = "B";
+    localStorage.setItem("gv-clock", "B");
+    render();
+  });
   document.getElementById("filt-all")?.addEventListener("click", () => {
     state.filter = "all";
     render();
