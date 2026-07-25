@@ -68,6 +68,28 @@ a { color: inherit; text-decoration: none; }
 
 main { width: min(76rem, 100%); margin: 0 auto; padding: 1.8rem 1.6rem 4rem; }
 
+/* ── Marketplace : search ────────────────────────────── */
+.mk-search {
+  display: flex; align-items: center; gap: 0.7rem; margin-bottom: 1.4rem;
+  padding: 0.2rem 0.4rem 0.2rem 1rem; border-radius: 999px;
+  border: 1px solid var(--line); background: rgba(3, 4, 9, 0.55);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.mk-search:focus-within { border-color: var(--cyan); box-shadow: 0 0 16px oklch(0.8 0.1 200 / 0.25); }
+.mk-search-icon { color: var(--dim); font-size: 1.1rem; }
+.mk-search input {
+  flex: 1; margin: 0; padding: 0.7rem 0; background: none; border: 0; outline: none;
+  color: var(--ink); font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.1em;
+}
+.mk-search input::placeholder { color: var(--dim); }
+.mk-search .count { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.14em; color: var(--cyan); white-space: nowrap; }
+.mk-search button {
+  border: 0; background: rgba(226, 240, 255, 0.08); color: var(--sub); cursor: pointer;
+  width: 32px; height: 32px; border-radius: 999px; font-size: 0.8rem;
+}
+.mk-search button:hover { background: rgba(226, 240, 255, 0.16); color: var(--ink); }
+.hrow.gridwrap { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); overflow: visible; }
+
 /* ── Marketplace : featured hero ─────────────────────── */
 .mk-hero {
   position: relative; display: flex; align-items: flex-end; overflow: hidden;

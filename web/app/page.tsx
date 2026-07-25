@@ -50,8 +50,12 @@ function Row({ title, list }: { title: string; list: OnchainEdition[] }) {
   );
 }
 
+const norm = (s: string): string =>
+  s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
 export default function Marketplace() {
   const [catalog, setCatalog] = useState<OnchainEdition[] | null>(null);
+  const [q, setQ] = useState("");
 
   useEffect(() => {
     fetchOnchainCatalog()
@@ -63,6 +67,52 @@ export default function Marketplace() {
   if (!catalog.length)
     return <p className="notice">Aucune édition publiée — passez par l&apos;espace Studio.</p>;
 
+  const query = q.trim();
+  const results = query
+    ? catalog.filter((e) => {
+        const hay = norm(`${e.title} ${e.studio} ${GENRES[e.editionId] ?? ""}`);
+        return hay.includes(norm(query)) || e.editionId === query.replace(/^#/, "");
+      })
+    : [];
+
+  const searchBar = (
+    <div className="mk-search">
+      <span className="mk-search-icon">⌕</span>
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        onKeyDown={(e) => e.key === "Escape" && setQ("")}
+        placeholder="RECHERCHER · TITRE / STUDIO / GENRE / #ÉD"
+      />
+      {query && (
+        <>
+          <span className="count">{results.length} TITRE{results.length > 1 ? "S" : ""}</span>
+          <button onClick={() => setQ("")} title="Effacer">✕</button>
+        </>
+      )}
+    </div>
+  );
+
+  if (query) {
+    return (
+      <>
+        {searchBar}
+        <div className="cat-head">
+          <h2>Résultats · « {query} »</h2>
+        </div>
+        {results.length ? (
+          <div className="hrow gridwrap">
+            {results.map((e) => (
+              <Card key={e.editionId} e={e} />
+            ))}
+          </div>
+        ) : (
+          <p className="notice">Aucun résultat pour « {query} » — essayez un titre, un studio ou un genre.</p>
+        )}
+      </>
+    );
+  }
+
   // Featured: the newest edition that still has supply
   const featured = [...catalog].reverse().find((e) => e.minted < e.supply) ?? catalog[catalog.length - 1];
   const newest = [...catalog].reverse();
@@ -72,6 +122,7 @@ export default function Marketplace() {
 
   return (
     <>
+      {searchBar}
       <Link href={`/game/${featured.editionId}`} style={{ display: "block" }}>
         <div className="mk-hero" style={artStyle(featured.editionId)}>
           <div className="sheen"></div>
