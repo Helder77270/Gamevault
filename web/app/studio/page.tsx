@@ -86,8 +86,17 @@ export default function StudioPage() {
     setError("");
     if (!file) return setError("choisissez le fichier du build (HTML autonome)");
     try {
-      setStatus("1/2 — chiffrement + épinglage IPFS (via la plateforme)…");
       const bytes = await file.arrayBuffer();
+      // Guard: an edition is IMMUTABLE once on-chain — refuse anything that
+      // isn't a self-contained HTML build (e.g. a raw .js source file)
+      const head = new TextDecoder().decode(bytes.slice(0, 512)).trimStart().toLowerCase();
+      if (!head.startsWith("<!doctype html") && !head.startsWith("<html")) {
+        throw new Error(
+          "ce fichier n'est pas un build HTML autonome. Attendu : game/dist/<jeu>.html " +
+            "(généré par `npm run build -w game`, moteur inclus) — pas le fichier source .js.",
+        );
+      }
+      setStatus("1/2 — chiffrement + épinglage IPFS (via la plateforme)…");
       const res = await fetch(`${TICKETD_URL}/publish?name=${encodeURIComponent(file.name)}`, {
         method: "POST",
         headers: { "Content-Type": "application/octet-stream" },

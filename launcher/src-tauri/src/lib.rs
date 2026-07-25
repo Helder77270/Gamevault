@@ -126,7 +126,7 @@ pub fn run() {
             let guard = state.0.lock().unwrap();
             match guard.as_ref() {
                 Some(html) => tauri::http::Response::builder()
-                    .header("Content-Type", "text/html")
+                    .header("Content-Type", "text/html; charset=utf-8")
                     .body(html.clone())
                     .unwrap(),
                 None => tauri::http::Response::builder()
