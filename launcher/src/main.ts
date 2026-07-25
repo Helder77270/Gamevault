@@ -1167,6 +1167,7 @@ async function refresh(): Promise<void> {
 window.addEventListener("DOMContentLoaded", () => {
   loadSession();
   document.getElementById("restart-btn")?.addEventListener("click", () => void runBoot());
+  document.getElementById("store-btn")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));
   void runBoot();
   setInterval(() => void refresh(), 2000);
   setInterval(renderChrome, 1000); // bottom-bar clock ticks every second
