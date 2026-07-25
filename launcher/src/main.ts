@@ -507,8 +507,8 @@ function homeView(): string {
           <div class="home-sub">Insérez une carte quand vous voulez — le launcher lit sa licence et pose le jeu directement sur votre étagère.</div>
         </div>
         <div class="home-clock">
-          <div class="home-time">${hh}<span style="animation:auraBlink 2s steps(1,end) infinite;color:oklch(0.85 0.11 310)">:</span>${mm}</div>
-          <div class="home-date">${esc(date)}</div>
+          <div class="home-time" id="home-time">${hh}<span style="animation:auraBlink 2s steps(1,end) infinite;color:oklch(0.85 0.11 310)">:</span>${mm}</div>
+          <div class="home-date" id="home-date">${esc(date)}</div>
         </div>
       </div>
       <div class="home-cards">
@@ -833,12 +833,46 @@ function renderChrome(): void {
       : `SLOT A · EMPTY · DEVICE ${state.devicePubKey ? short(state.devicePubKey, 6) : "…"}`;
 
   const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  const dateStr = now.toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "short" }).toUpperCase();
   const dateEl = document.getElementById("bar-date");
-  if (dateEl)
-    dateEl.textContent = now.toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "short" }).toUpperCase();
+  if (dateEl) dateEl.textContent = dateStr;
   const clockEl = document.getElementById("bar-clock");
   if (clockEl)
-    clockEl.innerHTML = `${String(now.getHours()).padStart(2, "0")}<span class="colon">:</span>${String(now.getMinutes()).padStart(2, "0")}<span class="sec">:${String(now.getSeconds()).padStart(2, "0")}</span>`;
+    clockEl.innerHTML = `${hh}<span class="colon">:</span>${mm}<span class="sec">:${String(now.getSeconds()).padStart(2, "0")}</span>`;
+  // Home-screen clock ticks WITHOUT rebuilding the screen (animations live on)
+  const homeTime = document.getElementById("home-time");
+  if (homeTime)
+    homeTime.innerHTML = `${hh}<span style="animation:auraBlink 2s steps(1,end) infinite;color:oklch(0.85 0.11 310)">:</span>${mm}`;
+  const homeDate = document.getElementById("home-date");
+  if (homeDate) homeDate.textContent = dateStr;
+}
+
+// Re-render ONLY when meaningful state changed — a naive rebuild every 2s
+// restarts every CSS animation (the orb looked frozen, screens re-faded).
+let lastSig = "";
+
+function sigOf(): string {
+  return JSON.stringify({
+    s: state.screen,
+    sel: state.sel,
+    f: state.filter,
+    sll: state.selling,
+    g: state.games.map((g) => [g.cartridge.mount_point, g.verdict, g.cartridge.has_build, g.ticket?.tokenId, isOurs(g), g.meta.edition]),
+    c: state.catalog.map((e) => [e.editionId, e.minted, e.title]),
+    m: Object.entries(state.market).map(([k, v]) => [k, v.owner, v.seller, String(v.price)]),
+    o: state.owned,
+    dl: state.dlStatus,
+    p: state.pairing?.status ?? null,
+    i: state.installing ? [state.installing.stage, state.installing.status, state.installing.volumes.length] : null,
+    a: libraryAddress(),
+    t: state.ticketdOk,
+    oc: state.ownerCheck,
+    b: state.bootLines.map((l) => l.state + l.value).join("|"),
+    pl: state.playing?.cartridge.mount_point ?? null,
+    ft: state.fatal?.code ?? null,
+  });
 }
 
 function render(): void {
@@ -847,10 +881,12 @@ function render(): void {
   if (state.playing) {
     root.innerHTML = playerView(state.playing);
     document.getElementById("quit-btn")?.addEventListener("click", () => void quit());
+    lastSig = sigOf();
     return;
   }
   root.innerHTML = SCREENS[state.screen]();
   wire(root);
+  lastSig = sigOf();
 }
 
 function wire(root: HTMLElement): void {
@@ -1059,10 +1095,10 @@ async function refresh(): Promise<void> {
   } catch (e) {
     state.lastScan = `SCAN ERR ${String(e)}`;
   }
-  // Don't clobber transient interactions: skip re-render while typing a
-  // price/token/address or while the insert screen animates its steps.
-  const active = document.activeElement?.tagName === "INPUT";
-  if (!active && state.screen !== "insert") render();
+  // Surgical updates only: rebuild the screen when meaningful state changed
+  // (never while typing), otherwise just tick the chrome (LEDs, clocks).
+  const typing = document.activeElement?.tagName === "INPUT";
+  if (!typing && sigOf() !== lastSig) render();
   else renderChrome();
 }
 
