@@ -157,9 +157,15 @@ button { font-family: inherit; }
 .boot-note { margin-top: 22px; min-height: 46px; font-size: 15px; line-height: 1.5; color: rgba(214,230,255,0.72); }
 
 /* ── Home ──────────────────────────────────────────────────── */
-.homebg { position: absolute; inset: 0; pointer-events: none; z-index: 0; opacity: 0.6; }
-.orb-wrap { position: absolute; left: 66%; top: 60%; width: 560px; height: 560px; margin: -280px 0 0 -280px; animation: auraDrift 40s ease-in-out infinite; }
-.orb-halo { position: absolute; inset: 0; border-radius: 999px; background: radial-gradient(circle at 50% 50%, oklch(0.5 0.11 250 / 0.22), transparent 66%); }
+@keyframes orbWobble { 0% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } 100% { transform: rotate(-3deg); } }
+@keyframes orbPulse { 0% { transform: scale(1); opacity: 0.75; } 50% { transform: scale(1.07); opacity: 1; } 100% { transform: scale(1); opacity: 0.75; } }
+
+.homebg { position: absolute; inset: 0; pointer-events: none; z-index: 0; opacity: 0.72; }
+.orb-wrap { position: absolute; left: 50%; top: 52%; width: 560px; height: 560px; margin: -280px 0 0 -280px; animation: auraDrift 40s ease-in-out infinite; }
+.orb-rotor { position: absolute; inset: 0; animation: orbWobble 14s ease-in-out infinite; }
+.orb-gyro { position: absolute; inset: 0; animation: auraSpin 18s linear infinite; }
+.orb-gyro.rev { animation: auraSpin 27s linear infinite reverse; }
+.orb-halo { position: absolute; inset: 0; border-radius: 999px; background: radial-gradient(circle at 50% 50%, oklch(0.5 0.11 250 / 0.22), transparent 66%); animation: orbPulse 5s ease-in-out infinite; }
 .orb-core { position: absolute; left: 50%; top: 50%; width: 132px; height: 132px; margin: -66px 0 0 -66px; }
 .orb-core .sphere {
   position: absolute; inset: 0; border-radius: 999px;
@@ -180,7 +186,7 @@ button { font-family: inherit; }
 }
 .blob-a { position: absolute; right: 8%; bottom: 10%; width: 280px; height: 280px; border-radius: 999px; background: radial-gradient(circle at 40% 34%, oklch(0.7 0.13 310 / 0.28), transparent 68%); animation: auraDrift2 46s ease-in-out infinite; }
 .blob-b { position: absolute; left: 4%; top: 8%; width: 340px; height: 340px; border-radius: 999px; background: radial-gradient(circle at 60% 50%, oklch(0.72 0.12 200 / 0.2), transparent 66%); animation: auraDrift2 58s ease-in-out infinite reverse; }
-.homefade-l { position: absolute; inset: 0; background: linear-gradient(90deg, oklch(0.12 0.04 266 / 0.88) 0%, oklch(0.12 0.04 266 / 0.7) 26%, transparent 46%); }
+.homefade-l { position: absolute; inset: 0; background: linear-gradient(90deg, oklch(0.12 0.04 266 / 0.6) 0%, oklch(0.12 0.04 266 / 0.35) 26%, transparent 46%); }
 .homefade-t { position: absolute; right: 0; top: 0; width: 460px; height: 250px; background: radial-gradient(120% 130% at 100% 0%, oklch(0.11 0.04 266 / 0.92) 0%, oklch(0.11 0.04 266 / 0.6) 52%, transparent 78%); }
 
 .home {
@@ -236,6 +242,20 @@ button { font-family: inherit; }
 .homeb-bottom { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; }
 .homeb-blurb { max-width: 300px; font-size: 14.5px; line-height: 1.55; color: var(--sub); }
 .homeb-ctas { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+
+/* ── Last played (home) ────────────────────────────────────── */
+.home-recent { margin: 10px 0 6px; }
+.recent-tiles { display: flex; gap: 12px; flex-wrap: wrap; }
+.recent-tile {
+  display: flex; align-items: center; gap: 12px; cursor: pointer; text-align: left;
+  padding: 10px 16px 10px 10px; border-radius: 14px; color: var(--ink);
+  border: 1px solid rgba(200,225,255,0.16); background: rgba(10,14,26,0.55);
+  backdrop-filter: blur(3px); transition: all 0.18s; animation: auraIn 0.4s ease both;
+}
+.recent-tile:hover { border-color: oklch(0.8 0.1 200 / 0.6); background: rgba(20,26,44,0.7); }
+.recent-tile .rart { width: 52px; height: 38px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.2); flex: none; }
+.recent-tile .rtitle { font-size: 13.5px; font-weight: 600; }
+.recent-tile .rstats { margin-top: 2px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; color: var(--dim); }
 
 /* ── Shelf ─────────────────────────────────────────────────── */
 .shelf { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; animation: auraIn 0.4s ease both; }
@@ -347,6 +367,56 @@ button { font-family: inherit; }
 .cta.amber:hover { background: linear-gradient(180deg, #ffffff, oklch(0.88 0.1 50)); }
 .cta.amber-ghost { color: #fff2ea; border-color: rgba(255,220,205,0.3); background: rgba(255,230,215,0.06); box-shadow: none; }
 .cta.amber-ghost:hover { background: rgba(255,230,215,0.14); }
+
+/* ── Overlay layer (toasts + launch cinematic) ─────────────── */
+#overlay-layer { position: fixed; inset: 0; z-index: 70; pointer-events: none; }
+
+@keyframes ctDrop { 0% { transform: translateY(-46px); } 70% { transform: translateY(3px); } 100% { transform: translateY(0); } }
+@keyframes ctRise { 0% { transform: translateY(0); opacity: 1; } 100% { transform: translateY(-40px); opacity: 0; } }
+
+.card-toast {
+  position: absolute; right: 24px; bottom: 82px;
+  display: flex; align-items: center; gap: 14px; padding: 14px 18px;
+  border-radius: 14px; border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(20,26,44,0.92), rgba(10,14,26,0.92));
+  box-shadow: 0 1px 0 rgba(255,255,255,0.15) inset, 0 24px 50px -20px rgba(0,0,0,0.9);
+  animation: auraIn 0.3s ease both; transition: opacity 0.5s;
+}
+.card-toast.bye { opacity: 0; }
+.ct-reader { position: relative; width: 46px; height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+.ct-card {
+  width: 30px; height: 40px; border-radius: 4px; margin-bottom: -6px; z-index: 1;
+  background: linear-gradient(150deg, #eaf4ff, oklch(0.72 0.1 210)); border: 1px solid rgba(255,255,255,0.7);
+  animation: ctDrop 0.7s ease both;
+}
+.card-toast.out .ct-card { animation: ctRise 0.9s ease 0.9s both; }
+.ct-slot { width: 44px; height: 12px; border-radius: 3px 3px 6px 6px; background: linear-gradient(180deg, #080d1a, oklch(0.22 0.04 265)); border: 1px solid var(--line); }
+.ct-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; color: var(--cyan); line-height: 1.7; }
+.card-toast.out .ct-label { color: oklch(0.85 0.1 45); }
+.ct-label b { color: var(--ink); font-weight: 700; }
+
+.slot-status.flash { animation: auraBlink 0.8s steps(1, end) infinite; }
+.slot-status.flash.in { color: var(--cyan); }
+.slot-status.flash.out { color: oklch(0.85 0.1 45); }
+
+@keyframes lvIn { 0% { transform: scale(0.86); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+.launch-ov {
+  position: absolute; inset: 0; pointer-events: auto; z-index: 5;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  background: linear-gradient(180deg, oklch(0.1 0.04 266 / 0.96), oklch(0.06 0.03 268 / 0.98));
+  animation: auraIn 0.25s ease both; transition: opacity 0.4s;
+}
+.launch-ov.bye { opacity: 0; }
+.launch-ov .lv-art {
+  position: relative; width: 300px; height: 170px; border-radius: 16px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.25);
+  box-shadow: 0 0 60px oklch(0.6 0.12 250 / 0.5), 0 30px 60px -30px rgba(0,0,0,0.9);
+  animation: lvIn 0.5s ease both;
+}
+.launch-ov .lv-art .sheen { position: absolute; top: 0; left: 0; width: 34%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent); animation: auraSheen 1.8s ease-in-out infinite; }
+.launch-ov .lv-title { font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+.launch-ov .lv-sub { font-family: var(--mono); font-size: 10px; letter-spacing: 0.26em; color: var(--dim); }
+.launch-ov .lv-steps { width: 380px; }
 
 /* ── Player ────────────────────────────────────────────────── */
 .player { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: #000; }

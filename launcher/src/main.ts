@@ -88,6 +88,72 @@ function libraryAddress(): string {
   return state.session?.address ?? localStorage.getItem("gv-watch") ?? "";
 }
 
+// ── Play history (local — no on-chain playtime exists) ────────
+
+interface PlayLogEntry {
+  lastPlayedAt: number;
+  playCount: number;
+  totalSeconds: number;
+}
+
+function readLog(): Record<string, PlayLogEntry> {
+  try {
+    return JSON.parse(localStorage.getItem("gv-playlog") ?? "{}");
+  } catch {
+    return {};
+  }
+}
+const writeLog = (l: Record<string, PlayLogEntry>): void => localStorage.setItem("gv-playlog", JSON.stringify(l));
+
+let sessionEdition = "";
+let sessionStart = 0;
+
+function logPlayStart(editionId: string): void {
+  if (!editionId) return;
+  const log = readLog();
+  const e = log[editionId] ?? { lastPlayedAt: 0, playCount: 0, totalSeconds: 0 };
+  e.playCount++;
+  e.lastPlayedAt = Date.now();
+  log[editionId] = e;
+  writeLog(log);
+  sessionEdition = editionId;
+  sessionStart = Date.now();
+}
+
+function logPlayEnd(): void {
+  if (!sessionEdition) return;
+  const log = readLog();
+  const e = log[sessionEdition];
+  if (e) {
+    e.totalSeconds += Math.round((Date.now() - sessionStart) / 1000);
+    writeLog(log);
+  }
+  sessionEdition = "";
+}
+
+function recentPlays(): { e: OnchainEdition; log: PlayLogEntry }[] {
+  const log = readLog();
+  return Object.entries(log)
+    .map(([id, entry]) => ({ e: state.catalog.find((c) => c.editionId === id), log: entry }))
+    .filter((x): x is { e: OnchainEdition; log: PlayLogEntry } => Boolean(x.e))
+    .sort((a, b) => b.log.lastPlayedAt - a.log.lastPlayedAt)
+    .slice(0, 3);
+}
+
+function fmtDur(s: number): string {
+  if (s < 60) return "< 1 MIN";
+  if (s < 3600) return `${Math.round(s / 60)} MIN`;
+  return `${Math.floor(s / 3600)} H ${String(Math.round((s % 3600) / 60)).padStart(2, "0")}`;
+}
+
+function fmtAgo(ts: number): string {
+  const d = Date.now() - ts;
+  if (d < 60_000) return "À L'INSTANT";
+  if (d < 3_600_000) return `IL Y A ${Math.round(d / 60_000)} MIN`;
+  if (d < 86_400_000) return `IL Y A ${Math.round(d / 3_600_000)} H`;
+  return `IL Y A ${Math.round(d / 86_400_000)} J`;
+}
+
 // ── Verification ──────────────────────────────────────────────
 
 function judge(c: Cartridge): Game {
@@ -370,45 +436,159 @@ function formatEth(wei: bigint): string {
   return s.length > 10 ? s.slice(0, 10) : s;
 }
 
-// ── Play ──────────────────────────────────────────────────────
+// ── Play (with launch cinematic) ──────────────────────────────
+// The overlay lives in #overlay-layer, outside the diff-rendered #screen —
+// stages are pure class toggles on live nodes, immune to re-renders.
+
+let launching = false;
+
+const minMs = async <T,>(p: Promise<T>, ms: number): Promise<T> =>
+  (await Promise.all([p, new Promise((r) => setTimeout(r, ms))]))[0] as T;
+
+function launchShow(g: Game): void {
+  const layer = document.getElementById("overlay-layer");
+  if (!layer) return;
+  const ed = editionFor(g);
+  const hue = hueOf(ed?.editionId ?? "1");
+  const el = document.createElement("div");
+  el.id = "launch-ov";
+  el.className = "launch-ov";
+  el.innerHTML = `
+    <div class="lv-art" style="${artGrad(hue)}"><div class="sheen"></div></div>
+    <div class="lv-title">${esc(g.meta.title ?? ed?.title ?? "GAME")}</div>
+    <div class="lv-sub">LICENCE #${esc(g.ticket?.tokenId ?? "?")} · SLOT A</div>
+    <div class="steps lv-steps">
+      <div class="step run" id="lstep-0"><div class="sdot"></div><div class="slabel">VERIFY LICENCE · ON-CHAIN</div><div class="sstate">…</div></div>
+      <div class="step" id="lstep-1"><div class="sdot"></div><div class="slabel">UNSEAL KEY · DECRYPT IN MEMORY</div><div class="sstate">—</div></div>
+      <div class="step" id="lstep-2"><div class="sdot"></div><div class="slabel">BOOT TITLE</div><div class="sstate">—</div></div>
+    </div>`;
+  layer.appendChild(el);
+}
+
+function launchStage(i: number, note = "OK"): void {
+  const prev = document.getElementById(`lstep-${i - 1}`);
+  if (prev) {
+    prev.className = "step ok";
+    (prev.querySelector(".sstate") as HTMLElement | null)!.textContent = note;
+  }
+  const cur = document.getElementById(`lstep-${i}`);
+  if (cur) {
+    cur.className = "step run";
+    (cur.querySelector(".sstate") as HTMLElement | null)!.textContent = "…";
+  }
+}
+
+function launchHide(): void {
+  const el = document.getElementById("launch-ov");
+  if (!el) return;
+  el.classList.add("bye");
+  setTimeout(() => el.remove(), 450);
+}
 
 async function play(g: Game): Promise<void> {
-  if (g.ticket) {
-    const check = await checkOwnerOnline(g.ticket);
-    if (check === "revoked") {
-      state.ownerCheck = "REVOKED";
+  if (launching || state.playing) return;
+  launching = true;
+  launchShow(g);
+  try {
+    if (g.ticket) {
+      const check = await minMs(checkOwnerOnline(g.ticket), 800);
+      if (check === "revoked") {
+        state.ownerCheck = "REVOKED";
+        launchHide();
+        fail(
+          "Licence moved on-chain.",
+          "Cette licence a changé de propriétaire. Le nouveau propriétaire doit appairer sa machine pour jouer.",
+          "ERR 0x51 · OWNERSHIP MOVED ON-CHAIN",
+          "detail",
+        );
+        return;
+      }
+      state.ownerCheck = check === "ok" ? "OWNER ✔ LIVE" : "OFFLINE · 30D WINDOW";
+      launchStage(1, state.ownerCheck);
+    } else {
+      launchStage(1);
+    }
+    try {
+      await minMs(invoke("play_game", { mountPoint: g.cartridge.mount_point }), 900);
+    } catch (e) {
+      const msg = String(e);
+      launchHide();
       fail(
-        "Licence moved on-chain.",
-        "Cette licence a changé de propriétaire. Le nouveau propriétaire doit appairer sa machine pour jouer.",
-        "ERR 0x51 · OWNERSHIP MOVED ON-CHAIN",
+        "This card won't read.",
+        msg.includes("clé d'appareil") || msg.includes("authentication")
+          ? "Le bloc licence est revenu brouillé — le ticket n'est pas scellé pour cette machine, ou le build est corrompu. Re-téléchargez le build ou ré-appairez, puis réessayez."
+          : msg,
+        `ERR 0x21 · ${msg.slice(0, 60)}`,
         "detail",
       );
       return;
     }
-    state.ownerCheck = check === "ok" ? "OWNER ✔ LIVE" : "OFFLINE · 30D WINDOW";
-  }
-  try {
-    await invoke("play_game", { mountPoint: g.cartridge.mount_point });
+    launchStage(2, "DECRYPTED");
+    chimeLaunch();
+    logPlayStart(editionFor(g)?.editionId ?? g.meta.edition ?? "");
+    await new Promise((r) => setTimeout(r, 700));
     state.playing = g;
-    localStorage.setItem("gv-lastplayed", g.meta.edition ?? "");
-    render();
-  } catch (e) {
-    const msg = String(e);
-    fail(
-      "This card won't read.",
-      msg.includes("clé d'appareil") || msg.includes("authentication")
-        ? "Le bloc licence est revenu brouillé — le ticket n'est pas scellé pour cette machine, ou le build est corrompu. Re-téléchargez le build ou ré-appairez, puis réessayez."
-        : msg,
-      `ERR 0x21 · ${msg.slice(0, 60)}`,
-      "detail",
-    );
+    render(); // iframe mounts underneath the overlay
+    launchHide(); // then the overlay fades to reveal it
+  } finally {
+    launching = false;
   }
 }
 
 async function quit(): Promise<void> {
   await invoke("stop_game");
+  logPlayEnd();
   state.playing = null;
   render();
+}
+
+// ── Retro SFX (WebAudio, zero assets) ─────────────────────────
+
+let audio: AudioContext | null = null;
+
+function beep(freqs: number[], dur = 0.09, vol = 0.16): void {
+  try {
+    audio ??= new AudioContext();
+    void audio.resume();
+    freqs.forEach((f, i) => {
+      const osc = audio!.createOscillator();
+      const gain = audio!.createGain();
+      osc.type = "sine";
+      osc.frequency.value = f;
+      const t0 = audio!.currentTime + i * dur;
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(vol, t0 + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+      osc.connect(gain).connect(audio!.destination);
+      osc.start(t0);
+      osc.stop(t0 + dur + 0.02);
+    });
+  } catch {
+    /* autoplay policy before first gesture — stay silent */
+  }
+}
+
+const chimeIn = (): void => beep([880, 1318]);
+const chimeOut = (): void => beep([660, 440]);
+const chimeLaunch = (): void => beep([523, 659, 880], 0.12);
+
+// ── Card insert/eject events (overlay layer, outside diff-render) ──
+
+let slotEvent: { kind: "in" | "out"; until: number } | null = null;
+
+function cardToast(kind: "in" | "out", title: string): void {
+  const layer = document.getElementById("overlay-layer");
+  if (!layer) return;
+  const el = document.createElement("div");
+  el.className = `card-toast ${kind}`;
+  el.innerHTML = `
+    <div class="ct-reader"><div class="ct-card"></div><div class="ct-slot"></div></div>
+    <div class="ct-label">CARD ${kind === "in" ? "INSERTED" : "EJECTED"}<br><b>${esc(title.toUpperCase())}</b></div>`;
+  layer.appendChild(el);
+  (kind === "in" ? chimeIn : chimeOut)();
+  slotEvent = { kind, until: Date.now() + 3000 };
+  setTimeout(() => el.classList.add("bye"), 2400);
+  setTimeout(() => el.remove(), 3000);
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -494,11 +674,14 @@ const GLOW_DIM = "0 0 22px oklch(0.78 0.13 215 / 0.65), 0 0 48px oklch(0.62 0.14
 function barGeometry(i: number, now: Date): { wrap: string; bar: string } {
   const isHour = i === now.getHours() % 12;
   const isMin = i === Math.floor(now.getMinutes() / 5) % 12 && !isHour;
+  // Seconds sweep: a brightness highlight orbits the dial every 12s, riding
+  // the existing per-second surgical updates + the bars' CSS transition.
+  const sweep = i === now.getSeconds() % 12;
   const len = isHour ? 138 : 124;
   const w = isHour ? 26 : 23;
   return {
     wrap: `width:${w}px;height:${len}px;margin-left:${-w / 2}px;margin-top:${-len / 2}px;transform:rotate(${i * 30 + BAR_TILT[i]}deg) translateY(-${isHour ? 196 : 200}px)`,
-    bar: `background:${isHour ? FACE_HOUR : isMin ? FACE_MIN : FACE_DIM};box-shadow:${isHour ? GLOW_HOUR : GLOW_DIM};opacity:${isHour ? 1 : isMin ? 0.95 : 0.8}`,
+    bar: `background:${isHour ? FACE_HOUR : isMin ? FACE_MIN : FACE_DIM};box-shadow:${isHour ? GLOW_HOUR : GLOW_DIM};opacity:${isHour ? 1 : isMin ? 0.95 : 0.8};filter:brightness(${sweep ? 1.6 : 1})`,
   };
 }
 
@@ -519,9 +702,11 @@ function homeBg(): string {
     <div class="homebg">
       <div class="orb-wrap">
         <div class="orb-halo"></div>
-        ${bars}
+        <div class="orb-rotor">${bars}</div>
         <div class="orb-core">
-          <div class="sphere"></div><div class="orb-ring1"></div><div class="orb-ring2"></div>
+          <div class="sphere"></div>
+          <div class="orb-gyro"><div class="orb-ring1"></div></div>
+          <div class="orb-gyro rev"><div class="orb-ring2"></div></div>
           <div class="orb-spin">${beads}</div>
         </div>
       </div>
@@ -540,8 +725,29 @@ function homeView(): string {
     .toUpperCase();
   const addr = libraryAddress();
   const playable = state.catalog.filter(playableNow).length;
-  const lastEd = localStorage.getItem("gv-lastplayed") ?? "";
-  const last = state.catalog.find((e) => e.editionId === lastEd);
+  const recents = recentPlays();
+  const last = recents[0]?.e;
+
+  const recentRow = recents.length
+    ? `<div class="home-recent">
+        <div class="mono-label" style="margin-bottom:10px">LAST PLAYED</div>
+        <div class="recent-tiles">
+          ${recents
+            .map(
+              (r) => `
+            <button class="recent-tile" data-edition="${esc(r.e.editionId)}">
+              <div class="rart" style="${artGrad(hueOf(r.e.editionId))}"></div>
+              <div class="rbody">
+                <div class="rtitle">${esc(r.e.title)}</div>
+                <div class="rstats">▶ ×${r.log.playCount} · ${fmtDur(r.log.totalSeconds)} ·
+                  <span data-ago data-ts="${r.log.lastPlayedAt}">${fmtAgo(r.log.lastPlayedAt)}</span></div>
+              </div>
+            </button>`,
+            )
+            .join("")}
+        </div>
+      </div>`
+    : "";
 
   return `
     ${homeBg()}
@@ -558,6 +764,7 @@ function homeView(): string {
           </div>
         </div>
       </div>
+      ${recentRow}
       <div class="home-cards">
         <button class="home-card primary" data-go="shelf">
           <div class="num">01</div>
@@ -870,8 +1077,13 @@ function renderChrome(): void {
   document.getElementById("mini-card")?.classList.toggle("in", Boolean(first));
   const slotStatus = document.getElementById("slot-status");
   if (slotStatus) {
-    slotStatus.textContent = first ? "CARD SEATED" : "INSERT A CARD";
-    slotStatus.className = `slot-status ${first ? "on" : ""}`;
+    if (slotEvent && Date.now() < slotEvent.until) {
+      slotStatus.textContent = slotEvent.kind === "in" ? "CARD INSERTED" : "CARD EJECTED";
+      slotStatus.className = `slot-status flash ${slotEvent.kind}`;
+    } else {
+      slotStatus.textContent = first ? "CARD SEATED" : "INSERT A CARD";
+      slotStatus.className = `slot-status ${first ? "on" : ""}`;
+    }
   }
   const slotDetail = document.getElementById("slot-detail");
   if (slotDetail)
@@ -895,6 +1107,10 @@ function renderChrome(): void {
   if (homeSec) homeSec.textContent = String(now.getSeconds()).padStart(2, "0");
   const homeDate = document.getElementById("home-date");
   if (homeDate) homeDate.textContent = dateStr;
+  // Relative "il y a…" labels tick surgically (kept OUT of sigOf on purpose)
+  document.querySelectorAll<HTMLElement>("[data-ago]").forEach((el) => {
+    el.textContent = fmtAgo(Number(el.dataset.ts));
+  });
 
   // Orbital PS1 clock: surgical style updates — CSS transitions animate the
   // hour/minute bar hand-off, beads pulse with the seconds.
@@ -934,6 +1150,7 @@ function sigOf(): string {
     b: state.bootLines.map((l) => l.state + l.value).join("|"),
     pl: state.playing?.cartridge.mount_point ?? null,
     ft: state.fatal?.code ?? null,
+    r: recentPlays().map((x) => [x.e.editionId, x.log.playCount, Math.floor(x.log.totalSeconds / 60)]),
   });
 }
 
@@ -955,7 +1172,7 @@ function wire(root: HTMLElement): void {
   root.querySelectorAll<HTMLButtonElement>("[data-go]").forEach((b) =>
     b.addEventListener("click", () => go(b.dataset.go as Screen)),
   );
-  root.querySelectorAll<HTMLButtonElement>(".gamecard, [data-edition]:not(.gamecard)").forEach((b) =>
+  root.querySelectorAll<HTMLButtonElement>(".gamecard, [data-edition]:not(.gamecard):not(#home-continue)").forEach((b) =>
     b.addEventListener("click", () => {
       if (!b.dataset.edition) return;
       state.sel = b.dataset.edition;
@@ -1113,6 +1330,7 @@ async function runBoot(): Promise<void> {
   await fetchOwned();
   await fetchMarketState();
   setLine(4, `${state.owned.length} LICENCE${state.owned.length > 1 ? "S" : ""} · ${state.games.length} CARD${state.games.length > 1 ? "S" : ""}`, true);
+  scanPrimed = true; // from now on, new mounts are real insertions
 
   setTimeout(() => {
     if (state.screen === "boot") go("home");
@@ -1137,11 +1355,24 @@ async function forceRefresh(): Promise<void> {
   render();
 }
 
+let scanPrimed = false; // cards present at boot must not fire "inserted"
+
 async function refresh(): Promise<void> {
-  if (state.playing || state.screen === "boot") return;
+  if (state.playing || launching || state.screen === "boot") return;
   try {
     const found = await invoke<Cartridge[]>("scan_cartridges");
-    state.games = found.map(judge);
+    const newGames = found.map(judge);
+    if (scanPrimed) {
+      const prev = new Set(state.games.map((g) => g.cartridge.mount_point));
+      const cur = new Set(newGames.map((g) => g.cartridge.mount_point));
+      newGames
+        .filter((g) => !prev.has(g.cartridge.mount_point))
+        .forEach((g) => cardToast("in", g.meta.title ?? g.cartridge.volume_label ?? "CARD"));
+      state.games
+        .filter((g) => !cur.has(g.cartridge.mount_point))
+        .forEach((g) => cardToast("out", g.meta.title ?? g.cartridge.volume_label ?? "CARD"));
+    }
+    state.games = newGames;
     state.lastScan = new Date().toLocaleTimeString();
     if (scanCount % 15 === 0) {
       void fetchOnchainCatalog(chainClient ?? undefined)
