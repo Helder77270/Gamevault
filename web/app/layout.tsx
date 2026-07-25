@@ -1,23 +1,35 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Chakra_Petch, Space_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { ConnectButton } from "./components/ConnectButton";
 
+const chakra = Chakra_Petch({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-sans",
+});
+const spaceMono = Space_Mono({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  variable: "--font-mono",
+});
+
 export const metadata: Metadata = {
-  title: "GameVault — marketplace",
+  title: "AURA-64 — GameVault marketplace",
   description: "Jeux indés en cartouches USB/SD : licences ERC-721, jouables hors ligne, revendables avec royalties.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="fr">
+    <html lang="fr" className={`${chakra.variable} ${spaceMono.variable}`}>
       <body>
         <Providers>
           <header className="topbar">
-            <div className="brand">
-              GAME<span>VAULT</span>
-            </div>
+            <Link href="/" className="brand">
+              AURA&#8209;64 <span>GAMEVAULT</span>
+            </Link>
             <nav className="nav">
               <Link href="/">Marketplace</Link>
               <Link href="/studio">Studio</Link>

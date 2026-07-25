@@ -25,6 +25,17 @@ export const BLURBS: Record<string, string> = {
   "2": "Ramassez 10 pièces, évitez les rouges. L'édition de développement.",
 };
 
+/** Cosmetic genre tags keyed by editionId (like BLURBS). */
+export const GENRES: Record<string, string> = {
+  "1": "ARCADE",
+  "2": "ARCADE",
+  "3": "RPG",
+};
+
+/** Deterministic art hue — same formula in launcher and web so every
+ *  edition keeps one colour across all surfaces. */
+export const hueOf = (editionId: string): number => (Number(editionId) * 137) % 360;
+
 export async function fetchOnchainCatalog(existingClient?: PublicClient): Promise<OnchainEdition[]> {
   if (!DEPLOYMENTS.gameRegistry) return [];
   const client =
