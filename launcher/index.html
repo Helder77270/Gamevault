@@ -3,17 +3,43 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>GameVault Launcher</title>
+    <title>AURA-64 · GameVault Launcher</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/src/styles.css" />
     <script type="module" src="/src/main.ts" defer></script>
   </head>
   <body>
-    <header id="topbar">
-      <div class="brand">GAME<span>VAULT</span></div>
-      <nav id="tabs"></nav>
-      <div id="session-zone"></div>
-    </header>
-    <main id="view"></main>
-    <footer id="statusbar"></footer>
+    <div class="console">
+      <div class="topbar">
+        <div class="brandrow">
+          <div class="logo-chip"></div>
+          <div class="logo-text">AURA&#8209;64</div>
+          <div class="ver">GAMEVAULT</div>
+        </div>
+        <div class="toprow-right">
+          <button class="pillbtn" id="restart-btn">RESTART</button>
+          <div class="led" id="led-chain" title="Chaîne (Base Sepolia)"></div>
+          <div class="led" id="led-ticketd" title="ticketd"></div>
+          <div class="led" id="led-card" title="Cartouche"></div>
+        </div>
+      </div>
+      <div id="screen"></div>
+      <div class="bottombar">
+        <div class="slotrow">
+          <div class="mini-slot"><div class="mini-slot-line"></div><div class="mini-card" id="mini-card"></div></div>
+          <div class="slot-status" id="slot-status">NO CARD</div>
+          <div class="vsep"></div>
+          <div class="slot-dim" id="slot-detail">SLOT A &nbsp;&#183;&nbsp; —</div>
+        </div>
+        <div class="clockrow">
+          <div class="slot-dim" id="bar-date"></div>
+          <div class="bar-clock" id="bar-clock"></div>
+        </div>
+      </div>
+    </div>
   </body>
 </html>
