@@ -3,6 +3,7 @@
 // All security/market logic is unchanged underneath.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import QRCode from "qrcode";
 import { createPublicClient, http } from "viem";
@@ -71,6 +72,8 @@ const state = {
   lastScan: "",
   ownerCheck: "",
   playing: null as Game | null,
+  /** native (.exe) game process currently running beside the launcher */
+  nativeRun: null as { g: Game; pid: number; startedAt: number } | null,
   dlStatus: {} as Record<string, string>,
   market: {} as Record<string, { owner: string; seller: string; price: bigint }>,
   selling: null as string | null,
@@ -486,7 +489,7 @@ function launchHide(): void {
 }
 
 async function play(g: Game): Promise<void> {
-  if (launching || state.playing) return;
+  if (launching || state.playing || state.nativeRun) return;
   launching = true;
   launchShow(g);
   try {
@@ -508,8 +511,12 @@ async function play(g: Game): Promise<void> {
     } else {
       launchStage(1);
     }
+    let launched: { kind: string; pid?: number };
     try {
-      await minMs(invoke("play_game", { mountPoint: g.cartridge.mount_point }), 900);
+      launched = await minMs(
+        invoke<{ kind: string; pid?: number }>("play_game", { mountPoint: g.cartridge.mount_point }),
+        900,
+      );
     } catch (e) {
       const msg = String(e);
       launchHide();
@@ -523,22 +530,81 @@ async function play(g: Game): Promise<void> {
       );
       return;
     }
-    launchStage(2, "DECRYPTED");
+    launchStage(2, launched.kind === "exe" ? `SPAWNED · PID ${launched.pid}` : "DECRYPTED");
     chimeLaunch();
     logPlayStart(editionFor(g)?.editionId ?? g.meta.edition ?? "");
     await new Promise((r) => setTimeout(r, 700));
-    state.playing = g;
-    render(); // iframe mounts underneath the overlay
+    if (launched.kind === "exe") {
+      state.nativeRun = { g, pid: launched.pid ?? 0, startedAt: Date.now() };
+      startNativeWatchdog();
+    } else {
+      state.playing = g;
+    }
+    render(); // player view / native panel mounts underneath the overlay
     launchHide(); // then the overlay fades to reveal it
   } finally {
     launching = false;
   }
 }
 
+// ── Native process: resale watchdog + exit listener ──────────
+// Decision 2026-10-05: on resale detected mid-session, the process is
+// TERMINATED (not just notified) — live revocation at full strength.
+
+const NATIVE_OWNER_CHECK_MS = 60_000;
+let nativeWatchdog: number | undefined;
+
+function startNativeWatchdog(): void {
+  stopNativeWatchdog();
+  nativeWatchdog = window.setInterval(async () => {
+    const t = state.nativeRun?.g.ticket;
+    if (!t) return;
+    if ((await checkOwnerOnline(t)) === "revoked") {
+      stopNativeWatchdog();
+      await invoke("stop_game"); // kills the child, cleans the run dir
+      state.nativeRun = null;
+      fail(
+        "Licence moved on-chain.",
+        "La licence a été revendue pendant la partie — le processus a été terminé. Le nouveau propriétaire doit appairer sa machine.",
+        "ERR 0x52 · RESOLD MID-SESSION · PROCESS TERMINATED",
+        "detail",
+      );
+    }
+  }, NATIVE_OWNER_CHECK_MS);
+}
+
+function stopNativeWatchdog(): void {
+  if (nativeWatchdog !== undefined) window.clearInterval(nativeWatchdog);
+  nativeWatchdog = undefined;
+}
+
+void listen<{ code: number | null; seconds: number; killed: boolean }>("native-exited", (e) => {
+  stopNativeWatchdog();
+  logPlayEnd();
+  const wasRunning = state.nativeRun !== null;
+  state.nativeRun = null;
+  if (wasRunning && !e.payload.killed) chimeOut(); // natural exit (window closed)
+  if (state.screen !== "error") render();
+});
+
+function nativeView(run: NonNullable<typeof state.nativeRun>): string {
+  const ed = editionFor(run.g);
+  return `
+    <div class="launch-ov" style="animation:none">
+      <div class="lv-art" style="${artGrad(hueOf(ed?.editionId ?? "1"))}"><div class="sheen"></div></div>
+      <div class="lv-title">${esc(run.g.meta.title ?? ed?.title ?? "GAME")}</div>
+      <div class="lv-sub">NATIVE PROCESS · PID ${run.pid} · <span data-elapsed data-ts="${run.startedAt}">00:00</span></div>
+      <div class="lv-sub" style="margin-top:4px">OWNERSHIP RE-CHECKED EVERY 60 S · RESALE TERMINATES THE PROCESS</div>
+      <button class="pillbtn dashed" id="quit-btn" style="margin-top:18px">✕ EJECT · TERMINATE</button>
+    </div>`;
+}
+
 async function quit(): Promise<void> {
-  await invoke("stop_game");
+  stopNativeWatchdog();
+  await invoke("stop_game"); // drops the HTML bundle AND/OR kills the native child
   logPlayEnd();
   state.playing = null;
+  state.nativeRun = null;
   render();
 }
 
@@ -1111,6 +1177,11 @@ function renderChrome(): void {
   document.querySelectorAll<HTMLElement>("[data-ago]").forEach((el) => {
     el.textContent = fmtAgo(Number(el.dataset.ts));
   });
+  // Native-run elapsed timer ticks surgically too (mm:ss since spawn)
+  document.querySelectorAll<HTMLElement>("[data-elapsed]").forEach((el) => {
+    const s = Math.max(0, Math.floor((Date.now() - Number(el.dataset.ts)) / 1000));
+    el.textContent = `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  });
 
   // Orbital PS1 clock: surgical style updates — CSS transitions animate the
   // hour/minute bar hand-off, beads pulse with the seconds.
@@ -1149,6 +1220,7 @@ function sigOf(): string {
     oc: state.ownerCheck,
     b: state.bootLines.map((l) => l.state + l.value).join("|"),
     pl: state.playing?.cartridge.mount_point ?? null,
+    nr: state.nativeRun?.pid ?? null,
     ft: state.fatal?.code ?? null,
     r: recentPlays().map((x) => [x.e.editionId, x.log.playCount, Math.floor(x.log.totalSeconds / 60)]),
   });
@@ -1159,6 +1231,12 @@ function render(): void {
   const root = document.getElementById("screen")!;
   if (state.playing) {
     root.innerHTML = playerView(state.playing);
+    document.getElementById("quit-btn")?.addEventListener("click", () => void quit());
+    lastSig = sigOf();
+    return;
+  }
+  if (state.nativeRun) {
+    root.innerHTML = nativeView(state.nativeRun);
     document.getElementById("quit-btn")?.addEventListener("click", () => void quit());
     lastSig = sigOf();
     return;

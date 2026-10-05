@@ -1,0 +1,12 @@
+[package]
+name = "gamevault-native-test"
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+opt-level = "z"
+strip = true
+
+[[bin]]
+name = "native-test"
+path = "src/main.rs"

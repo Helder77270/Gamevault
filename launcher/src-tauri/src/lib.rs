@@ -2,13 +2,43 @@ mod crypto;
 mod media;
 
 use serde_json::Value;
-use std::path::Path;
-use std::sync::Mutex;
-use tauri::Manager;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use tauri::{AppHandle, Emitter, Manager};
 
 /// Decrypted game bundle, held in memory only — never written to disk,
 /// never handed to the webview as data (served via the custom protocol).
 struct GameSession(Mutex<Option<Vec<u8>>>);
+
+/// A running NATIVE game process (exe runtime). Plaintext exists on disk
+/// only inside its run dir, for the lifetime of the process.
+struct NativeRun {
+    child: std::process::Child,
+    dir: PathBuf,
+    started: Instant,
+}
+struct NativeSession(Arc<Mutex<Option<NativeRun>>>);
+
+fn run_root() -> PathBuf {
+    PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".into()))
+        .join("GameVault")
+        .join("run")
+}
+
+/// Kill + clean a native run and tell the UI. Used by EJECT and revocation.
+fn end_native(app: &AppHandle, slot: &Arc<Mutex<Option<NativeRun>>>, killed: bool) {
+    if let Some(mut run) = slot.lock().unwrap().take() {
+        let _ = run.child.kill();
+        let _ = run.child.wait();
+        let secs = run.started.elapsed().as_secs();
+        let _ = std::fs::remove_dir_all(&run.dir);
+        let _ = app.emit(
+            "native-exited",
+            serde_json::json!({ "code": null, "seconds": secs, "killed": killed }),
+        );
+    }
+}
 
 /// Scan removable volumes (plus GAMEVAULT_DEV_MEDIA_DIR in dev) for cartridges.
 #[tauri::command]
@@ -21,7 +51,12 @@ fn scan_cartridges() -> Vec<media::Cartridge> {
 /// platform signature; the crypto below fails closed regardless (a forged
 /// ticket cannot contain an envelope our device key opens).
 #[tauri::command]
-fn play_game(state: tauri::State<GameSession>, mount_point: String) -> Result<(), String> {
+fn play_game(
+    app: AppHandle,
+    state: tauri::State<GameSession>,
+    native: tauri::State<NativeSession>,
+    mount_point: String,
+) -> Result<Value, String> {
     let gv = Path::new(&mount_point).join("gamevault");
 
     let ticket: Value = serde_json::from_str(
@@ -41,17 +76,101 @@ fn play_game(state: tauri::State<GameSession>, mount_point: String) -> Result<()
         .map_err(|e| format!("clé d'appareil refusée: {e}"))?;
 
     let enc = std::fs::read(gv.join("build.enc")).map_err(|e| format!("build.enc: {e}"))?;
-    let html = crypto::decrypt_build(&enc, &content_key)
+    let plain = crypto::decrypt_build(&enc, &content_key)
         .map_err(|e| format!("déchiffrement du build: {e}"))?;
 
-    *state.0.lock().unwrap() = Some(html);
-    Ok(())
+    // The bytes describe their own runtime: PE executable ("MZ") -> native
+    // process beside the launcher; anything else -> HTML in the webview.
+    if plain.starts_with(b"MZ") {
+        return launch_native(app, native, &ticket, plain).map_err(|e| format!("runtime natif: {e}"));
+    }
+
+    *state.0.lock().unwrap() = Some(plain);
+    Ok(serde_json::json!({ "kind": "html" }))
 }
 
-/// Drop the decrypted bundle from memory when the player quits.
+/// Native runtime (design: docs/native-runtime.md). Transient verified
+/// plaintext: write -> re-hash vs the decrypted buffer (GCM already proved
+/// authenticity) -> spawn in its own console -> watch -> delete on exit.
+fn launch_native(
+    app: AppHandle,
+    native: tauri::State<NativeSession>,
+    ticket: &Value,
+    plain: Vec<u8>,
+) -> Result<Value, String> {
+    use sha2::{Digest, Sha256};
+
+    if native.0.lock().unwrap().is_some() {
+        return Err("un jeu natif tourne déjà".into());
+    }
+
+    let token = ticket["tokenId"].as_str().unwrap_or("x");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let dir = run_root().join(format!("{token}-{stamp}"));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("dossier run: {e}"))?;
+    let exe = dir.join("game.exe");
+    std::fs::write(&exe, &plain).map_err(|e| format!("écriture exe: {e}"))?;
+
+    // Paranoia hash: what landed on disk is byte-for-byte what we decrypted
+    let on_disk = std::fs::read(&exe).map_err(|e| e.to_string())?;
+    if Sha256::digest(&on_disk) != Sha256::digest(&plain) {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err("empreinte disque != empreinte déchiffrée".into());
+    }
+
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.current_dir(&dir);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0000_0010); // CREATE_NEW_CONSOLE — own window
+    }
+    let child = cmd.spawn().map_err(|e| format!("spawn: {e}"))?;
+    let pid = child.id();
+
+    let slot = native.0.clone();
+    *slot.lock().unwrap() = Some(NativeRun { child, dir, started: Instant::now() });
+
+    // Watcher: polls the child; on natural exit -> cleanup + event.
+    let watcher_slot = native.0.clone();
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(600));
+        let mut guard = watcher_slot.lock().unwrap();
+        match guard.as_mut() {
+            Some(run) => match run.child.try_wait() {
+                Ok(Some(status)) => {
+                    let secs = run.started.elapsed().as_secs();
+                    let dir = run.dir.clone();
+                    *guard = None;
+                    drop(guard);
+                    let _ = std::fs::remove_dir_all(&dir);
+                    let _ = app.emit(
+                        "native-exited",
+                        serde_json::json!({ "code": status.code(), "seconds": secs, "killed": false }),
+                    );
+                    break;
+                }
+                Ok(None) => {}
+                Err(_) => {
+                    *guard = None;
+                    break;
+                }
+            },
+            None => break, // ended via EJECT/revocation (end_native emitted)
+        }
+    });
+
+    Ok(serde_json::json!({ "kind": "exe", "pid": pid }))
+}
+
+/// Quit: drop the HTML bundle from memory AND/OR kill the native process.
 #[tauri::command]
-fn stop_game(state: tauri::State<GameSession>) {
+fn stop_game(app: AppHandle, state: tauri::State<GameSession>, native: tauri::State<NativeSession>) {
     *state.0.lock().unwrap() = None;
+    end_native(&app, &native.0, true);
 }
 
 /// This machine's device pubkey (creates the keypair on first call).
@@ -121,6 +240,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(GameSession(Mutex::new(None)))
+        .manage(NativeSession(Arc::new(Mutex::new(None))))
+        .setup(|_app| {
+            // Sweep run dirs orphaned by a previous crash — plaintext must
+            // never outlive its process.
+            let _ = std::fs::remove_dir_all(run_root());
+            Ok(())
+        })
         .register_uri_scheme_protocol("game", |ctx, _request| {
             let state = ctx.app_handle().state::<GameSession>();
             let guard = state.0.lock().unwrap();

@@ -20,6 +20,7 @@ contracts/lib/
 # regenerable artifacts (npm run build -w game && npm run make-dev-ticket -w shared)
 game/dist/
 launcher/dev-media/gamevault/build.enc
+launcher/dev-media/gamevault/build.enc.bak
 subgraph/generated/
 subgraph/build/
 ticketd/data/
