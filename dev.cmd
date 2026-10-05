@@ -1,5 +1,5 @@
 @echo off
-rem GameVault — lance tout l'environnement de dev (3 fenetres) :
+rem GameVault - lance tout l'environnement de dev (3 fenetres) :
 rem   - ticketd   : http://localhost:8787  (emission des tickets)
 rem   - web       : http://localhost:3000  (marketplace + /pair + /trade)
 rem   - launcher  : fenetre Tauri (compile ~1 min au premier lancement)
