@@ -53,8 +53,8 @@ export async function putBuild(bytes: Uint8Array, name: string, jwt: string): Pr
  * happen right after pinning), then the public fallbacks. A wrong-bytes
  * response fails the sha256 check and the next gateway is tried.
  */
-export async function fetchBuild(cid: string, expectedSha256?: string, gateway?: string): Promise<Uint8Array> {
-  const order = gateway ? [gateway] : [GATEWAYS[0], ...GATEWAYS];
+export async function fetchBuild(cid: string, expectedSha256?: string, gateway?: string | string[]): Promise<Uint8Array> {
+  const order = Array.isArray(gateway) ? gateway : gateway ? [gateway] : [GATEWAYS[0], ...GATEWAYS];
   let lastErr = "";
   for (const gw of order) {
     try {

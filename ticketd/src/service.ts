@@ -11,7 +11,7 @@ import { parsePairingMessage } from "@gamevault/shared/siwe";
 import { DEV_PLATFORM_PRIV, devContentKeyFor } from "@gamevault/shared/devkeys";
 import { LICENSE_ABI, REGISTRY_ABI } from "@gamevault/shared/abi";
 import { DEPLOYMENTS } from "@gamevault/shared/deployments";
-import { putBuild, type StoredBuild } from "@gamevault/shared/storage";
+import { fetchBuild, putBuild, type StoredBuild } from "@gamevault/shared/storage";
 
 const TICKET_TTL_SEC = 30 * 24 * 3600; // 30-day offline window
 const MESSAGE_MAX_AGE_MS = 10 * 60 * 1000; // pairing message freshness
@@ -76,10 +76,37 @@ export async function publishBuild(plain: Uint8Array, name: string): Promise<Sto
   const jwt = process.env.PINATA_JWT;
   if (!jwt) throw new Error("PINATA_JWT manquant dans ticketd/.env");
   const contentKey = crypto.getRandomValues(new Uint8Array(32));
-  const stored = await putBuild(encryptBuild(plain, contentKey), name, jwt);
+  const enc = encryptBuild(plain, contentKey);
+  const stored = await putBuild(enc, name, jwt);
   saveKey(stored.cid, hex(contentKey));
-  console.log(`✔ build publié: ${name} -> ${stored.cid} (clé mémorisée)`);
+  cacheBuild(stored.cid, enc); // primary distribution — IPFS is the backup
+  console.log(`✔ build publié: ${name} -> ${stored.cid} (clé mémorisée, cache local)`);
   return stored;
+}
+
+// ── Build distribution ────────────────────────────────────────────────────
+// Decided 2026-10-06: clients fetch builds from ticketd (local cache filled
+// at publish time), NOT from IPFS gateways directly — public gateways are
+// flaky (transient 404s, 429s) and CORS-hostile from a webview. IPFS stays
+// the durable backup: a cache miss refills from the gateways server-side.
+// Integrity remains CLIENT-side (sha256 vs the on-chain hash), so this
+// server is as untrusted as a gateway.
+
+const BUILDS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../data/builds");
+
+export function cacheBuild(cid: string, bytes: Uint8Array): void {
+  mkdirSync(BUILDS_DIR, { recursive: true });
+  writeFileSync(join(BUILDS_DIR, cid), bytes);
+}
+
+export async function getBuild(cid: string): Promise<Uint8Array> {
+  if (!/^[A-Za-z0-9]{10,100}$/.test(cid)) throw new Error("CID invalide");
+  const p = join(BUILDS_DIR, cid);
+  if (existsSync(p)) return new Uint8Array(readFileSync(p));
+  const bytes = await fetchBuild(cid); // server-side: no CORS, gateway fallback
+  cacheBuild(cid, bytes);
+  console.log(`✔ build ${cid} récupéré d'IPFS -> cache local (${bytes.length} o)`);
+  return bytes;
 }
 
 async function contentKeyFor(tokenId: string): Promise<Uint8Array> {

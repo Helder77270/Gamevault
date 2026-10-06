@@ -3,7 +3,7 @@
 //   GET  /health
 
 import { createServer } from "node:http";
-import { issueTicket, takePendingTicket, publishBuild } from "./service.ts";
+import { getBuild, issueTicket, takePendingTicket, publishBuild } from "./service.ts";
 
 const MAX_UPLOAD = 100 * 1024 * 1024; // 100 MB
 
@@ -29,6 +29,20 @@ createServer(async (req, res) => {
   if (pendingMatch) {
     const ticket = takePendingTicket(pendingMatch[1]);
     return ticket ? send(200, ticket) : send(404, { error: "no ticket yet" });
+  }
+
+  // Build distribution: local cache first, IPFS gateways as backup.
+  // The client still verifies sha256 against the on-chain hash.
+  const buildMatch = req.method === "GET" && req.url?.match(/^\/build\/([A-Za-z0-9]{10,100})$/);
+  if (buildMatch) {
+    try {
+      const bytes = await getBuild(buildMatch[1]);
+      res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": bytes.length, ...CORS });
+      return res.end(Buffer.from(bytes));
+    } catch (e) {
+      console.warn(`⛔ build ${buildMatch[1]} introuvable: ${e instanceof Error ? e.message : e}`);
+      return send(404, { error: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   // Studio publish: raw build bytes in -> encrypted + pinned, key stored

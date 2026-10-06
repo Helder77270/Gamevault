@@ -10,12 +10,15 @@ import { createPublicClient, http } from "viem";
 import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/shared";
 import { fetchOnchainCatalog, BLURBS, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
-import { fetchBuild } from "@gamevault/shared/storage";
+import { fetchBuild, GATEWAYS } from "@gamevault/shared/storage";
 import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
 
 const MARKETPLACE_URL = "http://localhost:3000";
 const TICKETD_URL = "http://localhost:8787";
 const GAME_URL = navigator.userAgent.includes("Windows") ? "http://game.localhost/" : "game://localhost/";
+// Builds come from ticketd (local cache, no CORS); IPFS gateways are the
+// backup. Integrity is checked HERE against the on-chain sha256 either way.
+const BUILD_MIRRORS = [`${TICKETD_URL}/build/`, ...GATEWAYS];
 
 // Platform public keys embedded in the launcher (real key + dev fixture key)
 const PLATFORM_PUBS = [
@@ -345,7 +348,7 @@ async function downloadBuild(g: Game): Promise<void> {
   state.dlStatus[mount] = "FETCH + VERIFY…";
   render();
   try {
-    const bytes = await fetchBuild(ed.buildCid, ed.buildSha256);
+    const bytes = await fetchBuild(ed.buildCid, ed.buildSha256, BUILD_MIRRORS);
     let bin = "";
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     await invoke("write_build", { mountPoint: mount, dataB64: btoa(bin) });
@@ -395,7 +398,7 @@ async function installTo(volume: Volume): Promise<void> {
   inst.status = "";
   render();
   try {
-    const bytes = await fetchBuild(inst.edition.buildCid, inst.edition.buildSha256);
+    const bytes = await fetchBuild(inst.edition.buildCid, inst.edition.buildSha256, BUILD_MIRRORS);
     inst.stage = 2;
     render();
     let bin = "";
