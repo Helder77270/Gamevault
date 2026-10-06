@@ -84,16 +84,22 @@ export default function StudioPage() {
 
   const publishEdition = async () => {
     setError("");
-    if (!file) return setError("choisissez le fichier du build (HTML autonome)");
+    if (!file) return setError("choisissez le fichier du build (HTML autonome ou .exe natif)");
     try {
       const bytes = await file.arrayBuffer();
-      // Guard: an edition is IMMUTABLE once on-chain — refuse anything that
-      // isn't a self-contained HTML build (e.g. a raw .js source file)
+      // Guard: an edition is IMMUTABLE once on-chain — accept only the two
+      // runtimes the launcher knows how to boot, sniffed from the bytes:
+      // PE executable ("MZ" magic) -> native process, self-contained HTML
+      // -> webview. Anything else (raw .js source…) is refused.
+      const raw = new Uint8Array(bytes);
+      const isExe = raw[0] === 0x4d && raw[1] === 0x5a; // "MZ"
       const head = new TextDecoder().decode(bytes.slice(0, 512)).trimStart().toLowerCase();
-      if (!head.startsWith("<!doctype html") && !head.startsWith("<html")) {
+      const isHtml = head.startsWith("<!doctype html") || head.startsWith("<html");
+      if (!isExe && !isHtml) {
         throw new Error(
-          "ce fichier n'est pas un build HTML autonome. Attendu : game/dist/<jeu>.html " +
-            "(généré par `npm run build -w game`, moteur inclus) — pas le fichier source .js.",
+          "ce fichier n'est ni un build HTML autonome ni un exécutable natif (.exe). " +
+            "Attendu : game/dist/<jeu>.html (généré par `npm run build -w game`, moteur inclus) " +
+            "ou un .exe mono-fichier — pas le fichier source .js.",
         );
       }
       setStatus("1/2 — chiffrement + épinglage IPFS (via la plateforme)…");
@@ -176,7 +182,7 @@ export default function StudioPage() {
           {gameId && !result && (
             <>
               <p>
-                <input type="file" accept=".html" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                <input type="file" accept=".html,.exe" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
               </p>
               <p>
                 Prix <input style={{ width: "7rem" }} value={price} onChange={(e) => setPrice(e.target.value)} /> ETH

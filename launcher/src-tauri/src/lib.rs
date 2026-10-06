@@ -173,6 +173,19 @@ fn stop_game(app: AppHandle, state: tauri::State<GameSession>, native: tauri::St
     end_native(&app, &native.0, true);
 }
 
+/// Resync after a webview reload: is a native game still running under us?
+#[tauri::command]
+fn native_status(native: tauri::State<NativeSession>) -> Value {
+    match native.0.lock().unwrap().as_ref() {
+        Some(run) => serde_json::json!({
+            "running": true,
+            "pid": run.child.id(),
+            "seconds": run.started.elapsed().as_secs(),
+        }),
+        None => serde_json::json!({ "running": false }),
+    }
+}
+
 /// This machine's device pubkey (creates the keypair on first call).
 #[tauri::command]
 fn get_device_pubkey() -> Result<String, String> {
@@ -265,12 +278,22 @@ pub fn run() {
             scan_cartridges,
             play_game,
             stop_game,
+            native_status,
             get_device_pubkey,
             write_ticket,
             write_build,
             list_removable_volumes,
             install_cartridge
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app, event| {
+            // Plaintext must never outlive its process: closing the launcher
+            // takes any running native game (and its run dir) down with it.
+            if let tauri::RunEvent::Exit = event {
+                let native = app.state::<NativeSession>();
+                let slot = native.0.clone();
+                end_native(app, &slot, true);
+            }
+        });
 }

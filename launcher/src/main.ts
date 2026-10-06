@@ -73,7 +73,8 @@ const state = {
   ownerCheck: "",
   playing: null as Game | null,
   /** native (.exe) game process currently running beside the launcher */
-  nativeRun: null as { g: Game; pid: number; startedAt: number } | null,
+  // g is null after a webview reload mid-game (resynced from native_status)
+  nativeRun: null as { g: Game | null; pid: number; startedAt: number } | null,
   dlStatus: {} as Record<string, string>,
   market: {} as Record<string, { owner: string; seller: string; price: bigint }>,
   selling: null as string | null,
@@ -557,7 +558,7 @@ let nativeWatchdog: number | undefined;
 function startNativeWatchdog(): void {
   stopNativeWatchdog();
   nativeWatchdog = window.setInterval(async () => {
-    const t = state.nativeRun?.g.ticket;
+    const t = state.nativeRun?.g?.ticket;
     if (!t) return;
     if ((await checkOwnerOnline(t)) === "revoked") {
       stopNativeWatchdog();
@@ -588,13 +589,16 @@ void listen<{ code: number | null; seconds: number; killed: boolean }>("native-e
 });
 
 function nativeView(run: NonNullable<typeof state.nativeRun>): string {
-  const ed = editionFor(run.g);
+  const ed = run.g ? editionFor(run.g) : undefined;
+  const guard = run.g?.ticket
+    ? "OWNERSHIP RE-CHECKED EVERY 60 S · RESALE TERMINATES THE PROCESS"
+    : "SESSION RESYNCED · TICKET UNKNOWN — EJECT TO REARM THE GUARD";
   return `
     <div class="launch-ov" style="animation:none">
       <div class="lv-art" style="${artGrad(hueOf(ed?.editionId ?? "1"))}"><div class="sheen"></div></div>
-      <div class="lv-title">${esc(run.g.meta.title ?? ed?.title ?? "GAME")}</div>
+      <div class="lv-title">${esc(run.g?.meta.title ?? ed?.title ?? "NATIVE GAME")}</div>
       <div class="lv-sub">NATIVE PROCESS · PID ${run.pid} · <span data-elapsed data-ts="${run.startedAt}">00:00</span></div>
-      <div class="lv-sub" style="margin-top:4px">OWNERSHIP RE-CHECKED EVERY 60 S · RESALE TERMINATES THE PROCESS</div>
+      <div class="lv-sub" style="margin-top:4px">${guard}</div>
       <button class="pillbtn dashed" id="quit-btn" style="margin-top:18px">✕ EJECT · TERMINATE</button>
     </div>`;
 }
@@ -1409,6 +1413,23 @@ async function runBoot(): Promise<void> {
   await fetchMarketState();
   setLine(4, `${state.owned.length} LICENCE${state.owned.length > 1 ? "S" : ""} · ${state.games.length} CARD${state.games.length > 1 ? "S" : ""}`, true);
   scanPrimed = true; // from now on, new mounts are real insertions
+
+  // A native game may have survived a webview reload (vite HMR, F5) —
+  // Rust still owns the child; pick the session back up instead of
+  // pretending nothing is running.
+  try {
+    const ns = await invoke<{ running: boolean; pid?: number; seconds?: number }>("native_status");
+    if (ns.running) {
+      state.nativeRun = {
+        g: state.games.find((g) => g.ticket) ?? state.games[0] ?? null,
+        pid: ns.pid ?? 0,
+        startedAt: Date.now() - (ns.seconds ?? 0) * 1000,
+      };
+      startNativeWatchdog();
+    }
+  } catch {
+    /* command absent on an older rust build */
+  }
 
   setTimeout(() => {
     if (state.screen === "boot") go("home");
