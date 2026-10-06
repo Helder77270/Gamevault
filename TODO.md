@@ -1,60 +1,90 @@
-# TODO — GameVault (post-hackathon reframe, 2026-07-23)
+# TODO — GameVault (refonte 2026-10-06)
 
-No deadline pressure anymore — sponsor-track items dropped, The Graph kept
-on merit, storage decided (IPFS behind shared/storage.ts). Work top-down.
+L'ancien TODO (2026-07-23) est soldé : contrats déployés sur Base Sepolia,
+publish studio → IPFS → on-chain, re-download vérifié, revente + révocation
+live, catalogue on-chain, runtime natif .exe (spawn/track/kill-on-resale),
+nouvelle UI home/shelf/store. Ci-dessous : ce qui reste, par priorité.
 
-## P1 — Contracts on Base Sepolia (critical path — Helder)
-- [ ] GameRegistry.sol: studios, games, editions (supply, price, royalty %,
-      **buildCid, buildHash**)
-- [ ] GameLicense.sol: ERC-721 + EIP-2981 royaltyInfo, simple mint (no
-      World ID)
-- [ ] Marketplace.sol: list/buy, reads royaltyInfo() (10% studio) + 5%
-      platform fee, 85% seller
-- [ ] Deploy → paste the 3 addresses into shared/src/deployments.ts
-      (this single edit arms ticketd ownerOf() AND launcher live revocation)
-- [ ] Fund throwaway deployer with Base Sepolia ETH (faucet)
+## P1 — Amis & prêt de jeux (le prochain gros morceau)
 
-## P2 — Studio publish flow (build → IPFS → chain)
-- [x] shared/storage.ts: putBuild (Pinata pin) / fetchBuild (gateway +
-      sha256 integrity check) — 0G/other swap = this one file (2026-07-23)
-- [x] station: `npm run publish -w station` — pins build.enc, prints
-      CID + hash to paste on-chain (2026-07-23; needs PINATA_JWT in env)
-- [ ] After P1: register CID+hash in GameRegistry at edition creation
-- [ ] web/ admin page for studios (upload → encrypt → pin → register)
+Le pitch : « prête ta cartouche » mais en numérique — un ami emprunte ta
+licence, TU perds l'accès pendant le prêt (comme une vraie cartouche, comme
+Steam Family). C'est la règle anti-abus n°1 : un prêt n'est jamais une
+duplication.
 
-## P3 — Launcher verified re-download
-- [x] Cartridge with ticket but no build.enc → download button →
-      fetchBuild(cid, expectedHash) with integrity check → write_build to
-      cartridge; corrupt-build errors point to the flow (2026-07-23)
-      ⚠ dormant until a real CID is pasted into catalog.ts (needs
-      PINATA_JWT publish); switches to on-chain CID after P1
+### Contrats
+- [ ] `FriendRegistry.sol` : `request(addr)` / `accept(addr)` →
+      `friendsSince[a][b] = block.timestamp` (mutuel), `remove(addr)`.
+      Événements pour le subgraph : FriendRequested, FriendsSince, Unfriended.
+- [ ] `GameLicense.sol` : adopter **ERC-4907** (`setUser(tokenId, user,
+      expires)`, `userOf`, `userExpires`) — le stretch prévu depuis le début.
+- [ ] Garde anti-abus dans `setUser` (ou un `LendingManager`) :
+      - amitié **mutuelle depuis ≥ 3 jours** (`friendsSince + 3 days <= now`)
+      - **1 emprunt actif max par token** (natif ERC-4907 : un seul user)
+      - durée de prêt bornée (ex. 14 j max), **cooldown 24 h** entre deux
+        prêts d'un même token (anti « location commerciale » en rotation)
+      - plafond d'amis éligibles au prêt (ex. 8, façon Steam Family)
 
-## P4 — Resale end-to-end on real contracts (reference demo)
-- [ ] Buy flow against Marketplace.sol in web/
-- [ ] Full rehearsal: transfer → new machine pairs → old machine revoked
-      live (launcher hybrid check goes green the moment P1 lands)
+### Règle « 3 jours » — avis
+Bon instinct, mais insuffisante seule : on peut créer 50 « amis » jetables
+aujourd'hui et tous les servir dans 3 jours. Elle devient solide combinée au
+reste : délai (anti-impulsion Sybil) + plafond d'amis (anti-ferme) +
+cooldown (anti-rotation) + perte d'accès du prêteur (anti-duplication).
+Les quatre ensemble rendent le prêt commercial non rentable sans gêner
+l'usage réel entre amis.
 
-## P5 — Subgraph (Base Sepolia) + provenance
-- [x] Event spec: contracts/src/interfaces/IGameVaultEvents.sol — Solidity
-      MUST emit exactly these; subgraph ABIs derive from them (2026-07-23)
-- [x] Subgraph project: schema + manifest + mappings, compiles to WASM
-      (2026-07-23) ⚠ deploy needs P1 addresses + startBlock in
-      subgraph.yaml, then Subgraph Studio (base-sepolia)
-- [x] web /provenance/[tokenId] — owner chain + royalties; graceful until
-      NEXT_PUBLIC_SUBGRAPH_URL is set (2026-07-23)
-- [ ] Launcher full library via subgraph (games owned, cartridge or not)
-- [ ] Replace shared/catalog.ts mock with registry+subgraph reads
+### Ticketd + launcher
+- [ ] ticketd : autoriser le ticket si signer == `ownerOf` **ou**
+      (`userOf` && `userExpires > now`) ; `expiresAt` du ticket =
+      min(TTL 30 j, fin du prêt).
+- [ ] ticketd : REFUSER le ticket au propriétaire pendant un prêt actif
+      (le prêteur perd l'accès — la règle cartouche).
+- [ ] launcher : check hybride élargi (`ownerOf`/`userOf`), bannière
+      « PRÊTÉ À 0x… · J-x » sur la fiche, et fin de prêt = même traitement
+      que la revente (kill du process natif, ERR 0x52 réutilisable).
+- [ ] web : page /friends (demandes, compteur J-3, bouton PRÊTER depuis la
+      fiche d'une licence possédée).
 
-## P6 — UX
-- [ ] WalletConnect purchase in-launcher (approve on phone)
-- [ ] Ship launcher binaries onto cartridges (npm run tauri build)
+## P2 — Full reset (voulu : état propre de bout en bout)
+- [ ] Redéployer GameRegistry/GameLicense/Marketplace (+ ERC-4907 +
+      FriendRegistry si P1 prêt) → nouvelles adresses dans
+      shared/src/deployments.ts
+- [ ] Purger ticketd/data, régénérer les clés (la Pinata JWT et la clé dev
+      ont transité en clair pendant le dev — à régénérer de toute façon)
+- [ ] Republier les éditions saines (runner, snake, native-test) — l'édition
+      « The Witcheur » #3 cassée (0 octet) disparaît avec le reset
+- [ ] Réécrire dev-media + la carte SD physique (son ticket est expiré
+      depuis le 2026-08-23)
+- [ ] Redéployer le subgraph sur les nouvelles adresses
 
-## Done so far (see HANDOFF.md for detail)
-Full local loop works: cartridge detect → platform-sig verify → REAL
-pairing (OS keystore device key, QR → SIWE → ticketd) → in-memory decrypt
-→ Phaser game. Hybrid owner check + renewal + station writer ready and
-waiting on P1 addresses. Selftests: shared 6/6, ticketd 6/6.
+## P3 — Subgraph : déployer pour de vrai
+- [ ] Subgraph Studio base-sepolia : adresses + startBlock → deploy
+- [ ] NEXT_PUBLIC_SUBGRAPH_URL → /provenance/[tokenId] passe au réel
+- [ ] Bibliothèque complète dans le launcher via subgraph (licences
+      possédées sans cartouche insérée)
 
-## Later ideas
-ERC-4907 lending · 0G storage swap · World ID gating (if a real need
-returns) · printed SD sleeves · embedded provenance viewer in launcher
+## P4 — Achat in-launcher (WalletConnect)
+- [ ] BUY dans le launcher → approbation sur téléphone (style Steam Guard),
+      plus de détour navigateur
+
+## P5 — Runtime natif v2
+- [ ] Multi-fichiers : archive zip (hash sur l'archive, extraction dans le
+      run dir, spawn du binaire déclaré)
+- [ ] Signature de code studio vérifiée au lancement (répond aussi à
+      SmartScreen/Defender)
+- [ ] Cache d'exe entre sessions avec manifeste local signé (si le besoin
+      de vitesse apparaît)
+
+## P6 — Finitions UI / hygiène
+- [ ] Mode développeur (réglage) : masquer complètement CID/hash/ticket —
+      aujourd'hui repliés dans l'accordéon DONNÉES TECHNIQUES
+- [ ] Store web : onglets À LA UNE / OCCASIONS / STUDIOS de la maquette
+      (la home a déjà hero + rangées + occasions)
+- [ ] Écran natif pendant le jeu : artwork plein écran + stats live
+      (actuel : fonctionnel mais spartiate)
+- [ ] Masquer l'édition #3 cassée du catalogue en attendant le full reset
+
+## Idées plus tard
+0G storage swap (1 fichier : shared/storage.ts) · World ID gating si besoin
+réel · pochettes SD imprimées · provenance embarquée dans le launcher ·
+wishlist + notifs de baisse de prix sur le store
