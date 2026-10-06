@@ -6,9 +6,37 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { formatEther } from "viem";
+import { createPublicClient, formatEther, http } from "viem";
+import { baseSepolia } from "viem/chains";
 import { fetchOnchainCatalog, BLURBS, GENRES, hueOf, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { DEPLOYMENTS } from "@gamevault/shared/deployments";
+import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
+
+// Second-hand listings — THE thing Steam doesn't have. Read straight from
+// the Marketplace contract: every token whose listing has a seller.
+type Occasion = { tokenId: string; editionId: string; price: bigint; seller: string };
+
+const ZERO = "0x0000000000000000000000000000000000000000";
+
+async function fetchOccasions(): Promise<Occasion[]> {
+  if (!DEPLOYMENTS.gameLicense || !DEPLOYMENTS.marketplace) return [];
+  const c = createPublicClient({ chain: baseSepolia, transport: http() });
+  const license = DEPLOYMENTS.gameLicense as `0x${string}`;
+  const market = DEPLOYMENTS.marketplace as `0x${string}`;
+  const next = await c.readContract({ address: license, abi: LICENSE_ABI, functionName: "nextTokenId" });
+  const found: Occasion[] = [];
+  for (let i = BigInt(1); i <= next; i++) {
+    try {
+      const [seller, price] = await c.readContract({ address: market, abi: MARKETPLACE_ABI, functionName: "listings", args: [i] });
+      if (seller.toLowerCase() === ZERO) continue;
+      const ed = await c.readContract({ address: license, abi: LICENSE_ABI, functionName: "editionOf", args: [i] });
+      found.push({ tokenId: i.toString(), editionId: ed.toString(), price, seller });
+    } catch {
+      /* burned / unknown token */
+    }
+  }
+  return found;
+}
 
 const artStyle = (editionId: string): React.CSSProperties => ({
   background: `linear-gradient(160deg, oklch(0.62 0.13 ${hueOf(editionId)}) 0%, oklch(0.34 0.1 ${hueOf(editionId) + 30}) 65%, oklch(0.22 0.06 265) 100%)`,
@@ -28,6 +56,23 @@ function Card({ e }: { e: OnchainEdition }) {
       <div className="mmeta">
         <span>{e.studio.toUpperCase()}</span>
         <span className="mprice">{formatEther(e.priceWei)} ETH</span>
+      </div>
+    </Link>
+  );
+}
+
+function OccCard({ o, e }: { o: Occasion; e: OnchainEdition | undefined }) {
+  const discount = e && e.priceWei > BigInt(0) ? Number(((e.priceWei - o.price) * BigInt(100)) / e.priceWei) : 0;
+  return (
+    <Link href={`/trade?action=buy&token=${o.tokenId}`} className="mcard">
+      <div className="mart occ-art" style={e ? artStyle(e.editionId) : undefined}>
+        <div className="occbadge">OCCASION</div>
+        <div className="martnote">licence #{o.tokenId} · revente par {o.seller.slice(0, 6)}…{o.seller.slice(-4)}</div>
+      </div>
+      <div className="mtitle">{e?.title ?? `Licence #${o.tokenId}`}</div>
+      <div className="mmeta">
+        <span>{discount > 0 ? `-${discount}% VS NEUF` : "SECONDE MAIN"}</span>
+        <span className="mprice occ-price">{formatEther(o.price)} ETH</span>
       </div>
     </Link>
   );
@@ -55,12 +100,16 @@ const norm = (s: string): string =>
 
 export default function Marketplace() {
   const [catalog, setCatalog] = useState<OnchainEdition[] | null>(null);
+  const [occasions, setOccasions] = useState<Occasion[]>([]);
   const [q, setQ] = useState("");
 
   useEffect(() => {
     fetchOnchainCatalog()
       .then(setCatalog)
       .catch(() => setCatalog([]));
+    fetchOccasions()
+      .then(setOccasions)
+      .catch(() => setOccasions([]));
   }, []);
 
   if (!catalog) return <p className="notice">LECTURE DU REGISTRE ON-CHAIN…</p>;
@@ -138,7 +187,10 @@ export default function Marketplace() {
             <div className="cta-zone">
               <span className="btn">Voir · {formatEther(featured.priceWei)} ETH</span>
               <span className="addr">
-                {featured.minted}/{featured.supply} mintés
+                {featured.minted}/{featured.supply} mintés · royalties {featured.royaltyBps / 100}%
+              </span>
+              <span className="mintbar" aria-hidden="true">
+                <span style={{ width: `${featured.supply > 0 ? Math.max(2, Math.round((featured.minted / featured.supply) * 100)) : 0}%` }}></span>
               </span>
             </div>
           </div>
@@ -146,6 +198,21 @@ export default function Marketplace() {
       </Link>
 
       <Row title="Nouveautés" list={newest} />
+      {occasions.length > 0 && (
+        <>
+          <div className="cat-head">
+            <h2>Occasions · seconde main</h2>
+            <span className="count">
+              {occasions.length} LICENCE{occasions.length > 1 ? "S" : ""} · ROYALTIES AUTO AU STUDIO
+            </span>
+          </div>
+          <div className="hrow">
+            {occasions.map((o) => (
+              <OccCard key={o.tokenId} o={o} e={catalog.find((e) => e.editionId === o.editionId)} />
+            ))}
+          </div>
+        </>
+      )}
       {genres.map((g) => (
         <Row key={g} title={`Genre · ${g}`} list={catalog.filter((e) => GENRES[e.editionId] === g)} />
       ))}

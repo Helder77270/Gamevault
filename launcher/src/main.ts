@@ -85,6 +85,10 @@ const state = {
   /** selected editionId for detail/insert screens */
   sel: null as string | null,
   filter: "all" as "all" | "play",
+  /** shelf layout: retro grid, or Steam-style list + preview pane */
+  shelfMode: (localStorage.getItem("gv-shelfmode") === "list" ? "list" : "grid") as "grid" | "list",
+  /** preview pane: technical data accordion (CID/hash/ticket) open? */
+  techOpen: false,
   fatal: null as { title: string; msg: string; code: string; back: Screen } | null,
 };
 
@@ -785,6 +789,12 @@ function homeBg(): string {
     </div>`;
 }
 
+function ticketDaysLeft(g: Game | undefined): string {
+  if (!g?.ticket) return "—";
+  const d = Math.ceil((g.ticket.expiresAt * 1000 - Date.now()) / 86_400_000);
+  return d > 0 ? `${d} J` : "EXPIRÉ";
+}
+
 function homeView(): string {
   const now = new Date();
   const hh = String(now.getHours()).padStart(2, "0");
@@ -796,62 +806,173 @@ function homeView(): string {
   const addr = libraryAddress();
   const playable = state.catalog.filter(playableNow).length;
   const recents = recentPlays();
-  const last = recents[0]?.e;
+  const seated = state.games[0];
 
-  const recentRow = recents.length
-    ? `<div class="home-recent">
-        <div class="mono-label" style="margin-bottom:10px">LAST PLAYED</div>
-        <div class="recent-tiles">
-          ${recents
-            .map(
-              (r) => `
-            <button class="recent-tile" data-edition="${esc(r.e.editionId)}">
-              <div class="rart" style="${artGrad(hueOf(r.e.editionId))}"></div>
-              <div class="rbody">
-                <div class="rtitle">${esc(r.e.title)}</div>
-                <div class="rstats">▶ ×${r.log.playCount} · ${fmtDur(r.log.totalSeconds)} ·
-                  <span data-ago data-ts="${r.log.lastPlayedAt}">${fmtAgo(r.log.lastPlayedAt)}</span></div>
-              </div>
-            </button>`,
-            )
-            .join("")}
+  const top = `
+    <div class="home-top">
+      <div>
+        <div class="mono-label">WELCOME BACK, ${addr ? `PLAYER ${esc(short(addr, 6).toUpperCase())}` : "PLAYER 01"}</div>
+        <div class="big-clock" style="margin-top:14px">
+          <div class="big-time" id="home-time-b">${hh}<span class="big-colon">:</span>${mm}</div>
+          <div class="big-side">
+            <div class="big-sec" id="home-sec">${ss}</div>
+            <div class="big-date" id="home-date">${esc(date)}</div>
+          </div>
         </div>
-      </div>`
-    : "";
+      </div>
+      <button class="home-store" id="home-store">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6h15l-1.5 9h-12z"></path><path d="M6 6 5 3H2"></path><circle cx="9" cy="20" r="1.6"></circle><circle cx="18" cy="20" r="1.6"></circle></svg>
+        STORE
+        <span class="hs-count">${state.catalog.length} TITRES</span>
+      </button>
+    </div>`;
+
+  // ── PISTE A — no card seated: arcade attract mode ────────────
+  if (!seated) {
+    const recentRow = recents.length
+      ? `<div class="home-recent">
+          <div class="mono-label" style="margin-bottom:10px">LAST PLAYED</div>
+          <div class="recent-tiles">
+            ${recents
+              .map(
+                (r) => `
+              <button class="recent-tile" data-edition="${esc(r.e.editionId)}">
+                <div class="rart" style="${artGrad(hueOf(r.e.editionId))}"></div>
+                <div class="rbody">
+                  <div class="rtitle">${esc(r.e.title)}</div>
+                  <div class="rstats">▶ ×${r.log.playCount} · ${fmtDur(r.log.totalSeconds)} ·
+                    <span data-ago data-ts="${r.log.lastPlayedAt}">${fmtAgo(r.log.lastPlayedAt)}</span></div>
+                </div>
+              </button>`,
+              )
+              .join("")}
+          </div>
+        </div>`
+      : "";
+    return `
+      ${homeBg()}
+      <div class="home">
+        ${top}
+        <div class="attract-zone">
+          <button class="attract" id="home-insert">
+            <span class="atk-slotwrap" aria-hidden="true">
+              <span class="atk-card"></span>
+              <span class="atk-slot"><span class="atk-slot-line"></span></span>
+            </span>
+            <span>
+              <span class="atk-line">INSERT SD CARD TO PLAY</span>
+              <span class="atk-sub">LA CARTE EST LA CLÉ — LE JEU DÉMARRE TOUT SEUL</span>
+            </span>
+          </button>
+          <button class="pillbtn dashed" data-go="shelf">PARCOURIR LE GAME SHELF — ${playable} JOUABLE${playable > 1 ? "S" : ""} →</button>
+        </div>
+        ${recentRow}
+      </div>`;
+  }
+
+  // ── PISTE B — card seated: hero continue + card widget ───────
+  const ed = editionFor(seated);
+  const log = ed ? readLog()[ed.editionId] : undefined;
+  const can = ed ? playableNow(ed) : false;
+  const title = seated.meta.title ?? ed?.title ?? "GAME";
+  const vState = can
+    ? { label: "READY · TICKET " + ticketDaysLeft(seated), cls: "" }
+    : seated.verdict === "unpaired" || !isOurs(seated)
+      ? { label: "PAIR THIS MACHINE", cls: "warn" }
+      : seated.verdict === "expired"
+        ? { label: "TICKET EXPIRÉ — RENEW", cls: "warn" }
+        : !seated.cartridge.has_build
+          ? { label: "NO BUILD — FETCH IPFS", cls: "warn" }
+          : { label: seated.verdict.toUpperCase(), cls: "warn" };
+  const stats = log
+    ? `▶ ×${log.playCount} · ${fmtDur(log.totalSeconds)} · <span data-ago data-ts="${log.lastPlayedAt}">${fmtAgo(log.lastPlayedAt)}</span>`
+    : "PREMIÈRE PARTIE";
 
   return `
     ${homeBg()}
     <div class="home">
-      <div class="home-top">
-        <div>
-          <div class="mono-label">WELCOME BACK, ${addr ? `PLAYER ${esc(short(addr, 6).toUpperCase())}` : "PLAYER 01"}</div>
-          <div class="big-clock" style="margin-top:14px">
-            <div class="big-time" id="home-time-b">${hh}<span class="big-colon">:</span>${mm}</div>
-            <div class="big-side">
-              <div class="big-sec" id="home-sec">${ss}</div>
-              <div class="big-date" id="home-date">${esc(date)}</div>
+      ${top}
+      <div class="heroB">
+        <button class="home-hero" id="home-hero" style="${artGrad(hueOf(ed?.editionId ?? "1"))}">
+          <span class="sheen"></span>
+          <span class="hh-kicker">${can ? "CONTINUE" : "INSERTED"} · ÉD. #${esc(ed?.editionId ?? "?")}${seated.ticket ? ` · LICENCE #${esc(seated.ticket.tokenId)}` : ""}</span>
+          <span class="hh-bottom">
+            <span style="min-width:0">
+              <span class="hh-title">${esc(title)}</span>
+              <span class="hh-stats">${stats}</span>
+            </span>
+            <span class="hh-play ${can ? "" : "ghost"}">${can ? "▶ PLAY" : "OUVRIR LA FICHE"}</span>
+          </span>
+        </button>
+        <div class="card-widget">
+          <div class="mono-label" style="font-size:10px;letter-spacing:0.26em">SLOT A · CARD SEATED</div>
+          <div class="cw-row">
+            <span class="atk-slotwrap" aria-hidden="true">
+              <span class="atk-card" style="animation:none"></span>
+              <span class="atk-slot"><span class="atk-slot-line"></span></span>
+            </span>
+            <div style="min-width:0">
+              <div class="cw-title">${esc(title)}</div>
+              <div class="cw-state ${vState.cls}"><span class="cw-led"></span>${esc(vState.label)}</div>
+              <div class="cw-dim">${esc(seated.cartridge.mount_point)} · ${seated.cartridge.has_build ? "BUILD OK" : "NO BUILD"}${addr ? " · OWNER ✔" : ""}</div>
             </div>
+          </div>
+          <div class="cw-pills">
+            <button class="pillbtn" data-go="shelf">GAME SHELF · ${playable}/${state.catalog.length}</button>
+            <button class="pillbtn violet" id="home-insert">+ CARTE / APPAIRER</button>
           </div>
         </div>
       </div>
-      ${recentRow}
-      <div class="home-cards">
-        <button class="home-card primary" data-go="shelf">
-          <div class="num">01</div>
-          <h3>Game Shelf</h3>
-          <div class="desc">${playable} of ${state.catalog.length} playable</div>
-          <div class="sheen"></div>
-        </button>
-        <button class="home-card violet" id="home-insert">
-          <div class="num">02</div>
-          <h3>Insert Card</h3>
-          <div class="desc">Unlock a title</div>
-        </button>
-        <button class="home-card" id="home-continue" ${last ? `data-edition="${esc(last.editionId)}"` : "disabled"}>
-          <div class="num">03</div>
-          <h3>Continue</h3>
-          <div class="desc">${last ? esc(last.title) : "—"}</div>
-        </button>
+    </div>`;
+}
+
+/** Status label + chip class for an edition, shared by grid, list & preview. */
+function shelfStatus(e: OnchainEdition, g: Game | undefined, ownedTok: { tokenId: string }[], can: boolean): { label: string; cls: "ok" | "warn" | "buy" } {
+  if (can) return { label: "READY", cls: "ok" };
+  if (g) {
+    if (g.verdict === "unpaired" || !isOurs(g)) return { label: "PAIR CARD", cls: "warn" };
+    if (g.verdict === "expired") return { label: "RENEW", cls: "warn" };
+    if (!g.cartridge.has_build) return { label: "NO BUILD", cls: "warn" };
+    return { label: "CHECK CARD", cls: "warn" };
+  }
+  if (ownedTok.length) return { label: "AWAITING CARD", cls: "warn" };
+  return { label: `${formatEth(e.priceWei)} ETH`, cls: "buy" };
+}
+
+function previewPane(e: OnchainEdition): string {
+  const g = cardForEdition(e.editionId);
+  const ownedTok = state.owned.filter((o) => o.editionId === e.editionId);
+  const can = playableNow(e);
+  const log = readLog()[e.editionId];
+  const { action, hint } = actionFor(e, g, ownedTok, can);
+  return `
+    <div class="shelf-preview">
+      <div class="pv-banner" style="${artGrad(hueOf(e.editionId))}">
+        <div class="pv-note">ÉD. #${esc(e.editionId)} · ${esc(e.studio.toUpperCase())}</div>
+        <div class="pv-foot">
+          <div class="pv-title">${esc(e.title)}</div>
+          <div class="pv-kick">${g?.ticket ? `LICENCE #${esc(g.ticket.tokenId)} · ` : ownedTok.length ? `LICENCE #${esc(ownedTok[0].tokenId)} · ` : ""}${e.minted}/${e.supply} MINTÉS · ROYALTIES ${e.royaltyBps / 100}%</div>
+        </div>
+      </div>
+      <div class="pv-body">
+        <div class="pv-stats">
+          <div class="pv-stat"><div class="k">TEMPS DE JEU</div><div class="v">${log ? fmtDur(log.totalSeconds) : "—"}</div></div>
+          <div class="pv-stat"><div class="k">DERNIÈRE SESSION</div><div class="v">${log ? `<span data-ago data-ts="${log.lastPlayedAt}">${fmtAgo(log.lastPlayedAt)}</span>` : "—"}</div></div>
+          <div class="pv-stat"><div class="k">CARTE</div><div class="v ${g ? "on" : ""}">${g ? `${esc(g.cartridge.mount_point)} · ${g.verdict.toUpperCase()}` : "NON INSÉRÉE"}</div></div>
+          <div class="pv-stat"><div class="k">TICKET</div><div class="v">${ticketDaysLeft(g)}</div></div>
+        </div>
+        <div class="pv-actions">
+          ${action}
+          <button class="pillbtn" data-edition="${esc(e.editionId)}">FICHE COMPLÈTE</button>
+        </div>
+        <div class="pv-hint">${esc(hint)}</div>
+        <details class="tech-acc" id="tech-acc" ${state.techOpen ? "open" : ""}>
+          <summary><span>▸ DONNÉES TECHNIQUES — CID · HASH · TICKET</span><span>${state.techOpen ? "REPLIER" : "AFFICHER"}</span></summary>
+          <div class="debug">éd. #${esc(e.editionId)} · jeu #${esc(e.gameId)} · studio #${esc(e.studioId)} · chain ${CHAIN.id}<br>
+            cid ${esc(e.buildCid)}<br>
+            ${g?.ticket ? `ticket #${esc(g.ticket.tokenId)} · owner ${esc(short(g.ticket.ownerAddress, 8))} · expire ${new Date(g.ticket.expiresAt * 1000).toLocaleString()}` : "aucun ticket sur carte"}
+          </div>
+        </details>
       </div>
     </div>`;
 }
@@ -860,32 +981,10 @@ function shelfView(): string {
   const addr = libraryAddress();
   const list = state.filter === "play" ? state.catalog.filter(playableNow) : state.catalog;
   const unlocked = state.catalog.filter(playableNow).length;
-  return `
-    <div class="shelf">
-      <div class="shelf-head">
-        <div style="display:flex;align-items:center;gap:18px">
-          <button class="backbtn" data-go="home">&#8592;</button>
-          <div>
-            <div class="shelf-title">Game Shelf</div>
-            <div class="shelf-meta">${unlocked} PLAYABLE &nbsp;/&nbsp; ${state.catalog.length - unlocked} AWAITING CARD ${state.ownerCheck ? `&nbsp;&#183;&nbsp; ${esc(state.ownerCheck)}` : ""}</div>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="pillbtn ${state.filter === "all" ? "active" : ""}" id="filt-all">ALL</button>
-          <button class="pillbtn ${state.filter === "play" ? "active" : ""}" id="filt-play">PLAYABLE</button>
-          <button class="pillbtn violet" id="home-insert">+ INSERT CARD</button>
-          <button class="pillbtn" id="refresh-btn">🔄</button>
-        </div>
-      </div>
-      ${
-        !addr
-          ? `<div class="watch-row">
-              <span class="slot-dim">VIEW YOUR LICENCES:</span>
-              <input class="aura-input" id="watch-addr" placeholder="0x… votre adresse wallet" style="width:24rem" />
-              <button class="pillbtn" id="watch-btn">FOLLOW</button>
-            </div>`
-          : ""
-      }
+  const isList = state.shelfMode === "list";
+  const selEd = list.find((e) => e.editionId === state.sel) ?? list[0];
+
+  const gridBody = `
       <div class="shelf-grid-wrap">
         <div class="shelf-grid">
           ${
@@ -895,19 +994,7 @@ function shelfView(): string {
                     const g = cardForEdition(e.editionId);
                     const ownedTok = state.owned.filter((o) => o.editionId === e.editionId);
                     const can = playableNow(e);
-                    const status = can
-                      ? "READY"
-                      : g
-                        ? g.verdict === "unpaired" || !isOurs(g)
-                          ? "PAIR CARD"
-                          : g.verdict === "expired"
-                            ? "RENEW"
-                            : !g.cartridge.has_build
-                              ? "NO BUILD"
-                              : "CHECK CARD"
-                        : ownedTok.length
-                          ? "AWAITING CARD"
-                          : `${formatEth(e.priceWei)} ETH`;
+                    const status = shelfStatus(e, g, ownedTok, can).label;
                     return `
               <button class="gamecard" data-edition="${esc(e.editionId)}">
                 <div class="art ${can || ownedTok.length || g ? "" : "locked"}" style="${artGrad(hueOf(e.editionId))}">
@@ -922,8 +1009,111 @@ function shelfView(): string {
               : `<div class="slot-dim">${DEPLOYMENTS.gameRegistry ? "READING CHAIN…" : "NO CONTRACTS DEPLOYED"}</div>`
           }
         </div>
+      </div>`;
+
+  const listBody = `
+      <div class="shelf-split">
+        <div class="shelf-listcol">
+          ${
+            list.length
+              ? list
+                  .map((e) => {
+                    const g = cardForEdition(e.editionId);
+                    const ownedTok = state.owned.filter((o) => o.editionId === e.editionId);
+                    const can = playableNow(e);
+                    const st = shelfStatus(e, g, ownedTok, can);
+                    const log = readLog()[e.editionId];
+                    return `
+            <button class="listrow ${selEd?.editionId === e.editionId ? "on" : ""}" data-selrow="${esc(e.editionId)}">
+              <div class="lr-art" style="${artGrad(hueOf(e.editionId))}"></div>
+              <div style="min-width:0">
+                <div class="lr-title">${esc(e.title)}</div>
+                <div class="lr-meta">${esc(e.studio.toUpperCase())} · ÉD. #${esc(e.editionId)}</div>
+              </div>
+              <div class="lr-right">
+                <span class="lr-chip ${st.cls}">${esc(st.label)}</span>
+                <div class="lr-time">${log ? fmtDur(log.totalSeconds) : "—"}</div>
+              </div>
+            </button>`;
+                  })
+                  .join("")
+              : `<div class="slot-dim">${DEPLOYMENTS.gameRegistry ? "READING CHAIN…" : "NO CONTRACTS DEPLOYED"}</div>`
+          }
+        </div>
+        ${selEd ? previewPane(selEd) : `<div class="shelf-preview"><div class="pv-body"><span class="slot-dim">SÉLECTIONNEZ UN TITRE</span></div></div>`}
+      </div>`;
+
+  return `
+    <div class="shelf">
+      <div class="shelf-head">
+        <div style="display:flex;align-items:center;gap:18px">
+          <button class="backbtn" data-go="home">&#8592;</button>
+          <div>
+            <div class="shelf-title">Game Shelf</div>
+            <div class="shelf-meta">${unlocked} PLAYABLE &nbsp;/&nbsp; ${state.catalog.length - unlocked} AWAITING CARD ${state.ownerCheck ? `&nbsp;&#183;&nbsp; ${esc(state.ownerCheck)}` : ""}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="pillbtn ${state.filter === "all" ? "active" : ""}" id="filt-all">ALL</button>
+          <button class="pillbtn ${state.filter === "play" ? "active" : ""}" id="filt-play">PLAYABLE</button>
+          <div class="view-toggle">
+            <button id="view-grid" class="${isList ? "" : "active"}" aria-label="Vue grille"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5"></rect><rect x="3" y="13" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg></button>
+            <button id="view-list" class="${isList ? "active" : ""}" aria-label="Vue liste"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="4" width="18" height="3.4" rx="1.4"></rect><rect x="3" y="10.3" width="18" height="3.4" rx="1.4"></rect><rect x="3" y="16.6" width="18" height="3.4" rx="1.4"></rect></svg></button>
+          </div>
+          <button class="pillbtn violet" id="home-insert">+ INSERT CARD</button>
+          <button class="pillbtn" id="refresh-btn">🔄</button>
+        </div>
       </div>
+      ${
+        !addr
+          ? `<div class="watch-row">
+              <span class="slot-dim">VIEW YOUR LICENCES:</span>
+              <input class="aura-input" id="watch-addr" placeholder="0x… votre adresse wallet" style="width:24rem" />
+              <button class="pillbtn" id="watch-btn">FOLLOW</button>
+            </div>`
+          : ""
+      }
+      ${isList ? listBody : gridBody}
     </div>`;
+}
+
+/** The one next step for an edition (PLAY / PAIR / RENEW / FETCH / WRITE /
+ *  BUY) — shared by the detail screen and the shelf preview pane. */
+function actionFor(e: OnchainEdition, g: Game | undefined, ownedTok: { tokenId: string }[], can: boolean): { action: string; hint: string } {
+  if (can && g) {
+    return {
+      action: `<button class="cta" data-play="${esc(g.cartridge.mount_point)}">▶ &nbsp;PLAY</button>`,
+      hint: "Déchiffré en mémoire depuis la carte — la clé ne touche jamais le disque.",
+    };
+  }
+  if (g && (g.verdict === "unpaired" || !isOurs(g))) {
+    return {
+      action: `<button class="cta violet" data-pair="${esc(g.cartridge.mount_point)}">INSERT · PAIR THIS MACHINE</button>`,
+      hint: "Le propriétaire signe une fois — le ticket est scellé pour cette machine.",
+    };
+  }
+  if (g && g.verdict === "expired" && isOurs(g)) {
+    return {
+      action: `<button class="cta violet" data-pair="${esc(g.cartridge.mount_point)}">RENEW LICENCE</button>`,
+      hint: "Renouvellement en ligne : la propriété est revérifiée on-chain.",
+    };
+  }
+  if (g && !g.cartridge.has_build) {
+    return {
+      action: `<button class="cta violet" data-dl="${esc(g.cartridge.mount_point)}">⬇ FETCH BUILD (IPFS)</button>`,
+      hint: state.dlStatus[g.cartridge.mount_point] ?? "Build récupéré depuis IPFS, hash vérifié contre le registre.",
+    };
+  }
+  if (ownedTok.length) {
+    return {
+      action: `<button class="cta violet" data-install="${esc(e.editionId)}" data-token="${esc(ownedTok[0].tokenId)}">💾 WRITE TO CARD</button>`,
+      hint: `Licence #${ownedTok[0].tokenId} possédée — écrivez-la sur une carte SD pour jouer.`,
+    };
+  }
+  return {
+    action: `<button class="cta" id="buy-btn">BUY · ${formatEth(e.priceWei)} ETH ↗</button>`,
+    hint: "Le paiement s'ouvre dans le navigateur — là où vit votre wallet.",
+  };
 }
 
 function detailView(): string {
@@ -936,27 +1126,7 @@ function detailView(): string {
   const resold = Boolean(m && g?.ticket && m.owner.toLowerCase() !== g.ticket.ownerAddress.toLowerCase());
   const listed = Boolean(m && m.seller.toLowerCase() !== ZERO_ADDR);
 
-  let action = "";
-  let hint = "";
-  if (can && g) {
-    action = `<button class="cta" data-play="${esc(g.cartridge.mount_point)}">▶ &nbsp;PLAY</button>`;
-    hint = "Déchiffré en mémoire depuis la carte — la clé ne touche jamais le disque.";
-  } else if (g && (g.verdict === "unpaired" || !isOurs(g))) {
-    action = `<button class="cta violet" data-pair="${esc(g.cartridge.mount_point)}">INSERT · PAIR THIS MACHINE</button>`;
-    hint = "Le propriétaire signe une fois — le ticket est scellé pour cette machine.";
-  } else if (g && g.verdict === "expired" && isOurs(g)) {
-    action = `<button class="cta violet" data-pair="${esc(g.cartridge.mount_point)}">RENEW LICENCE</button>`;
-    hint = "Renouvellement en ligne : la propriété est revérifiée on-chain.";
-  } else if (g && !g.cartridge.has_build) {
-    action = `<button class="cta violet" data-dl="${esc(g.cartridge.mount_point)}">⬇ FETCH BUILD (IPFS)</button>`;
-    hint = state.dlStatus[g.cartridge.mount_point] ?? "Build récupéré depuis IPFS, hash vérifié contre le registre.";
-  } else if (ownedTok.length) {
-    action = `<button class="cta violet" data-install="${esc(e.editionId)}" data-token="${esc(ownedTok[0].tokenId)}">💾 WRITE TO CARD</button>`;
-    hint = `Licence #${ownedTok[0].tokenId} possédée — écrivez-la sur une carte SD pour jouer.`;
-  } else {
-    action = `<button class="cta" id="buy-btn">BUY · ${formatEth(e.priceWei)} ETH ↗</button>`;
-    hint = "Le paiement s'ouvre dans le navigateur — là où vit votre wallet.";
-  }
+  const { action, hint } = actionFor(e, g, ownedTok, can);
 
   let marketRow = "";
   if (g?.ticket && isOurs(g) && g.verdict === "authentic" && !resold) {
@@ -1225,6 +1395,8 @@ function sigOf(): string {
     b: state.bootLines.map((l) => l.state + l.value).join("|"),
     pl: state.playing?.cartridge.mount_point ?? null,
     nr: state.nativeRun?.pid ?? null,
+    sm: state.shelfMode,
+    to: state.techOpen,
     ft: state.fatal?.code ?? null,
     r: recentPlays().map((x) => [x.e.editionId, x.log.playCount, Math.floor(x.log.totalSeconds / 60)]),
   });
@@ -1281,13 +1453,34 @@ function wire(root: HTMLElement): void {
       go("shelf");
     }
   });
-  document.getElementById("home-continue")?.addEventListener("click", () => {
-    const ed = (document.getElementById("home-continue") as HTMLButtonElement).dataset.edition;
-    if (!ed) return;
-    state.sel = ed;
-    const g = cardForEdition(ed);
-    if (g && playableNow(state.catalog.find((e) => e.editionId === ed)!)) void play(g);
+  document.getElementById("home-store")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));
+  document.getElementById("home-hero")?.addEventListener("click", () => {
+    const g = state.games[0];
+    if (!g) return;
+    const ed = editionFor(g);
+    state.sel = ed?.editionId ?? null;
+    if (ed && playableNow(ed)) void play(g);
     else go("detail");
+  });
+  document.getElementById("view-grid")?.addEventListener("click", () => {
+    state.shelfMode = "grid";
+    localStorage.setItem("gv-shelfmode", "grid");
+    render();
+  });
+  document.getElementById("view-list")?.addEventListener("click", () => {
+    state.shelfMode = "list";
+    localStorage.setItem("gv-shelfmode", "list");
+    render();
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-selrow]").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.sel = b.dataset.selrow ?? null;
+      render();
+    }),
+  );
+  document.getElementById("tech-acc")?.addEventListener("toggle", (ev) => {
+    state.techOpen = (ev.target as HTMLDetailsElement).open;
+    lastSig = sigOf(); // no rebuild — the browser already toggled the pane
   });
   document.getElementById("watch-btn")?.addEventListener("click", () => {
     const addr = (document.getElementById("watch-addr") as HTMLInputElement | null)?.value.trim() ?? "";

@@ -133,6 +133,17 @@ main { width: min(76rem, 100%); margin: 0 auto; padding: 1.8rem 1.6rem 4rem; }
 .mcard .mmeta { margin-top: 2px; display: flex; justify-content: space-between; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.1em; color: var(--dim); }
 .mcard .mprice { color: var(--ink); }
 
+/* Second-hand capsules + hero mint bar */
+.mcard .occ-art { border-color: oklch(0.8 0.11 310 / 0.4); }
+.occbadge {
+  position: absolute; top: 8px; right: 8px; font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.14em;
+  padding: 3px 8px; border-radius: 999px; color: #f6efff;
+  background: oklch(0.6 0.12 310 / 0.75); border: 1px solid oklch(0.8 0.11 310 / 0.5);
+}
+.occ-price { color: oklch(0.85 0.09 310); }
+.mintbar { display: block; width: 180px; height: 5px; border-radius: 3px; background: rgba(5,6,13,0.6); overflow: hidden; }
+.mintbar > span { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, oklch(0.8 0.1 200), oklch(0.8 0.11 310)); }
+
 /* ── Game detail page ─────────────────────────────────── */
 .gd { display: flex; gap: 2rem; align-items: flex-start; flex-wrap: wrap; }
 .gd-left { flex: 1.4; min-width: 320px; }
