@@ -706,7 +706,15 @@ function bootView(): string {
   return `
     <div class="boot">
       <div class="boot-left">
-        <div class="boot-logo"></div>
+        <div class="boot-logo-wrap">
+          <div class="boot-logo"></div>
+          <svg class="aura-arcs" viewBox="0 0 172 172" aria-hidden="true">
+            <path class="a1" d="M26 56 L14 48 M22 86 L8 86 M28 118 L15 128"></path>
+            <path class="a2" d="M146 56 L158 48 M150 86 L164 86 M144 118 L157 128"></path>
+            <path class="a1" d="M60 22 L52 10 M112 22 L120 10"></path>
+            <path class="a2" d="M60 150 L52 162 M112 150 L120 162"></path>
+          </svg>
+        </div>
         <div>
           <div class="boot-title">AURA&#8209;64</div>
           <div class="boot-sub">GAMEVAULT SYSTEM SOFTWARE</div>
@@ -1114,7 +1122,7 @@ function actionFor(e: OnchainEdition, g: Game | undefined, ownedTok: { tokenId: 
     };
   }
   return {
-    action: `<button class="cta" id="buy-btn">BUY · ${formatEth(e.priceWei)} ETH ↗</button>`,
+    action: `<button class="cta sunset" id="buy-btn">BUY · ${formatEth(e.priceWei)} ETH ↗</button>`,
     hint: "Le paiement s'ouvre dans le navigateur — là où vit votre wallet.",
   };
 }
@@ -1247,7 +1255,7 @@ function insertView(): string {
   return `
     <div class="insert">
       <div class="reader">
-        ${cardIn ? `<div class="lic-card"><div class="lic-head"><div class="lic-brand">AURA LICENCE</div><div class="lic-chip"></div></div><div class="lic-title">${esc(title)}</div><div class="lic-id">${g?.ticket ? `GV-${esc(g.ticket.tokenId.padStart(4, "0"))}-${esc((state.sel ?? "?").padStart(2, "0"))}` : "GV-????"}</div></div>` : ""}
+        ${cardIn ? `<div class="lic-card"><div class="lic-head"><div class="lic-brand">AURA-64 LICENCE</div><div class="lic-chip"></div></div><div class="lic-art" style="${artGrad(hueOf(e?.editionId ?? state.sel ?? "1"))}"></div><div class="lic-title">${esc(title)}</div><div class="lic-id">${g?.ticket ? `N° ${esc(g.ticket.tokenId)} · GV-${esc(g.ticket.tokenId.padStart(4, "0"))}-${esc((state.sel ?? "?").padStart(2, "0"))}` : "GV-????"}</div></div>` : ""}
         <div class="slot-hw"><div class="slot-hw-line"></div><div class="slot-led ${cardIn ? "on" : ""}"></div></div>
       </div>
       <div class="insert-right">

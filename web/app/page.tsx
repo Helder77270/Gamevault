@@ -185,7 +185,7 @@ export default function Marketplace() {
               </div>
             </div>
             <div className="cta-zone">
-              <span className="btn">Voir · {formatEther(featured.priceWei)} ETH</span>
+              <span className="btn sunset">Voir · {formatEther(featured.priceWei)} ETH</span>
               <span className="addr">
                 {featured.minted}/{featured.supply} mintés · royalties {featured.royaltyBps / 100}%
               </span>

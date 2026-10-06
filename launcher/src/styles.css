@@ -15,6 +15,10 @@
   --violet: oklch(0.8 0.11 310);
   --ok: oklch(0.8 0.14 160);
   --bad: oklch(0.75 0.14 35);
+  /* DA v1 (2026-10-06) — Midnight Drive + Chrome Sunset en secondaire */
+  --sunset: oklch(0.75 0.15 45);   /* moments de gloire : achat, sortie */
+  --magenta: oklch(0.72 0.19 340); /* néon secondaire, très parcimonieux */
+  --chrome: linear-gradient(180deg, #ffffff 18%, #cfe4ff 44%, #5a6b9c 52%, #ffffff 58%, #9fb4e8 92%);
   --mono: "Space Mono", ui-monospace, monospace;
   --sans: "Chakra Petch", system-ui, sans-serif;
   color-scheme: dark;
@@ -116,6 +120,20 @@ button { font-family: inherit; }
 .cta.violet:hover { background: oklch(0.66 0.13 310 / 0.42); }
 .cta.ghost { color: var(--ink); border-color: rgba(200,225,255,0.24); background: rgba(226,240,255,0.06); box-shadow: none; }
 .cta.ghost:hover { background: rgba(226,240,255,0.14); }
+/* Moment de gloire : l'achat porte l'accent sunset (DA v1) */
+.cta.sunset {
+  color: #1d0e04; border-color: rgba(255,240,220,0.65);
+  background: linear-gradient(180deg, oklch(0.88 0.11 60), var(--sunset));
+  box-shadow: 0 12px 34px -12px oklch(0.75 0.15 45 / 0.85), 0 1px 0 rgba(255,255,255,0.55) inset;
+}
+.cta.sunset:hover { background: linear-gradient(180deg, oklch(0.92 0.1 60), oklch(0.78 0.15 45)); }
+
+/* Lettrage chromé (Chrome Sunset, secondaire) — titres de cérémonie */
+.chrome-text {
+  background: var(--chrome);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 16px oklch(0.7 0.1 240 / 0.45));
+}
 
 .mono-label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.3em; color: oklch(0.8 0.1 200 / 0.85); }
 .aura-input {
@@ -138,7 +156,18 @@ button { font-family: inherit; }
   animation: auraFloat 5s ease-in-out infinite;
 }
 .boot-logo::after { content: ""; position: absolute; top: 0; left: 0; width: 40%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent); animation: auraSheen 2.6s ease-in-out infinite; }
-.boot-title { font-size: 26px; font-weight: 700; letter-spacing: 0.16em; text-align: center; }
+.boot-title {
+  font-size: 26px; font-weight: 700; letter-spacing: 0.16em; text-align: center;
+  background: var(--chrome); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 16px oklch(0.7 0.1 240 / 0.45));
+}
+/* L'aura qui crépite autour du logo (identité AURA-64) */
+@keyframes auraCrackle { 0%, 100% { opacity: 0.85; } 18% { opacity: 0.25; } 34% { opacity: 1; } 55% { opacity: 0.4; } 70% { opacity: 1; } 86% { opacity: 0.55; } }
+.boot-logo-wrap { position: relative; }
+.aura-arcs { position: absolute; inset: -26px; pointer-events: none; }
+.aura-arcs path { stroke-linecap: round; fill: none; }
+.aura-arcs .a1 { stroke: var(--cyan); stroke-width: 2.4; animation: auraCrackle 1.8s steps(1, end) infinite; }
+.aura-arcs .a2 { stroke: var(--violet); stroke-width: 2.4; animation: auraCrackle 2.3s steps(1, end) 0.6s infinite; }
 .boot-sub { margin-top: 6px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.3em; color: var(--cyan); text-align: center; }
 .boot-bar { width: 230px; height: 5px; border-radius: 999px; background: rgba(200,225,255,0.14); overflow: hidden; }
 .boot-bar > div { height: 100%; border-radius: 999px; background: linear-gradient(90deg, oklch(0.8 0.1 200), oklch(0.78 0.12 305)); transition: width 0.5s; }
@@ -309,17 +338,21 @@ button { font-family: inherit; }
 .insert { position: absolute; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; gap: 70px; padding: 0 60px; animation: auraIn 0.4s ease both; }
 .insert::before { content: ""; position: absolute; inset: 0; background: radial-gradient(60% 60% at 50% 50%, oklch(0.6 0.12 260 / 0.28), transparent 70%); pointer-events: none; }
 .reader { position: relative; width: 300px; height: 400px; display: flex; align-items: flex-end; justify-content: center; }
+/* Cartouche « Collector verre » (DA v1) : verre fumé, aura cyan, n° gravé */
 .lic-card {
-  position: absolute; bottom: 60px; width: 190px; height: 260px; border-radius: 14px; overflow: hidden;
-  background: linear-gradient(150deg, #eaf4ff, oklch(0.72 0.1 210)); border: 1px solid rgba(255,255,255,0.7);
-  box-shadow: 0 24px 50px -20px rgba(0,0,0,0.8); animation: auraCardIn 0.9s ease both;
+  position: absolute; bottom: 60px; width: 190px; height: 260px; border-radius: 12px 34px 12px 12px; overflow: hidden;
+  background: linear-gradient(155deg, oklch(0.3 0.06 265), oklch(0.14 0.045 266) 62%);
+  border: 1px solid rgba(210,235,255,0.5);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.4) inset, 0 24px 50px -20px rgba(0,0,0,0.9), 0 0 44px oklch(0.7 0.1 220 / 0.35);
+  animation: auraCardIn 0.9s ease both;
 }
-.lic-card::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(120deg, rgba(255,255,255,0.13) 0 8px, transparent 8px 18px); }
-.lic-head { position: absolute; top: 16px; left: 16px; right: 16px; display: flex; justify-content: space-between; align-items: center; }
-.lic-brand { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.2em; color: rgba(10,16,32,0.72); }
-.lic-chip { width: 26px; height: 18px; border-radius: 3px; background: linear-gradient(150deg, #f7fbff, oklch(0.78 0.06 90)); box-shadow: 0 0 0 1px rgba(10,16,32,0.25); }
-.lic-title { position: absolute; left: 16px; bottom: 44px; font-size: 19px; font-weight: 700; color: #0d1526; line-height: 1.1; max-width: 150px; }
-.lic-id { position: absolute; left: 16px; bottom: 18px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; color: rgba(13,21,38,0.65); }
+.lic-card::before { content: ""; position: absolute; top: 0; left: -34%; width: 55%; height: 100%; background: linear-gradient(100deg, transparent, rgba(255,255,255,0.14), transparent); transform: skewX(-16deg); animation: auraSheen 5s ease-in-out infinite; }
+.lic-head { position: absolute; top: 14px; left: 15px; right: 15px; display: flex; justify-content: space-between; align-items: center; }
+.lic-brand { font-family: var(--mono); font-size: 9px; letter-spacing: 0.2em; color: var(--cyan); }
+.lic-chip { width: 26px; height: 18px; border-radius: 3px; background: linear-gradient(150deg, #f7fbff, oklch(0.78 0.06 90)); box-shadow: 0 0 0 1px rgba(255,255,255,0.35), 0 0 10px oklch(0.8 0.08 90 / 0.4); }
+.lic-art { position: absolute; top: 44px; left: 15px; right: 15px; height: 92px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.18); }
+.lic-title { position: absolute; left: 15px; bottom: 46px; font-size: 18px; font-weight: 700; color: var(--ink); line-height: 1.12; max-width: 155px; text-shadow: 0 2px 14px rgba(0,0,0,0.6); }
+.lic-id { position: absolute; left: 15px; bottom: 16px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.16em; color: oklch(0.8 0.1 200 / 0.8); }
 .slot-hw { position: relative; width: 250px; height: 34px; border-radius: 8px 8px 12px 12px; background: linear-gradient(180deg, #0a1020, oklch(0.24 0.04 265)); border: 1px solid var(--line); box-shadow: 0 -8px 24px rgba(0,0,0,0.6) inset, 0 14px 40px -18px oklch(0.6 0.12 260); }
 .slot-hw-line { position: absolute; top: 7px; left: 20px; right: 20px; height: 9px; border-radius: 5px; background: #05060d; box-shadow: 0 2px 6px rgba(0,0,0,0.9) inset, 0 1px 0 rgba(255,255,255,0.12); }
 .slot-led { position: absolute; right: 8px; bottom: 8px; width: 8px; height: 8px; border-radius: 999px; background: rgba(220,235,255,0.25); }
@@ -414,7 +447,11 @@ button { font-family: inherit; }
   animation: lvIn 0.5s ease both;
 }
 .launch-ov .lv-art .sheen { position: absolute; top: 0; left: 0; width: 34%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent); animation: auraSheen 1.8s ease-in-out infinite; }
-.launch-ov .lv-title { font-size: 26px; font-weight: 700; letter-spacing: 0.04em; }
+.launch-ov .lv-title {
+  font-size: 26px; font-weight: 700; letter-spacing: 0.04em;
+  background: var(--chrome); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 14px oklch(0.7 0.1 240 / 0.5));
+}
 .launch-ov .lv-sub { font-family: var(--mono); font-size: 10px; letter-spacing: 0.26em; color: var(--dim); }
 .launch-ov .lv-steps { width: 380px; }
 
@@ -523,9 +560,13 @@ button { font-family: inherit; }
   border: 1px solid rgba(200,225,255,0.14); background: rgba(226,240,255,0.04); transition: all 0.15s;
 }
 .listrow:hover { border-color: rgba(200,225,255,0.32); background: rgba(226,240,255,0.08); }
+@keyframes focusBreath {
+  0%, 100% { box-shadow: 0 0 0 2px oklch(0.8 0.1 200 / 0.7), 0 0 20px oklch(0.7 0.1 200 / 0.2) inset; }
+  50% { box-shadow: 0 0 0 2px oklch(0.85 0.1 200), 0 0 30px oklch(0.7 0.1 200 / 0.35) inset; }
+}
 .listrow.on {
-  border-color: oklch(0.8 0.1 200 / 0.5); background: rgba(226,240,255,0.1);
-  box-shadow: 0 0 24px oklch(0.7 0.1 200 / 0.12) inset;
+  border-color: transparent; background: rgba(226,240,255,0.1);
+  animation: focusBreath 2.6s ease-in-out infinite;
 }
 .listrow.on::before {
   content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px;

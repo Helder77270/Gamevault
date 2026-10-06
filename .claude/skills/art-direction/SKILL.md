@@ -44,25 +44,35 @@ webapp sombre, un hardware fantasmé. Public : geek ET classe.
   électriques doux cyan/violet). À décliner : monogramme carte+aura,
   lettrage AURA-64 chromé.
 
-## Palette
+## Palette — ACTÉE (Helder, 2026-10-06, après planches d'explo)
 
-Fondation actée : **cyan/violet sur bleu nuit** (tokens actuels de
-`launcher/src/styles.css`). Trois sets proposés à Helder (tester sur
-les planches d'explo avant d'acter) :
+**Midnight Drive en principal, Chrome Sunset en secondaire.** Layout de
+référence : la planche « DA · B — layout clean iiSU ». Le set C (CRT
+Lounge) est écarté (réutilisable pour UNE pochette pop ponctuelle).
 
-- **Set A « Midnight Drive »** (évolution douce, défaut) : fond `#05060d`,
-  cyan `oklch(0.8 0.1 200)`, violet `oklch(0.8 0.11 310)` + NOUVEL accent
-  chaud **sunset `oklch(0.75 0.15 45)`** réservé aux moments de gloire
-  (achat, jour de sortie) — l'orange Outrun qui manquait.
-- **Set B « Chrome Sunset »** (vaporwave assumé) : fond violet très
-  sombre `oklch(0.12 0.05 300)`, magenta `oklch(0.72 0.19 340)`, cyan,
-  dégradés chrome (blanc→bleu acier) pour les titres, horizon gridlines.
-- **Set C « CRT Lounge »** (arcade feutrée) : fond noir bleuté, cyan
-  phosphore `oklch(0.85 0.12 190)`, ambre CRT `oklch(0.8 0.13 75)`,
-  scanlines subtiles, glow plus fort.
+- Principal **Midnight Drive** : fond `#05060d`, cyan `--cyan` (système),
+  violet `--violet` (commerce), **`--sunset oklch(0.75 0.15 45)`** réservé
+  aux moments de gloire — RÈGLE : seul l'ACHAT (et un jour de sortie)
+  porte le sunset ; jamais deux éléments sunset sur un même écran.
+- Secondaire **Chrome Sunset** : `--chrome` (dégradé blanc→acier, classe
+  `.chrome-text`) pour les titres de cérémonie (boot AURA-64, titre de la
+  cinématique de lancement, h1 du hero store) ; `--magenta` en réserve,
+  très parcimonieux (pas encore utilisé).
+- États : ok `oklch(0.8 0.14 160)` · warn `oklch(0.82 0.12 85)` · bad
+  `oklch(0.75 0.14 35)`.
 
-États (tous sets) : ok `oklch(0.8 0.14 160)` · warn `oklch(0.82 0.12 85)`
-· bad `oklch(0.75 0.14 35)`.
+Implémenté (commit DA v1) : tokens dans `launcher/src/styles.css` ET
+`web/app/globals.css` (`--sunset`, `--chrome`) ; `.cta.sunset` /
+`.btn.sunset` sur TOUS les boutons d'achat ; `.chrome-text` ; aura
+crépitante (`.aura-arcs`) autour du logo de boot ; cartouche licence
+« Collector verre » dans l'écran lecteur (`.lic-card` : verre fumé, bande
+d'art, n° de licence) ; focus « respirant » sur la liste du shelf.
+
+## Cartouches (planche validée — « j'adore les capsules »)
+
+- **A Collector verre** = LA cartouche du produit (écran lecteur, widgets).
+- **B Chrome Sunset** = déclinaison affiche/pochette imprimée vaporwave.
+- **C Pop arcade** = déclinaison pochette ponctuelle si un jeu s'y prête.
 
 ## Typo & formes
 

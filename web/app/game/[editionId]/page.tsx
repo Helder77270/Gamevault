@@ -132,7 +132,7 @@ export default function GamePage() {
               {mintedToken ? (
                 <span className="ok-box" style={{ margin: 0 }}>✔ token #{mintedToken}</span>
               ) : (
-                <button className="btn" disabled={!isConnected || soldOut || buying} onClick={() => void buy()}
+                <button className="btn sunset" disabled={!isConnected || soldOut || buying} onClick={() => void buy()}
                   title={!isConnected ? "Connectez votre wallet" : soldOut ? "Épuisé" : "Mint la licence"}>
                   {buying ? "Transaction…" : "Acheter"}
                 </button>
