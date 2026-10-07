@@ -21,11 +21,13 @@ const GAME_URL = navigator.userAgent.includes("Windows") ? "http://game.localhos
 // backup. Integrity is checked HERE against the on-chain sha256 either way.
 const BUILD_MIRRORS = [`${TICKETD_URL}/build/`, ...GATEWAYS];
 
-// Platform public keys embedded in the launcher. The DEV fixture key is
+// Ticket-signer public keys embedded in the launcher. The ticket key is
+// DEDICATED (audit K1, rotated 2026-10-07 — the previous platform key had
+// leaked; cards signed with it must be re-paired). The DEV fixture key is
 // derived from a PUBLIC seed (shared/devkeys) — anyone can sign with it —
 // so it is accepted in `vite dev` builds only, never in a release (audit L1).
 const PLATFORM_PUBS = [
-  unhex("0x0314864d3e6672b07e9a046c044f329cc38c7ad7c3af7075b4d54e273bddbc1149"),
+  unhex("0x02f993342ee3df755c386e4ec261eed2d439738c284887ca657faa33d2b353292c"),
   ...(import.meta.env.DEV ? [unhex("0x038d78e7c9ea67e401f6e9dbf8fccae4563dc21c0e3f569338012ba95c50700f2b")] : []),
 ];
 const verifyPlatformSig = (t: SignedTicket): boolean => PLATFORM_PUBS.some((k) => verifyTicket(t, k));

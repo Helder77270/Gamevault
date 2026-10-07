@@ -20,6 +20,9 @@ contract Marketplace is ReentrancyGuard, IGameVaultEvents {
     struct Listing {
         address seller;
         uint256 price;
+        /// license.transferCount at listing time — if the token left and
+        /// came back, the old listing (old price) is dead (audit K3).
+        uint256 transferNonce;
     }
 
     mapping(uint256 tokenId => Listing) public listings;
@@ -36,7 +39,7 @@ contract Marketplace is ReentrancyGuard, IGameVaultEvents {
             license.getApproved(tokenId) == address(this) || license.isApprovedForAll(msg.sender, address(this)),
             "Marketplace: not approved"
         );
-        listings[tokenId] = Listing(msg.sender, price);
+        listings[tokenId] = Listing(msg.sender, price, license.transferCount(tokenId));
         emit Listed(tokenId, msg.sender, price);
     }
 
@@ -54,6 +57,7 @@ contract Marketplace is ReentrancyGuard, IGameVaultEvents {
         require(l.seller != address(0), "Marketplace: not listed");
         require(msg.value == l.price, "Marketplace: wrong price");
         require(license.ownerOf(tokenId) == l.seller, "Marketplace: stale listing");
+        require(license.transferCount(tokenId) == l.transferNonce, "Marketplace: stale listing");
         delete listings[tokenId];
 
         (address royaltyReceiver, uint256 royaltyAmount) = license.royaltyInfo(tokenId, l.price);

@@ -1,7 +1,7 @@
 // Core ticket issuance — the only place that turns on-chain ownership into
 // a playable ticket. Kept HTTP-free for testability (see server.ts).
 
-import { createPublicClient, encodePacked, http, keccak256, verifyMessage } from "viem";
+import { createPublicClient, http, verifyMessage } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { createHash } from "node:crypto";
@@ -25,12 +25,24 @@ const skipOwnerCheck = process.env.GAMEVAULT_SKIP_OWNER_CHECK === "1";
 /** Dev fallbacks (public DEV keys) are allowed ONLY here — fail-closed otherwise. */
 const DEV_MODE = process.env.GAMEVAULT_DEV === "1" || skipOwnerCheck;
 
-function platformPriv(): Uint8Array {
-  const env = process.env.PLATFORM_PRIVKEY;
+// Separated service keys (audit K1). The ticket key never touches the chain
+// (its pubkey is embedded in the launcher); the attestation key is the
+// rotatable GameLicense.attestationSigner. Neither has any on-chain power.
+
+/** Signs launch tickets. */
+function ticketSignerPriv(): Uint8Array {
+  const env = process.env.TICKET_SIGNER_PRIVKEY;
   if (env) return unhex(env);
-  if (!DEV_MODE) throw new Error("PLATFORM_PRIVKEY manquant — refus de signer avec la clé DEV publique");
-  console.warn("⚠ PLATFORM_PRIVKEY not set — using the DEV platform key (fixtures only)");
+  if (!DEV_MODE) throw new Error("TICKET_SIGNER_PRIVKEY manquant — refus de signer avec la clé DEV publique");
+  console.warn("⚠ TICKET_SIGNER_PRIVKEY not set — using the DEV platform key (fixtures only)");
   return DEV_PLATFORM_PRIV;
+}
+
+/** Signs friendship attestations (EIP-712). No dev fallback: lending is on-chain. */
+function attestSignerKey(): `0x${string}` {
+  const env = process.env.ATTEST_SIGNER_PRIVKEY;
+  if (!env) throw new Error("ATTEST_SIGNER_PRIVKEY manquant");
+  return (env.startsWith("0x") ? env : `0x${env}`) as `0x${string}`;
 }
 const licenseAddress =
   !skipOwnerCheck && (process.env.GAMELICENSE_ADDRESS || DEPLOYMENTS.gameLicense)
@@ -298,26 +310,42 @@ export function friendsOf(addr: string): {
   return { friends, incoming, outgoing };
 }
 
-/** L'attestation que lend() vérifie on-chain. Gratuite, courte durée. */
+/** L'attestation que lend() vérifie on-chain (EIP-712, liée à UNE licence).
+ *  Gratuite, courte durée. */
 export async function attestFriendship(
   owner: string,
   borrower: string,
+  tokenId: string,
 ): Promise<{ since: number; deadline: number; sig: `0x${string}`; license: string }> {
   if (!ADDR_RE.test(owner) || !ADDR_RE.test(borrower)) throw new Error("adresse invalide");
+  if (!/^\d{1,12}$/.test(tokenId)) throw new Error("tokenId invalide");
   // Same address the ownerOf/userOf checks use (honours GAMELICENSE_ADDRESS)
   const license = licenseAddress;
   if (!license) throw new Error("GameLicense non déployé");
   const since = friendsDb().friendships[pairKey(owner, borrower)];
   if (!since) throw new Error("pas amis — la demande doit être acceptée d'abord");
   const deadline = Math.floor(Date.now() / 1000) + ATTEST_TTL_SEC;
-  const digest = keccak256(
-    encodePacked(
-      ["string", "uint256", "address", "address", "address", "uint64", "uint64"],
-      ["GAMEVAULT_FRIEND_ATTEST", BigInt(CHAIN.id), license, owner as `0x${string}`, borrower as `0x${string}`, BigInt(since), BigInt(deadline)],
-    ),
-  );
-  const account = privateKeyToAccount(`0x${Buffer.from(platformPriv()).toString("hex")}` as `0x${string}`);
-  const sig = await account.signMessage({ message: { raw: digest } });
+  const account = privateKeyToAccount(attestSignerKey());
+  const sig = await account.signTypedData({
+    domain: { name: "GameVault License", version: "1", chainId: CHAIN.id, verifyingContract: license },
+    types: {
+      FriendAttestation: [
+        { name: "owner", type: "address" },
+        { name: "borrower", type: "address" },
+        { name: "tokenId", type: "uint256" },
+        { name: "since", type: "uint64" },
+        { name: "deadline", type: "uint64" },
+      ],
+    },
+    primaryType: "FriendAttestation",
+    message: {
+      owner: owner as `0x${string}`,
+      borrower: borrower as `0x${string}`,
+      tokenId: BigInt(tokenId),
+      since: BigInt(since),
+      deadline: BigInt(deadline),
+    },
+  });
   return { since, deadline, sig, license };
 }
 
@@ -684,7 +712,7 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
     issuedAt: now,
     expiresAt: loanExpires > 0 ? Math.min(now + TICKET_TTL_SEC, loanExpires) : now + TICKET_TTL_SEC,
   };
-  const signed = signTicket(ticket, platformPriv());
+  const signed = signTicket(ticket, ticketSignerPriv());
   pendingTickets.set(p.nonce, { ticket: signed, at: Date.now() });
   return signed;
 }

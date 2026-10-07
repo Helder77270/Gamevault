@@ -23,7 +23,7 @@ contract GameVaultTest is Test {
 
     function setUp() public {
         registry = new GameRegistry();
-        license = new GameLicense(registry, platform, 3 days, 14 days, 1 days);
+        license = new GameLicense(registry, platform, makeAddr("attestSigner"), 3 days, 14 days, 1 days);
         registry.setLicense(address(license));
         market = new Marketplace(license, platform);
 
@@ -100,7 +100,7 @@ contract GameVaultTest is Test {
         assertEq(studio.balance - studioBefore, 0.10 ether);
         assertEq(platform.balance, 0.05 ether);
         // listing consumed
-        (address seller,) = market.listings(tokenId);
+        (address seller,,) = market.listings(tokenId);
         assertEq(seller, address(0));
     }
 

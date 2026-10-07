@@ -67,9 +67,10 @@ disparue) ; tokens #1 (runner) et #2 (native) mintés au wallet dev. RESTE :
 ## P2bis — Sécurité : chantiers structurels de l'audit (docs/audit-2026-10-07.md)
 Les correctifs rapides sont faits ; restent les décisions/chantiers :
 - [x] `/publish` signé par le wallet du studio + clé liée au studio (2026-10-07)
-- [ ] Séparer les clés (tickets / attestations / frais) + signataire
-      d'attestations rotatable on-chain ; ROTATION de la clé et du JWT
-      Pinata déjà exposés (redéploiement)
+- [x] Séparer les clés (tickets / attestations rotatable / admin + frais),
+      ancienne clé sans rôle (2026-10-07, bloc 47811332)
+- [ ] Régénérer le JWT Pinata (dashboard Pinata — a transité en clair) ;
+      déplacer ADMIN_PRIVKEY (contracts/.env) vers un wallet matériel/multisig
 - [ ] Registre d'appareils par licence (1-2 actifs) + TTL ticket réduit
 - [ ] Vérification du ticket EN RUST avant déchiffrement / spawn
 - [ ] Persistance sérieuse (SQLite) : nonces, écritures atomiques, clés de
@@ -77,8 +78,7 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
 - [ ] Runtime natif : Authenticode + studios vérifiés
 - [ ] Dépendances : monter `next`, `npm audit fix`, lockfile sur le registre
       officiel ; `tsc` strict + CI pour ticketd/shared/station
-- [ ] Contrats (prochain redéploiement) : annonces ressuscitées, pull
-      payments, EIP-712, retirer l'annonce ERC-4907
+- [ ] Contrats (prochain redéploiement) : pull payments (K4) — K3, K5, K6 faits
 
 ## P3 — Subgraph : déployer pour de vrai
 - [ ] Subgraph Studio base-sepolia : adresses + startBlock → deploy

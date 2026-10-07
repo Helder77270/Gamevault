@@ -154,7 +154,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
         return send(200, await applyFriendAction(String(body.message ?? ""), String(body.signature ?? "") as `0x${string}`));
       }
       if (req.url === "/friends/attest") {
-        return send(200, await attestFriendship(String(body.owner), String(body.borrower)));
+        return send(200, await attestFriendship(String(body.owner), String(body.borrower), String(body.tokenId)));
       }
       if (req.url === "/friends/backdate") {
         // DEV only (GAMEVAULT_DEV=1, set by `npm run dev`): simulates the

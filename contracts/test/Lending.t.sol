@@ -5,7 +5,6 @@ import {Test} from "forge-std/Test.sol";
 import {GameRegistry} from "../src/GameRegistry.sol";
 import {GameLicense} from "../src/GameLicense.sol";
 import {Marketplace} from "../src/Marketplace.sol";
-import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 /// The cartridge-loan rules with OFF-CHAIN friendship: the platform attests
 /// "owner and borrower friends since T"; the contract enforces age, bounded
@@ -17,6 +16,7 @@ contract LendingTest is Test {
 
     uint256 platformPk = 0xA11CE;
     address platform;
+    address admin = makeAddr("admin");
     address studio = makeAddr("studio");
     address alice = makeAddr("alice"); // owner / lender
     address bob = makeAddr("bob"); // friend / borrower
@@ -29,7 +29,7 @@ contract LendingTest is Test {
         vm.warp(1_750_000_000); // real-world-ish clock — "since 3 days ago" must not underflow
         platform = vm.addr(platformPk);
         registry = new GameRegistry();
-        license = new GameLicense(registry, platform, 3 days, 14 days, 1 days);
+        license = new GameLicense(registry, admin, platform, 3 days, 14 days, 1 days);
         registry.setLicense(address(license));
         market = new Marketplace(license, platform);
 
@@ -48,7 +48,7 @@ contract LendingTest is Test {
     /// Platform attestation for (owner, to) friends since `since`.
     function _attest(address owner_, address to, uint64 since) internal view returns (uint64 deadline, bytes memory sig) {
         deadline = uint64(block.timestamp + 10 minutes);
-        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(license.attestationDigest(owner_, to, since, deadline));
+        bytes32 digest = license.attestationDigest(owner_, to, tokenId, since, deadline);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(platformPk, digest);
         sig = abi.encodePacked(r, s, v);
     }
@@ -69,7 +69,7 @@ contract LendingTest is Test {
     function test_RevertLendWithoutValidSig() public {
         uint64 since = _maturedSince();
         uint64 deadline = uint64(block.timestamp + 10 minutes);
-        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(license.attestationDigest(alice, bob, since, deadline));
+        bytes32 digest = license.attestationDigest(alice, bob, tokenId, since, deadline);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xBAD, digest); // not the platform
         vm.prank(alice);
         vm.expectRevert("GameLicense: bad attestation");
@@ -218,7 +218,71 @@ contract LendingTest is Test {
 
     // ── ERC-4907 surface ─────────────────────────────────────────
 
-    function test_Supports4907Interface() public view {
-        assertTrue(license.supportsInterface(0xad092b5c));
+    function test_DoesNotClaim4907Interface() public view {
+        // views follow ERC-4907 but setUser does not exist — no false claim
+        assertFalse(license.supportsInterface(0xad092b5c));
+        assertTrue(license.supportsInterface(0x80ac58cd)); // ERC-721
+        assertTrue(license.supportsInterface(0x2a55205a)); // ERC-2981
+    }
+
+    // ── Key separation & rotation (audit K1) ─────────────────────
+
+    function test_AdminRotatesAttestationSigner() public {
+        uint256 newPk = 0xB0B5;
+        vm.prank(admin);
+        license.setAttestationSigner(vm.addr(newPk));
+        assertEq(license.attestationSigner(), vm.addr(newPk));
+
+        // the OLD key's attestations are dead immediately
+        uint64 since = _maturedSince();
+        (uint64 deadline, bytes memory oldSig) = _attest(alice, bob, since);
+        vm.prank(alice);
+        vm.expectRevert("GameLicense: bad attestation");
+        license.lend(tokenId, bob, uint64(block.timestamp + 1 days), since, deadline, oldSig);
+
+        // the NEW key works
+        bytes32 digest = license.attestationDigest(alice, bob, tokenId, since, deadline);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(newPk, digest);
+        vm.prank(alice);
+        license.lend(tokenId, bob, uint64(block.timestamp + 1 days), since, deadline, abi.encodePacked(r, s, v));
+        assertEq(license.userOf(tokenId), bob);
+    }
+
+    function test_RevertRotationByNonOwner() public {
+        vm.prank(platform); // the signer itself has no admin power
+        vm.expectRevert();
+        license.setAttestationSigner(carol);
+    }
+
+    function test_RevertZeroSigner() public {
+        vm.prank(admin);
+        vm.expectRevert("GameLicense: zero signer");
+        license.setAttestationSigner(address(0));
+    }
+
+    function test_RevertAttestationForAnotherToken() public {
+        // alice owns a second licence; an attestation for token #1 can't lend #2
+        vm.prank(alice);
+        uint256 second = license.buy{value: 0.01 ether}(editionId);
+        uint64 since = _maturedSince();
+        (uint64 deadline, bytes memory sig) = _attest(alice, bob, since); // bound to tokenId (#1)
+        vm.prank(alice);
+        vm.expectRevert("GameLicense: bad attestation");
+        license.lend(second, bob, uint64(block.timestamp + 1 days), since, deadline, sig);
+    }
+
+    // ── Marketplace: resurrected listing (audit K3) ──────────────
+
+    function test_RevertResurrectedListing() public {
+        vm.startPrank(alice);
+        license.setApprovalForAll(address(market), true);
+        market.list(tokenId, 0.02 ether);
+        license.transferFrom(alice, bob, tokenId); // leaves…
+        vm.stopPrank();
+        vm.prank(bob);
+        license.transferFrom(bob, alice, tokenId); // …and comes back
+        vm.prank(carol);
+        vm.expectRevert("Marketplace: stale listing");
+        market.buy{value: 0.02 ether}(tokenId); // old price must not be honoured
     }
 }

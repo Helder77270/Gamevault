@@ -6,32 +6,40 @@ import {GameRegistry} from "../src/GameRegistry.sol";
 import {GameLicense} from "../src/GameLicense.sol";
 import {Marketplace} from "../src/Marketplace.sol";
 
-/// Deploy + wire the three contracts. The deployer address doubles as the
-/// platform fee receiver (fine for the throwaway key).
+/// Deploy + wire the three contracts with SEPARATED keys (audit K1):
+///   PRIVATE_KEY        pays gas only — keeps NO role after deployment
+///   ADMIN_ADDRESS      owner of GameLicense (rotates the attestation
+///                      signer) + Marketplace platform-fee receiver
+///   ATTEST_SIGNER      address of ticketd's attestation key
+/// The ticket-signing key never touches the chain (its pubkey is embedded
+/// in the launcher).
 ///
-///   $env:PRIVATE_KEY = "0x..."   # throwaway, funded with Base Sepolia ETH
 ///   forge script script/Deploy.s.sol --rpc-url base_sepolia --broadcast
+///   (env from contracts/.env, gitignored)
 ///
-/// Then paste the printed addresses into:
-///   - shared/src/deployments.ts  (arms ticketd ownerOf + launcher revocation)
-///   - subgraph/subgraph.yaml     (addresses + startBlock, then deploy)
+/// Then paste the printed addresses into shared/src/deployments.ts.
 contract Deploy is Script {
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
+        address admin = vm.envAddress("ADMIN_ADDRESS");
+        address attestSigner = vm.envAddress("ATTEST_SIGNER");
+        require(admin != vm.addr(pk) && attestSigner != vm.addr(pk), "Deploy: gas key must hold no role");
+
         vm.startBroadcast(pk);
 
         GameRegistry registry = new GameRegistry();
-        // Friendship lives off-chain (ticketd DB); the deployer key doubles
-        // as the attestation signer. Prod guard values — for a DEMO deploy
-        // (lending shown live), shrink them: e.g. (10 minutes, 1 days, 10 minutes).
-        GameLicense license = new GameLicense(registry, vm.addr(pk), 3 days, 14 days, 1 days);
+        // Prod guard values — for a DEMO deploy (lending shown live), shrink
+        // them: e.g. (10 minutes, 1 days, 10 minutes).
+        GameLicense license = new GameLicense(registry, admin, attestSigner, 3 days, 14 days, 1 days);
         registry.setLicense(address(license));
-        Marketplace market = new Marketplace(license, vm.addr(pk));
+        Marketplace market = new Marketplace(license, admin);
 
         vm.stopBroadcast();
 
         console.log("GameRegistry  :", address(registry));
         console.log("GameLicense   :", address(license));
         console.log("Marketplace   :", address(market));
+        console.log("admin / fees  :", admin);
+        console.log("attest signer :", attestSigner);
     }
 }

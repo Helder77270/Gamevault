@@ -6,7 +6,9 @@ import {ERC2981} from "@openzeppelin/contracts/token/common/ERC2981.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {IGameVaultEvents} from "./interfaces/IGameVaultEvents.sol";
 import {GameRegistry} from "./GameRegistry.sol";
 
@@ -20,17 +22,28 @@ import {GameRegistry} from "./GameRegistry.sol";
 ///         right to a friend — like handing over the cartridge: while the
 ///         loan runs, ticketd refuses the OWNER and serves the borrower
 ///         (userOf). Friendship lives OFF-CHAIN (ticketd DB, wallet
-///         signatures, zero gas): lend() takes a platform ATTESTATION
-///         ("owner and borrower friends since T", signed by the platform
-///         key) and enforces the age ON-CHAIN, plus per-token cooldown and
-///         bounded duration. A transfer (resale) kills the loan — the
-///         standard UpdateUser event makes that indexable.
-contract GameLicense is ERC721, ERC2981, ReentrancyGuard, IGameVaultEvents {
+///         signatures, zero gas): lend() takes an EIP-712 ATTESTATION
+///         ("owner and borrower friends since T, for token N") signed by
+///         the dedicated attestation key, and enforces the age ON-CHAIN,
+///         plus per-token cooldown and bounded duration. A transfer
+///         (resale) kills the loan — UpdateUser makes that indexable.
+///
+///         KEYS (audit K1): the owner (admin) is distinct from the
+///         attestation signer and can rotate it; the deployer keeps no role.
+contract GameLicense is ERC721, ERC2981, EIP712, Ownable2Step, ReentrancyGuard, IGameVaultEvents {
     GameRegistry public immutable registry;
-    /// Signs friendship attestations (ticketd's platform key).
-    address public immutable platformSigner;
+    /// Signs friendship attestations — rotatable by the owner.
+    address public attestationSigner;
     uint256 public nextTokenId;
     mapping(uint256 tokenId => uint256) public editionOf;
+    /// Bumped on every transfer — lets the Marketplace detect a listing
+    /// made before the token left and came back (audit K3).
+    mapping(uint256 tokenId => uint256) public transferCount;
+
+    bytes32 public constant FRIEND_ATTESTATION_TYPEHASH =
+        keccak256("FriendAttestation(address owner,address borrower,uint256 tokenId,uint64 since,uint64 deadline)");
+
+    event AttestationSignerUpdated(address indexed previous, address indexed current);
 
     // ── Lending (ERC-4907 data model) ────────────────────────────
     struct UserInfo {
@@ -54,16 +67,27 @@ contract GameLicense is ERC721, ERC2981, ReentrancyGuard, IGameVaultEvents {
 
     constructor(
         GameRegistry registryContract,
-        address platformSigner_,
+        address admin,
+        address attestationSigner_,
         uint64 minFriendAge,
         uint64 maxLoanDuration,
         uint64 loanCooldown
-    ) ERC721("GameVault License", "GVL") {
+    ) ERC721("GameVault License", "GVL") EIP712("GameVault License", "1") Ownable(admin) {
+        require(attestationSigner_ != address(0), "GameLicense: zero signer");
         registry = registryContract;
-        platformSigner = platformSigner_;
+        attestationSigner = attestationSigner_;
         MIN_FRIEND_AGE = minFriendAge;
         MAX_LOAN_DURATION = maxLoanDuration;
         LOAN_COOLDOWN = loanCooldown;
+        emit AttestationSignerUpdated(address(0), attestationSigner_);
+    }
+
+    /// @notice Rotate the attestation key (compromise, routine rotation).
+    ///         Attestations signed by the old key stop working immediately.
+    function setAttestationSigner(address next) external onlyOwner {
+        require(next != address(0), "GameLicense: zero signer");
+        emit AttestationSignerUpdated(attestationSigner, next);
+        attestationSigner = next;
     }
 
     // ── ERC-4907 views ───────────────────────────────────────────
@@ -86,14 +110,15 @@ contract GameLicense is ERC721, ERC2981, ReentrancyGuard, IGameVaultEvents {
 
     // ── Lending writes (guarded — this is NOT bare setUser) ─────
 
-    /// @notice Digest the platform signs to attest a friendship — bound to
-    ///         this chain and this contract so it cannot be replayed.
-    function attestationDigest(address owner_, address to, uint64 since, uint64 deadline)
+    /// @notice EIP-712 digest of a friendship attestation — domain-bound to
+    ///         this chain + contract, and to ONE token (no reuse across a
+    ///         lender's other licences).
+    function attestationDigest(address owner_, address to, uint256 tokenId, uint64 since, uint64 deadline)
         public
         view
         returns (bytes32)
     {
-        return keccak256(abi.encodePacked("GAMEVAULT_FRIEND_ATTEST", block.chainid, address(this), owner_, to, since, deadline));
+        return _hashTypedDataV4(keccak256(abi.encode(FRIEND_ATTESTATION_TYPEHASH, owner_, to, tokenId, since, deadline)));
     }
 
     /// @notice Lend the play right to a friend, for at most MAX_LOAN_DURATION.
@@ -110,8 +135,8 @@ contract GameLicense is ERC721, ERC2981, ReentrancyGuard, IGameVaultEvents {
         uint64 nowTs = uint64(block.timestamp);
         require(nowTs >= _loanEndedAt(tokenId) + LOAN_COOLDOWN || _loanEndedAt(tokenId) == 0, "GameLicense: cooldown");
         require(nowTs <= deadline, "GameLicense: attestation expired");
-        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(attestationDigest(msg.sender, to, since, deadline));
-        require(ECDSA.recover(digest, sig) == platformSigner, "GameLicense: bad attestation");
+        bytes32 digest = attestationDigest(msg.sender, to, tokenId, since, deadline);
+        require(ECDSA.recover(digest, sig) == attestationSigner, "GameLicense: bad attestation");
         require(since != 0, "GameLicense: not friends");
         require(nowTs >= since + MIN_FRIEND_AGE, "GameLicense: friendship too young");
         require(expires > nowTs && expires <= nowTs + MAX_LOAN_DURATION, "GameLicense: bad duration");
@@ -135,6 +160,9 @@ contract GameLicense is ERC721, ERC2981, ReentrancyGuard, IGameVaultEvents {
     /// inherits a borrower). Mint (from == 0) is untouched.
     function _update(address to, uint256 tokenId, address auth) internal override returns (address from) {
         from = super._update(to, tokenId, auth);
+        unchecked {
+            ++transferCount[tokenId];
+        }
         if (from != address(0) && _users[tokenId].user != address(0)) {
             lastLoanEnd[tokenId] = uint64(block.timestamp);
             delete _users[tokenId];
@@ -157,8 +185,9 @@ contract GameLicense is ERC721, ERC2981, ReentrancyGuard, IGameVaultEvents {
         Address.sendValue(payable(studioOwner), msg.value);
     }
 
+    /// ERC-4907 is NOT advertised: userOf/userExpires follow its views, but
+    /// writes go through the guarded lend()/endLoan(), not setUser (audit K5).
     function supportsInterface(bytes4 interfaceId) public view override(ERC721, ERC2981) returns (bool) {
-        // 0xad092b5c = ERC-4907
-        return interfaceId == 0xad092b5c || super.supportsInterface(interfaceId);
+        return super.supportsInterface(interfaceId);
     }
 }

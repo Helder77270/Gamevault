@@ -227,6 +227,7 @@ export const MARKETPLACE_ABI = [
     outputs: [
       { name: "seller", type: "address" },
       { name: "price", type: "uint256" },
+      { name: "transferNonce", type: "uint256" },
     ],
   },
   {

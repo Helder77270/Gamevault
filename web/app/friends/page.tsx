@@ -155,7 +155,7 @@ export default function FriendsPage() {
       const res = await fetch(`${TICKETD_URL}/friends/attest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner: address, borrower: to }),
+        body: JSON.stringify({ owner: address, borrower: to, tokenId }),
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
       const att = (await res.json()) as { since: number; deadline: number; sig: `0x${string}` };

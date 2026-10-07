@@ -11,19 +11,22 @@ export const CHAIN = {
   rpcUrl: "https://sepolia.base.org",
 } as const;
 
-// LENDING v3 2026-10-07, block 47800634 — friendship is OFF-CHAIN (ticketd
-// DB, wallet signatures, zero gas); lend() verifies a platform-signed
-// friendship attestation on-chain and keeps the guards (this deploy: 3 d
-// friendship, 14 d max loan, 24 h cooldown — constructor-set). Earlier
-// sets of the day (v1 0x2dEC…0354, v2 0x4030…B5fd) are abandoned.
+// KEYS SEPARATED 2026-10-07, block 47811332 (audit K1). Roles:
+//   GameLicense.owner / Marketplace fee receiver : admin 0x46B2…A322
+//   GameLicense.attestationSigner (rotatable)     : 0x6fB3…1387
+//   ticket signer : off-chain only, pubkey embedded in the launcher
+// The previous all-in-one platform key (0xAD5B…631b, leaked) holds no role
+// anymore. Also in this set: EIP-712 attestations bound to a tokenId,
+// no false ERC-4907 claim, resurrected Marketplace listings rejected.
+// Earlier sets of the day (v1 0x2dEC…, v2 0x4030…, v3 0x9FC8…) abandoned.
 export const DEPLOYMENTS: {
   gameRegistry: `0x${string}` | "";
   gameLicense: `0x${string}` | "";
   marketplace: `0x${string}` | "";
 } = {
-  gameRegistry: "0x9FC8d14a00205a3996b196042415A8C7660e7241",
-  gameLicense: "0x645a5b9cD9469FbB239b9c6Ae197d75144A54102",
-  marketplace: "0x6D9990C611A4b5d330aEe44A7AB784E0F2bE5355",
+  gameRegistry: "0x7546b4D2f62052468957FD9381cf4Ac433776aba",
+  gameLicense: "0xcB73916fA8AF03894B85e6e05aa8a8169f046Bd9",
+  marketplace: "0x89dFfcfdAd3f0EA66554821CAcB9D004E0af8a40",
 };
 
-export const DEPLOY_BLOCK = 47800634;
+export const DEPLOY_BLOCK = 47811332;
