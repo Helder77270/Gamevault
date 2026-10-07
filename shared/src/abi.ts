@@ -70,6 +70,9 @@ export const LICENSE_ABI = [
       { name: "tokenId", type: "uint256" },
       { name: "to", type: "address" },
       { name: "expires", type: "uint64" },
+      { name: "since", type: "uint64" },
+      { name: "deadline", type: "uint64" },
+      { name: "sig", type: "bytes" },
     ],
     outputs: [],
   },
@@ -107,95 +110,6 @@ export const LICENSE_ABI = [
   },
 ] as const;
 
-export const FRIEND_ABI = [
-  {
-    name: "request",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "to", type: "address" }],
-    outputs: [],
-  },
-  {
-    name: "accept",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "from", type: "address" }],
-    outputs: [],
-  },
-  {
-    name: "remove",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "friend_", type: "address" }],
-    outputs: [],
-  },
-  {
-    name: "friendsSince",
-    type: "function",
-    stateMutability: "view",
-    inputs: [
-      { name: "x", type: "address" },
-      { name: "y", type: "address" },
-    ],
-    outputs: [{ type: "uint64" }],
-  },
-  {
-    name: "friendsOf",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "who", type: "address" }],
-    outputs: [{ type: "address[]" }],
-  },
-  {
-    name: "requestedAt",
-    type: "function",
-    stateMutability: "view",
-    inputs: [
-      { name: "from", type: "address" },
-      { name: "to", type: "address" },
-    ],
-    outputs: [{ type: "uint64" }],
-  },
-  {
-    name: "pendingFor",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "who", type: "address" }],
-    outputs: [{ type: "address[]" }],
-  },
-  {
-    name: "decline",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "from", type: "address" }],
-    outputs: [],
-  },
-  {
-    name: "FriendRequested",
-    type: "event",
-    inputs: [
-      { name: "from", type: "address", indexed: true },
-      { name: "to", type: "address", indexed: true },
-    ],
-  },
-  {
-    name: "FriendsSince",
-    type: "event",
-    inputs: [
-      { name: "a", type: "address", indexed: true },
-      { name: "b", type: "address", indexed: true },
-      { name: "since", type: "uint64", indexed: false },
-    ],
-  },
-  {
-    name: "Unfriended",
-    type: "event",
-    inputs: [
-      { name: "a", type: "address", indexed: true },
-      { name: "b", type: "address", indexed: true },
-    ],
-  },
-] as const;
 
 export const REGISTRY_ABI = [
   {

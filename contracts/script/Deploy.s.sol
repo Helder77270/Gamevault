@@ -5,7 +5,6 @@ import {Script, console} from "forge-std/Script.sol";
 import {GameRegistry} from "../src/GameRegistry.sol";
 import {GameLicense} from "../src/GameLicense.sol";
 import {Marketplace} from "../src/Marketplace.sol";
-import {FriendRegistry} from "../src/FriendRegistry.sol";
 
 /// Deploy + wire the three contracts. The deployer address doubles as the
 /// platform fee receiver (fine for the throwaway key).
@@ -22,17 +21,16 @@ contract Deploy is Script {
         vm.startBroadcast(pk);
 
         GameRegistry registry = new GameRegistry();
-        FriendRegistry friendsReg = new FriendRegistry();
-        // Prod guard values. For a DEMO deployment (lending shown live on
-        // stage), shrink them: e.g. (10 minutes, 1 days, 10 minutes).
-        GameLicense license = new GameLicense(registry, friendsReg, 3 days, 14 days, 1 days);
+        // Friendship lives off-chain (ticketd DB); the deployer key doubles
+        // as the attestation signer. Prod guard values — for a DEMO deploy
+        // (lending shown live), shrink them: e.g. (10 minutes, 1 days, 10 minutes).
+        GameLicense license = new GameLicense(registry, vm.addr(pk), 3 days, 14 days, 1 days);
         registry.setLicense(address(license));
         Marketplace market = new Marketplace(license, vm.addr(pk));
 
         vm.stopBroadcast();
 
         console.log("GameRegistry  :", address(registry));
-        console.log("FriendRegistry:", address(friendsReg));
         console.log("GameLicense   :", address(license));
         console.log("Marketplace   :", address(market));
     }

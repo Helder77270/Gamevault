@@ -1,7 +1,8 @@
 // Core ticket issuance — the only place that turns on-chain ownership into
 // a playable ticket. Kept HTTP-free for testability (see server.ts).
 
-import { createPublicClient, http, verifyMessage } from "viem";
+import { createPublicClient, encodePacked, http, keccak256, verifyMessage } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -121,6 +122,134 @@ export async function getBuild(cid: string): Promise<Uint8Array> {
   cacheBuild(cid, bytes);
   console.log(`✔ build ${cid} récupéré d'IPFS -> cache local (${bytes.length} o)`);
   return bytes;
+}
+
+// ── Friends DB (décidé 2026-10-07) ───────────────────────────────────────
+// L'amitié est OFF-CHAIN : une transaction par ami tuait l'usage. Ici,
+// chaque action est un simple message signé par le wallet (zéro gas).
+// Le contrat garde sa garde : au prêt, la plateforme signe une ATTESTATION
+// « owner et borrower amis depuis T » que lend() vérifie on-chain avec
+// l'âge minimal. Backdate = simulation des 3 jours en dev.
+
+const FRIENDS_PATH = join(dirname(fileURLToPath(import.meta.url)), "../data/friends.json");
+const ATTEST_TTL_SEC = 10 * 60;
+
+interface FriendsDb {
+  /** "from|to" (lowercase) -> ms de la demande en attente */
+  requests: Record<string, number>;
+  /** "lo|hi" (paire triée, lowercase) -> amis depuis (secondes unix) */
+  friendships: Record<string, number>;
+}
+
+function friendsDb(): FriendsDb {
+  if (!existsSync(FRIENDS_PATH)) return { requests: {}, friendships: {} };
+  return JSON.parse(readFileSync(FRIENDS_PATH, "utf8"));
+}
+
+function saveFriendsDb(db: FriendsDb): void {
+  mkdirSync(dirname(FRIENDS_PATH), { recursive: true });
+  writeFileSync(FRIENDS_PATH, JSON.stringify(db, null, 2));
+}
+
+const pairKey = (a: string, b: string): string => {
+  const [lo, hi] = [a.toLowerCase(), b.toLowerCase()].sort();
+  return `${lo}|${hi}`;
+};
+
+const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
+const friendNonces = new Set<string>();
+
+/** Message signé côté wallet :
+ *  GameVault Amis\naction: request|accept|decline|remove\nme: 0x…\nother: 0x…\nat: ISO\nnonce: uuid */
+export async function applyFriendAction(message: string, signature: `0x${string}`): Promise<{ ok: true }> {
+  const get = (k: string): string => message.match(new RegExp(`^${k}: (.+)$`, "m"))?.[1]?.trim() ?? "";
+  const action = get("action");
+  const me = get("me");
+  const other = get("other");
+  const at = get("at");
+  const nonce = get("nonce");
+  if (!message.startsWith("GameVault Amis")) throw new Error("message inattendu");
+  if (!["request", "accept", "decline", "remove"].includes(action)) throw new Error("action inconnue");
+  if (!ADDR_RE.test(me) || !ADDR_RE.test(other)) throw new Error("adresse invalide");
+  if (me.toLowerCase() === other.toLowerCase()) throw new Error("pas d'amitié avec soi-même");
+  const age = Date.now() - Date.parse(at);
+  if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) throw new Error("message expiré");
+  if (friendNonces.has(nonce)) throw new Error("nonce déjà utilisé");
+  const sigOk = await verifyMessage({ address: me as `0x${string}`, message, signature });
+  if (!sigOk) throw new Error("signature invalide");
+  friendNonces.add(nonce);
+
+  const db = friendsDb();
+  const meL = me.toLowerCase();
+  const otherL = other.toLowerCase();
+  const pk2 = pairKey(me, other);
+  if (action === "request") {
+    if (db.friendships[pk2]) throw new Error("déjà amis");
+    db.requests[`${meL}|${otherL}`] = Date.now();
+  } else if (action === "accept") {
+    if (!db.requests[`${otherL}|${meL}`]) throw new Error("aucune demande de cette adresse");
+    delete db.requests[`${otherL}|${meL}`];
+    delete db.requests[`${meL}|${otherL}`];
+    db.friendships[pk2] = Math.floor(Date.now() / 1000);
+  } else if (action === "decline") {
+    delete db.requests[`${otherL}|${meL}`];
+  } else {
+    delete db.friendships[pk2];
+  }
+  saveFriendsDb(db);
+  console.log(`✔ amis: ${action} ${me} <-> ${other}`);
+  return { ok: true };
+}
+
+export function friendsOf(addr: string): { friends: { addr: string; since: number }[]; incoming: string[]; outgoing: string[] } {
+  if (!ADDR_RE.test(addr)) throw new Error("adresse invalide");
+  const db = friendsDb();
+  const meL = addr.toLowerCase();
+  const friends: { addr: string; since: number }[] = [];
+  for (const [key, since] of Object.entries(db.friendships)) {
+    const [lo, hi] = key.split("|");
+    if (lo === meL) friends.push({ addr: hi, since });
+    else if (hi === meL) friends.push({ addr: lo, since });
+  }
+  const incoming: string[] = [];
+  const outgoing: string[] = [];
+  for (const key of Object.keys(db.requests)) {
+    const [from, to] = key.split("|");
+    if (to === meL) incoming.push(from);
+    if (from === meL) outgoing.push(to);
+  }
+  return { friends, incoming, outgoing };
+}
+
+/** L'attestation que lend() vérifie on-chain. Gratuite, courte durée. */
+export function attestFriendship(owner: string, borrower: string): { since: number; deadline: number; sig: `0x${string}`; license: string } | Promise<never> {
+  if (!ADDR_RE.test(owner) || !ADDR_RE.test(borrower)) throw new Error("adresse invalide");
+  const license = DEPLOYMENTS.gameLicense;
+  if (!license) throw new Error("GameLicense non déployé");
+  const since = friendsDb().friendships[pairKey(owner, borrower)];
+  if (!since) throw new Error("pas amis — la demande doit être acceptée d'abord");
+  const deadline = Math.floor(Date.now() / 1000) + ATTEST_TTL_SEC;
+  const digest = keccak256(
+    encodePacked(
+      ["string", "uint256", "address", "address", "address", "uint64", "uint64"],
+      ["GAMEVAULT_FRIEND_ATTEST", BigInt(84532), license, owner as `0x${string}`, borrower as `0x${string}`, BigInt(since), BigInt(deadline)],
+    ),
+  );
+  const account = privateKeyToAccount(`0x${Buffer.from(platformPriv()).toString("hex")}` as `0x${string}`);
+  return account.signMessage({ message: { raw: digest } }).then((sig) => ({ since, deadline, sig, license })) as never;
+}
+
+/** DEV : antidater une amitié pour simuler les 3 jours (ticketd est local). */
+export function backdateFriendship(a: string, b: string, sinceSec: number): { ok: true; since: number } {
+  if (!ADDR_RE.test(a) || !ADDR_RE.test(b)) throw new Error("adresse invalide");
+  if (!Number.isFinite(sinceSec) || sinceSec <= 0) throw new Error("since invalide");
+  const db = friendsDb();
+  const key = pairKey(a, b);
+  if (!db.friendships[key]) throw new Error("pas amis — accepter d'abord, antidater ensuite");
+  db.friendships[key] = Math.floor(sinceSec);
+  saveFriendsDb(db);
+  console.warn(`⚠ DEV: amitié ${a} <-> ${b} antidatée au ${new Date(sinceSec * 1000).toISOString()}`);
+  return { ok: true, since: Math.floor(sinceSec) };
 }
 
 async function contentKeyFor(tokenId: string): Promise<Uint8Array> {

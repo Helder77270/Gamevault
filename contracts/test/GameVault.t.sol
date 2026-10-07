@@ -5,13 +5,11 @@ import {Test} from "forge-std/Test.sol";
 import {GameRegistry} from "../src/GameRegistry.sol";
 import {GameLicense} from "../src/GameLicense.sol";
 import {Marketplace} from "../src/Marketplace.sol";
-import {FriendRegistry} from "../src/FriendRegistry.sol";
 
 contract GameVaultTest is Test {
     GameRegistry registry;
     GameLicense license;
     Marketplace market;
-    FriendRegistry friendsReg;
 
     address platform = makeAddr("platform");
     address studio = makeAddr("studio");
@@ -25,8 +23,7 @@ contract GameVaultTest is Test {
 
     function setUp() public {
         registry = new GameRegistry();
-        friendsReg = new FriendRegistry();
-        license = new GameLicense(registry, friendsReg, 3 days, 14 days, 1 days);
+        license = new GameLicense(registry, platform, 3 days, 14 days, 1 days);
         registry.setLicense(address(license));
         market = new Marketplace(license, platform);
 

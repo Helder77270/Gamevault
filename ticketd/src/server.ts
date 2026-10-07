@@ -3,7 +3,16 @@
 //   GET  /health
 
 import { createServer } from "node:http";
-import { getBuild, issueTicket, takePendingTicket, publishBuild } from "./service.ts";
+import {
+  applyFriendAction,
+  attestFriendship,
+  backdateFriendship,
+  friendsOf,
+  getBuild,
+  issueTicket,
+  takePendingTicket,
+  publishBuild,
+} from "./service.ts";
 
 const MAX_UPLOAD = 100 * 1024 * 1024; // 100 MB
 
@@ -29,6 +38,37 @@ createServer(async (req, res) => {
   if (pendingMatch) {
     const ticket = takePendingTicket(pendingMatch[1]);
     return ticket ? send(200, ticket) : send(404, { error: "no ticket yet" });
+  }
+
+  // ── Friends DB: wallet-signed actions, zero gas ──────────────
+  const friendsMatch = req.method === "GET" && req.url?.match(/^\/friends\/(0x[0-9a-fA-F]{40})$/);
+  if (friendsMatch) {
+    try {
+      return send(200, friendsOf(friendsMatch[1]));
+    } catch (e) {
+      return send(400, { error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  if (req.method === "POST" && req.url?.startsWith("/friends/")) {
+    try {
+      let raw = "";
+      for await (const chunk of req) raw += chunk;
+      const body = JSON.parse(raw || "{}");
+      if (req.url === "/friends/action") {
+        return send(200, await applyFriendAction(body.message, body.signature));
+      }
+      if (req.url === "/friends/attest") {
+        return send(200, await attestFriendship(body.owner, body.borrower));
+      }
+      if (req.url === "/friends/backdate") {
+        // DEV helper — ticketd n'écoute qu'en local ; simule les 3 jours
+        return send(200, backdateFriendship(body.a, body.b, Number(body.since)));
+      }
+      return send(404, { error: "not found" });
+    } catch (e) {
+      console.warn(`⛔ amis: ${e instanceof Error ? e.message : e}`);
+      return send(403, { error: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   // Build distribution: local cache first, IPFS gateways as backup.

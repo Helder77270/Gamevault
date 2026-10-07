@@ -1,28 +1,26 @@
 "use client";
 
-// Amis & Prêts — the social surface of the cartridge rule. Everything here
-// is a WALLET action (the launcher shows the read-only mirror):
-//   - request/accept/remove friendships (FriendRegistry)
-//   - lend an owned licence to a matured friend (>= 3 days), 1-14 days
-//   - end a loan early (owner reclaims / borrower returns)
-// Guards live ON-CHAIN; this page just surfaces them honestly.
+// Amis & Prêts — l'amitié vit dans la BDD plateforme (ticketd) : chaque
+// action est un message SIGNÉ par le wallet, ZÉRO transaction, zéro gas.
+// Seul le prêt touche la chaîne : ticketd délivre une attestation
+// « amis depuis T » que lend() vérifie on-chain (règle des 3 jours
+// comprise). endLoan reste une transaction du propriétaire/emprunteur.
 
 import { useCallback, useEffect, useState } from "react";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
-import { FRIEND_ABI, LICENSE_ABI } from "@gamevault/shared/abi";
+import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
+import { LICENSE_ABI } from "@gamevault/shared/abi";
 import { DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { fetchOnchainCatalog, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { ConnectButton } from "../components/ConnectButton";
 
-const FRIENDS = DEPLOYMENTS.friendRegistry as `0x${string}`;
 const LICENSE = DEPLOYMENTS.gameLicense as `0x${string}`;
+const TICKETD_URL = process.env.NEXT_PUBLIC_TICKETD_URL ?? "http://localhost:8787";
 const ZERO = "0x0000000000000000000000000000000000000000";
 const DAY = 86400;
 const FRIEND_AGE = 3 * DAY;
 
 type Friend = { addr: string; since: number };
 type Owned = { tokenId: string; editionId: string; user: string; expires: number; lastEnd: number };
-type Incoming = { from: string };
 
 const short = (a: string): string => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
@@ -30,9 +28,11 @@ export default function FriendsPage() {
   const { address, isConnected } = useAccount();
   const client = usePublicClient();
   const { writeContractAsync } = useWriteContract();
+  const { signMessageAsync } = useSignMessage();
 
   const [friends, setFriends] = useState<Friend[]>([]);
-  const [incoming, setIncoming] = useState<Incoming[]>([]);
+  const [incoming, setIncoming] = useState<string[]>([]);
+  const [outgoing, setOutgoing] = useState<string[]>([]);
   const [owned, setOwned] = useState<Owned[]>([]);
   const [borrowed, setBorrowed] = useState<Owned[]>([]);
   const [catalog, setCatalog] = useState<OnchainEdition[]>([]);
@@ -43,32 +43,25 @@ export default function FriendsPage() {
   const [nowSec, setNowSec] = useState(Math.floor(Date.now() / 1000));
 
   const refresh = useCallback(async () => {
-    if (!client || !address || !FRIENDS || !LICENSE) return;
+    if (!address) return;
     setNowSec(Math.floor(Date.now() / 1000));
     const problems: string[] = [];
 
-    // Friends + incoming inbox (on-chain enumeration — no log scanning,
-    // public RPCs cap eth_getLogs)
+    // Amis : BDD ticketd (aucun appel chaîne)
     try {
-      const [list, pend] = await Promise.all([
-        client.readContract({ address: FRIENDS, abi: FRIEND_ABI, functionName: "friendsOf", args: [address] }),
-        client.readContract({ address: FRIENDS, abi: FRIEND_ABI, functionName: "pendingFor", args: [address] }),
-      ]);
-      const fs = await Promise.all(
-        list.map(async (f) => ({
-          addr: f,
-          since: Number(await client.readContract({ address: FRIENDS, abi: FRIEND_ABI, functionName: "friendsSince", args: [address, f] })),
-        })),
-      );
-      setFriends(fs);
-      setIncoming(pend.map((from) => ({ from })));
+      const res = await fetch(`${TICKETD_URL}/friends/${address}`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { friends: Friend[]; incoming: string[]; outgoing: string[] };
+      setFriends(data.friends);
+      setIncoming(data.incoming);
+      setOutgoing(data.outgoing);
     } catch (e) {
-      problems.push(`amis: ${e instanceof Error ? e.message : e}`);
+      problems.push(`amis (ticketd): ${e instanceof Error ? e.message : e}`);
     }
 
-    // Owned + borrowed licences with their loan state — independent of the
-    // friends read: one failing never blanks the other.
+    // Licences + état des prêts : la chaîne, indépendamment
     try {
+      if (!client || !LICENSE) throw new Error("client/contrat indisponible");
       const next = await client.readContract({ address: LICENSE, abi: LICENSE_ABI, functionName: "nextTokenId" });
       const mine: Owned[] = [];
       const lent2me: Owned[] = [];
@@ -103,63 +96,123 @@ export default function FriendsPage() {
     void refresh();
   }, [refresh]);
 
-  const act = async (label: string, fn: () => Promise<unknown>) => {
+  /** Action amis = message signé envoyé à ticketd. Gratuit, instantané. */
+  const friendAction = async (action: "request" | "accept" | "decline" | "remove", other: string) => {
+    if (!address) return;
     setError("");
-    setBusy(label);
+    setBusy(`${action}-${other}`);
     try {
-      await fn();
-      await new Promise((r) => setTimeout(r, 4000)); // RPC propagation
+      const message = [
+        "GameVault Amis",
+        `action: ${action}`,
+        `me: ${address}`,
+        `other: ${other}`,
+        `at: ${new Date().toISOString()}`,
+        `nonce: ${crypto.randomUUID()}`,
+      ].join("\n");
+      const signature = await signMessageAsync({ message });
+      const res = await fetch(`${TICKETD_URL}/friends/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, signature }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      await refresh();
+      if (action === "request") setTarget("");
+    } catch (e) {
+      setError(String(e instanceof Error ? ((e as Error & { shortMessage?: string }).shortMessage ?? e.message) : e));
+    }
+    setBusy("");
+  };
+
+  /** Prêt : attestation gratuite de ticketd, puis UNE transaction lend(). */
+  const lendTo = async (tokenId: string, to: string) => {
+    if (!address) return;
+    setError("");
+    setBusy(`lend-${tokenId}`);
+    try {
+      const res = await fetch(`${TICKETD_URL}/friends/attest`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner: address, borrower: to }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      const att = (await res.json()) as { since: number; deadline: number; sig: `0x${string}` };
+      const expires = BigInt(Math.floor(Date.now() / 1000) + Number(days) * DAY);
+      await writeContractAsync({
+        address: LICENSE,
+        abi: LICENSE_ABI,
+        functionName: "lend",
+        args: [BigInt(tokenId), to as `0x${string}`, expires, BigInt(att.since), BigInt(att.deadline), att.sig],
+      });
+      await new Promise((r) => setTimeout(r, 4000));
       await refresh();
     } catch (e) {
-      setError(String(e instanceof Error ? (e as Error & { shortMessage?: string }).shortMessage ?? e.message : e));
+      setError(String(e instanceof Error ? ((e as Error & { shortMessage?: string }).shortMessage ?? e.message) : e));
+    }
+    setBusy("");
+  };
+
+  const endLoan = async (tokenId: string) => {
+    setError("");
+    setBusy(`end-${tokenId}`);
+    try {
+      await writeContractAsync({ address: LICENSE, abi: LICENSE_ABI, functionName: "endLoan", args: [BigInt(tokenId)] });
+      await new Promise((r) => setTimeout(r, 4000));
+      await refresh();
+    } catch (e) {
+      setError(String(e instanceof Error ? ((e as Error & { shortMessage?: string }).shortMessage ?? e.message) : e));
     }
     setBusy("");
   };
 
   const titleOf = (editionId: string): string => catalog.find((e) => e.editionId === editionId)?.title ?? `Édition #${editionId}`;
 
-  if (!FRIENDS || !LICENSE) return <p className="notice">Contrats non déployés.</p>;
+  if (!LICENSE) return <p className="notice">Contrats non déployés.</p>;
 
   return (
     <div className="pane" style={{ maxWidth: "52rem" }}>
       <h1>Amis &amp; Prêts</h1>
       <p>
-        Prêter un jeu, c&apos;est tendre la cartouche : <em>vous perdez l&apos;accès pendant le prêt</em>. Les
-        garde-fous sont on-chain — amis mutuels depuis <b>3 jours</b>, <b>14 jours</b> de prêt max, <b>24 h</b> de
-        repos entre deux prêts, 16 amis max.
+        L&apos;amitié est <b>gratuite</b> : une simple signature, aucune transaction. Prêter un jeu, c&apos;est
+        tendre la cartouche — <em>vous perdez l&apos;accès pendant le prêt</em>. Les garde-fous restent on-chain :
+        amis depuis <b>3 jours</b> (attesté par la plateforme), <b>14 jours</b> max, <b>24 h</b> de repos entre
+        deux prêts.
       </p>
       {!isConnected && <ConnectButton />}
 
       {isConnected && address && (
         <>
-          <h2 className="section">1 · Demander un ami</h2>
+          <h2 className="section">1 · Demander un ami — signature, 0 gas</h2>
           <p>
             <input placeholder="0x… adresse du futur ami" style={{ width: "26rem" }} value={target} onChange={(e) => setTarget(e.target.value.trim())} />
-            <button
-              className="btn"
-              disabled={!/^0x[0-9a-fA-F]{40}$/.test(target) || !!busy}
-              onClick={() => void act("request", () => writeContractAsync({ address: FRIENDS, abi: FRIEND_ABI, functionName: "request", args: [target as `0x${string}`] }))}
-            >
-              {busy === "request" ? "Signature…" : "Envoyer la demande"}
+            <button className="btn" disabled={!/^0x[0-9a-fA-F]{40}$/.test(target) || !!busy} onClick={() => void friendAction("request", target)}>
+              {busy === `request-${target}` ? "Signature…" : "Envoyer la demande"}
             </button>
           </p>
+          {outgoing.length > 0 && (
+            <p className="addr">En attente de leur acceptation : {outgoing.map(short).join(" · ")}</p>
+          )}
 
           {incoming.length > 0 && (
             <>
               <h2 className="section">2 · Demandes reçues</h2>
-              {incoming.map((r) => (
-                <p key={r.from}>
-                  <code>{short(r.from)}</code>{" "}
-                  <button className="btn" disabled={!!busy} onClick={() => void act(`accept-${r.from}`, () => writeContractAsync({ address: FRIENDS, abi: FRIEND_ABI, functionName: "accept", args: [r.from as `0x${string}`] }))}>
-                    {busy === `accept-${r.from}` ? "Signature…" : "Accepter"}
+              {incoming.map((from) => (
+                <p key={from}>
+                  <code>{short(from)}</code>{" "}
+                  <button className="btn" disabled={!!busy} onClick={() => void friendAction("accept", from)}>
+                    {busy === `accept-${from}` ? "Signature…" : "Accepter"}
+                  </button>{" "}
+                  <button className="btn ghost" disabled={!!busy} onClick={() => void friendAction("decline", from)}>
+                    Refuser
                   </button>
                 </p>
               ))}
             </>
           )}
 
-          <h2 className="section">Mes amis ({friends.length}/16)</h2>
-          {friends.length === 0 && <p className="addr">Aucun ami on-chain pour l&apos;instant.</p>}
+          <h2 className="section">Mes amis ({friends.length})</h2>
+          {friends.length === 0 && <p className="addr">Aucun ami pour l&apos;instant.</p>}
           {friends.map((f) => {
             const matured = nowSec >= f.since + FRIEND_AGE;
             const left = Math.max(1, Math.ceil((f.since + FRIEND_AGE - nowSec) / DAY));
@@ -167,7 +220,7 @@ export default function FriendsPage() {
               <p key={f.addr}>
                 <code>{short(f.addr)}</code>{" "}
                 <span className="addr">{matured ? "· prêt possible ✔" : `· prêt possible dans ${left} j`}</span>{" "}
-                <button className="btn ghost" disabled={!!busy} onClick={() => void act(`rm-${f.addr}`, () => writeContractAsync({ address: FRIENDS, abi: FRIEND_ABI, functionName: "remove", args: [f.addr as `0x${string}`] }))}>
+                <button className="btn ghost" disabled={!!busy} onClick={() => void friendAction("remove", f.addr)}>
                   Retirer
                 </button>
               </p>
@@ -188,8 +241,8 @@ export default function FriendsPage() {
                 {loanLive ? (
                   <p style={{ margin: "0.3rem 0 0" }}>
                     Prêtée à <code>{short(t.user)}</code> — retour le {new Date(t.expires * 1000).toLocaleDateString()}{" "}
-                    <button className="btn ghost" disabled={!!busy} onClick={() => void act(`end-${t.tokenId}`, () => writeContractAsync({ address: LICENSE, abi: LICENSE_ABI, functionName: "endLoan", args: [BigInt(t.tokenId)] }))}>
-                      {busy === `end-${t.tokenId}` ? "Signature…" : "Récupérer maintenant"}
+                    <button className="btn ghost" disabled={!!busy} onClick={() => void endLoan(t.tokenId)}>
+                      {busy === `end-${t.tokenId}` ? "Transaction…" : "Récupérer maintenant"}
                     </button>
                   </p>
                 ) : cooling ? (
@@ -208,18 +261,16 @@ export default function FriendsPage() {
                         </option>
                       ))}
                     </select>{" "}
-                    pour{" "}
-                    <input style={{ width: "3.2rem" }} value={days} onChange={(e) => setDays(e.target.value)} /> jours{" "}
+                    pour <input style={{ width: "3.2rem" }} value={days} onChange={(e) => setDays(e.target.value)} /> jours{" "}
                     <button
                       className="btn"
                       disabled={!!busy || !/^\d+$/.test(days) || Number(days) < 1 || Number(days) > 14}
                       onClick={() => {
-                        const to = (document.getElementById(`lend-to-${t.tokenId}`) as HTMLSelectElement).value as `0x${string}`;
-                        const expires = BigInt(nowSec + Number(days) * DAY);
-                        void act(`lend-${t.tokenId}`, () => writeContractAsync({ address: LICENSE, abi: LICENSE_ABI, functionName: "lend", args: [BigInt(t.tokenId), to, expires] }));
+                        const to = (document.getElementById(`lend-to-${t.tokenId}`) as HTMLSelectElement).value;
+                        void lendTo(t.tokenId, to);
                       }}
                     >
-                      {busy === `lend-${t.tokenId}` ? "Signature…" : "Prêter ✈"}
+                      {busy === `lend-${t.tokenId}` ? "Transaction…" : "Prêter ✈"}
                     </button>
                   </p>
                 )}
@@ -232,8 +283,9 @@ export default function FriendsPage() {
               <h2 className="section">Empruntés — à vous de jouer</h2>
               {borrowed.map((t) => (
                 <p key={t.tokenId}>
-                  <b>{titleOf(t.editionId)}</b> <span className="addr">#{t.tokenId} · jusqu&apos;au {new Date(t.expires * 1000).toLocaleDateString()}</span>{" "}
-                  <button className="btn ghost" disabled={!!busy} onClick={() => void act(`ret-${t.tokenId}`, () => writeContractAsync({ address: LICENSE, abi: LICENSE_ABI, functionName: "endLoan", args: [BigInt(t.tokenId)] }))}>
+                  <b>{titleOf(t.editionId)}</b>{" "}
+                  <span className="addr">#{t.tokenId} · jusqu&apos;au {new Date(t.expires * 1000).toLocaleDateString()}</span>{" "}
+                  <button className="btn ghost" disabled={!!busy} onClick={() => void endLoan(t.tokenId)}>
                     Rendre plus tôt
                   </button>
                   <br />

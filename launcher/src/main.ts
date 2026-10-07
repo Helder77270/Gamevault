@@ -11,7 +11,7 @@ import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/sh
 import { fetchOnchainCatalog, BLURBS, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
 import { fetchBuild, GATEWAYS } from "@gamevault/shared/storage";
-import { FRIEND_ABI, LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
+import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
 
 const MARKETPLACE_URL = "http://localhost:3000";
 const TICKETD_URL = "http://localhost:8787";
@@ -233,21 +233,19 @@ async function checkOwnerOnline(t: SignedTicket): Promise<OwnerCheck> {
 
 async function fetchFriends(): Promise<void> {
   const me = libraryAddress();
-  if (!chainClient || !DEPLOYMENTS.friendRegistry || !DEPLOYMENTS.gameLicense || !me) {
+  if (!chainClient || !DEPLOYMENTS.gameLicense || !me) {
     state.friends = [];
     state.loans = [];
     return;
   }
   try {
-    const reg = DEPLOYMENTS.friendRegistry as `0x${string}`;
-    const list = await chainClient.readContract({ address: reg, abi: FRIEND_ABI, functionName: "friendsOf", args: [me as `0x${string}`] });
-    state.friends = await Promise.all(
-      list.map(async (f) => ({
-        addr: f,
-        since: Number(await chainClient!.readContract({ address: reg, abi: FRIEND_ABI, functionName: "friendsSince", args: [me as `0x${string}`, f] })),
-      })),
-    );
-    // Live loans touching me — token space is tiny, scan it.
+    // Friendship lives in the platform DB (ticketd) — zero gas, zero chain.
+    const res = await fetch(`${TICKETD_URL}/friends/${me}`, { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const data = (await res.json()) as { friends: { addr: string; since: number }[] };
+      state.friends = data.friends;
+    }
+    // Live loans touching me — ON-CHAIN truth; token space is tiny, scan it.
     const lic = DEPLOYMENTS.gameLicense as `0x${string}`;
     const next = await chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "nextTokenId", args: [] });
     const loans: typeof state.loans = [];
