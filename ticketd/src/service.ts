@@ -516,6 +516,105 @@ export function addPlaystat(addr: string, editionId: string, seconds: number): {
   return { ok: true };
 }
 
+// ── Device registry (audit T4, 2026-10-07) ──────────────────────────────
+// A wallet (account) can be active on MAX_DEVICES machines at once — the
+// wallet signature at pairing is the identity proof, each launcher keeps
+// its own device key. Pairing an extra machine releases the LEAST RECENTLY
+// SEEN one; the launcher's online check then revokes it like a resale.
+// Re-pairing / renewing a known device never consumes a slot. Offline, an
+// evicted machine keeps working until its ticket expires (offline window).
+
+const DEVICES_PATH = join(dirname(fileURLToPath(import.meta.url)), "../data/devices.json");
+export const MAX_DEVICES = 2;
+const SEEN_BUMP_MS = 10 * 60 * 1000;
+const DEVICE_RE = /^0x0[23][0-9a-fA-F]{64}$/;
+
+interface DeviceRec {
+  pubkey: string; // lowercase compressed secp256k1
+  pairedAt: number; // ms
+  lastSeen: number; // ms — pairing, renewal, online launch checks
+}
+
+function devicesDb(): Record<string, DeviceRec[]> {
+  return existsSync(DEVICES_PATH) ? JSON.parse(readFileSync(DEVICES_PATH, "utf8")) : {};
+}
+function saveDevicesDb(db: Record<string, DeviceRec[]>): void {
+  mkdirSync(dirname(DEVICES_PATH), { recursive: true });
+  writeFileSync(DEVICES_PATH, JSON.stringify(db, null, 2));
+}
+
+export function devicesOf(wallet: string): { max: number; devices: DeviceRec[] } {
+  if (!ADDR_RE.test(wallet)) throw new Error("adresse invalide");
+  const list = [...(devicesDb()[wallet.toLowerCase()] ?? [])].sort((a, b) => b.lastSeen - a.lastSeen);
+  return { max: MAX_DEVICES, devices: list };
+}
+
+/** Called at ticket issuance: adds or refreshes the device, evicting the
+ *  least recently seen one beyond MAX_DEVICES. Returns the evicted device. */
+function registerDevice(wallet: string, pubkey: string): DeviceRec | null {
+  const db = devicesDb();
+  const key = wallet.toLowerCase();
+  const pk = pubkey.toLowerCase();
+  const list = db[key] ?? [];
+  const now = Date.now();
+  const known = list.find((d) => d.pubkey === pk);
+  let evicted: DeviceRec | null = null;
+  if (known) {
+    known.lastSeen = now;
+  } else {
+    if (list.length >= MAX_DEVICES) {
+      list.sort((a, b) => a.lastSeen - b.lastSeen);
+      evicted = list.shift() ?? null;
+    }
+    list.push({ pubkey: pk, pairedAt: now, lastSeen: now });
+  }
+  db[key] = list;
+  saveDevicesDb(db);
+  return evicted;
+}
+
+/** Online launch check: is this machine still one of the account's active devices? */
+export function deviceStatus(wallet: string, pubkey: string): { active: boolean } {
+  if (!ADDR_RE.test(wallet) || !DEVICE_RE.test(pubkey)) throw new Error("paramètres invalides");
+  const db = devicesDb();
+  const list = db[wallet.toLowerCase()] ?? [];
+  const rec = list.find((d) => d.pubkey === pubkey.toLowerCase());
+  if (rec && Date.now() - rec.lastSeen > SEEN_BUMP_MS) {
+    rec.lastSeen = Date.now(); // keeps the machine you actually play on off the eviction list
+    saveDevicesDb(db);
+  }
+  return { active: Boolean(rec) };
+}
+
+export function deviceMessage(f: { me: string; device: string; at: string; nonce: string }): string {
+  return ["GameVault Appareils", "action: revoke", `me: ${f.me}`, `device: ${f.device}`, `at: ${f.at}`, `nonce: ${f.nonce}`].join("\n");
+}
+
+/** Free a slot yourself (wallet-signed, zero gas). */
+export async function revokeDevice(message: string, signature: `0x${string}`): Promise<{ ok: true }> {
+  const lines = message.split("\n");
+  const field = (i: number, k: string) => {
+    const l = lines[i] ?? "";
+    if (!l.startsWith(`${k}: `)) throw new Error(`champ ${k} attendu`);
+    return l.slice(k.length + 2);
+  };
+  if (lines.length !== 6 || lines[0] !== "GameVault Appareils" || lines[1] !== "action: revoke") throw new Error("message inattendu");
+  const f = { me: field(2, "me"), device: field(3, "device"), at: field(4, "at"), nonce: field(5, "nonce") };
+  if (deviceMessage(f) !== message) throw new Error("message non canonique");
+  if (!ADDR_RE.test(f.me) || !DEVICE_RE.test(f.device)) throw new Error("paramètres invalides");
+  const age = Date.now() - Date.parse(f.at);
+  if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) throw new Error("message expiré");
+  if (friendNonces.has(f.nonce)) throw new Error("nonce déjà utilisé");
+  if (!(await verifyMessage({ address: f.me as `0x${string}`, message, signature }))) throw new Error("signature invalide");
+  friendNonces.add(f.nonce);
+  const db = devicesDb();
+  const key = f.me.toLowerCase();
+  db[key] = (db[key] ?? []).filter((d) => d.pubkey !== f.device.toLowerCase());
+  saveDevicesDb(db);
+  console.log(`✔ appareil ${f.device.slice(0, 12)}… libéré par ${f.me}`);
+  return { ok: true };
+}
+
 /** DEV : antidater une amitié pour simuler les 3 jours (ticketd est local). */
 export function backdateFriendship(a: string, b: string, sinceSec: number): { ok: true; since: number } {
   if (!ADDR_RE.test(a) || !ADDR_RE.test(b)) throw new Error("adresse invalide");
@@ -713,6 +812,16 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
     expiresAt: loanExpires > 0 ? Math.min(now + TICKET_TTL_SEC, loanExpires) : now + TICKET_TTL_SEC,
   };
   const signed = signTicket(ticket, ticketSignerPriv());
+
+  // 6. Account device slots (registered only once everything succeeded).
+  //    Selftest (no chain) does not touch the registry.
+  if (!skipOwnerCheck) {
+    const evicted = registerDevice(p.address, p.devicePubKey);
+    if (evicted) {
+      console.log(`↺ ${p.address} : ${MAX_DEVICES} appareils max — ${evicted.pubkey.slice(0, 12)}… déconnecté (le moins récemment utilisé)`);
+    }
+  }
+
   pendingTickets.set(p.nonce, { ticket: signed, at: Date.now() });
   return signed;
 }

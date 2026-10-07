@@ -54,6 +54,8 @@ export default function ProfilePage() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [avatarBust, setAvatarBust] = useState(0);
+  const [devices, setDevices] = useState<{ max: number; devices: { pubkey: string; pairedAt: number; lastSeen: number }[] } | null>(null);
+  const [revoking, setRevoking] = useState("");
 
   const refresh = useCallback(async () => {
     if (!address) return;
@@ -64,10 +66,41 @@ export default function ProfilePage() {
       setProfile(data);
       setName(data.name ?? "");
       setFavorites(data.favorites);
+      const dev = await fetch(`${TICKETD_URL}/devices/${address}`);
+      if (dev.ok) setDevices(await dev.json());
     } catch (e) {
       setError(`ticketd: ${e instanceof Error ? e.message : e}`);
     }
   }, [address]);
+
+  /** Free a device slot — wallet signature, zero gas. That machine is
+   *  revoked at its next online check. */
+  const revoke = async (pubkey: string) => {
+    if (!address) return;
+    setError("");
+    setRevoking(pubkey);
+    try {
+      const message = [
+        "GameVault Appareils",
+        "action: revoke",
+        `me: ${address}`,
+        `device: ${pubkey}`,
+        `at: ${new Date().toISOString()}`,
+        `nonce: ${crypto.randomUUID()}`,
+      ].join("\n");
+      const signature = await signMessageAsync({ message });
+      const res = await fetch(`${TICKETD_URL}/devices/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, signature }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      await refresh();
+    } catch (e) {
+      setError(String(e instanceof Error ? ((e as Error & { shortMessage?: string }).shortMessage ?? e.message) : e));
+    }
+    setRevoking("");
+  };
 
   useEffect(() => {
     fetchOnchainCatalog().then(setCatalog).catch(() => {});
@@ -210,6 +243,32 @@ export default function ProfilePage() {
             ))
           ) : (
             <p className="addr">Rien encore — le launcher remplit cette liste à chaque session de jeu.</p>
+          )}
+
+          <h2 className="section">
+            Mes appareils ({devices?.devices.length ?? 0}/{devices?.max ?? 2})
+          </h2>
+          <p className="addr">
+            Votre compte peut être actif sur {devices?.max ?? 2} machines en même temps (chez vous + chez un ami par
+            exemple). Appairer une machine de plus déconnecte la moins utilisée ; vous pouvez aussi libérer une place
+            ici — une signature, zéro transaction.
+          </p>
+          {devices?.devices.length ? (
+            devices.devices.map((d) => (
+              <p key={d.pubkey} style={{ margin: "0.3rem 0" }}>
+                <code>
+                  {d.pubkey.slice(0, 10)}…{d.pubkey.slice(-6)}
+                </code>{" "}
+                <span className="addr">
+                  · appairé le {new Date(d.pairedAt).toLocaleDateString()} · vu le {new Date(d.lastSeen).toLocaleString()}
+                </span>{" "}
+                <button className="btn ghost" disabled={!!revoking} onClick={() => void revoke(d.pubkey)}>
+                  {revoking === d.pubkey ? "Signature…" : "Déconnecter"}
+                </button>
+              </p>
+            ))
+          ) : (
+            <p className="addr">Aucun appareil actif — appairez une machine depuis le launcher.</p>
           )}
 
           <h2 className="section">Succès</h2>

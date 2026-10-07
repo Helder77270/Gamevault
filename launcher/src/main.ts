@@ -286,7 +286,21 @@ const chainClient = DEPLOYMENTS.gameLicense
   ? createPublicClient({ transport: http(CHAIN.rpcUrl, { timeout: 2000, retryCount: 0 }) })
   : null;
 
-type OwnerCheck = "ok" | "revoked" | "offline";
+type OwnerCheck = "ok" | "revoked" | "evicted" | "offline";
+
+/** Is THIS machine still one of the account's active devices (max 2)?
+ *  Unknown when ticketd is unreachable — the offline window applies. */
+async function deviceStillActive(t: SignedTicket): Promise<boolean | null> {
+  try {
+    const res = await fetch(`${TICKETD_URL}/devices/${t.ownerAddress}/${t.devicePubKey}/status`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return null;
+    return ((await res.json()) as { active: boolean }).active;
+  } catch {
+    return null;
+  }
+}
 
 async function checkOwnerOnline(t: SignedTicket): Promise<OwnerCheck> {
   if (!chainClient || !DEPLOYMENTS.gameLicense) return "offline";
@@ -311,8 +325,10 @@ async function checkOwnerOnline(t: SignedTicket): Promise<OwnerCheck> {
     const loanActive = borrower.toLowerCase() !== ZERO_ADDR;
     // Règle cartouche : pendant un prêt, l'EMPRUNTEUR a le droit de jeu,
     // le propriétaire est révoqué ; sinon, le propriétaire comme toujours.
-    if (loanActive) return borrower.toLowerCase() === holder ? "ok" : "revoked";
-    return owner.toLowerCase() === holder ? "ok" : "revoked";
+    const holds = loanActive ? borrower.toLowerCase() === holder : owner.toLowerCase() === holder;
+    if (!holds) return "revoked";
+    // Then the account's device slots: paired on 2 other machines since?
+    return (await deviceStillActive(t)) === false ? "evicted" : "ok";
   } catch {
     return "offline";
   }
@@ -655,6 +671,13 @@ async function play(g: Game): Promise<void> {
         fail(t("err.movedT"), t("err.movedM"), "ERR 0x51 · OWNERSHIP MOVED ON-CHAIN", "detail");
         return;
       }
+      if (check === "evicted") {
+        state.ownerCheck = "DEVICE RELEASED";
+        launchHide();
+        chimeOut();
+        fail(t("err.evictedT"), t("err.evictedM"), "ERR 0x53 · DEVICE SLOT RELEASED", "detail");
+        return;
+      }
       state.ownerCheck = check === "ok" ? "OWNER ✔ LIVE" : "OFFLINE · 30D WINDOW";
       launchStage(1, state.ownerCheck);
     } else {
@@ -706,12 +729,18 @@ function startNativeWatchdog(): void {
   nativeWatchdog = window.setInterval(async () => {
     const ticket = state.nativeRun?.g?.ticket;
     if (!ticket) return;
-    if ((await checkOwnerOnline(ticket)) === "revoked") {
+    const check = await checkOwnerOnline(ticket);
+    if (check === "revoked" || check === "evicted") {
       stopNativeWatchdog();
       await invoke("stop_game"); // kills the child, cleans the run dir
       state.nativeRun = null;
-      chimeCash();
-      fail(t("err.movedT"), t("err.resoldMidM"), "ERR 0x52 · RESOLD MID-SESSION · PROCESS TERMINATED", "detail");
+      if (check === "revoked") {
+        chimeCash();
+        fail(t("err.movedT"), t("err.resoldMidM"), "ERR 0x52 · RESOLD MID-SESSION · PROCESS TERMINATED", "detail");
+      } else {
+        chimeOut();
+        fail(t("err.evictedT"), t("err.evictedM"), "ERR 0x53 · DEVICE SLOT RELEASED · PROCESS TERMINATED", "detail");
+      }
     }
   }, NATIVE_OWNER_CHECK_MS);
 }

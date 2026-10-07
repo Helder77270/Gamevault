@@ -10,12 +10,15 @@ import {
   applyFriendAction,
   attestFriendship,
   backdateFriendship,
+  devicesOf,
+  deviceStatus,
   friendsOf,
   getAvatar,
   getBuild,
   getProfile,
   issueTicket,
   resolveNames,
+  revokeDevice,
   searchProfiles,
   setProfile,
   takePendingTicket,
@@ -135,6 +138,32 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return send(404, { error: "not found" });
     } catch (e) {
       return fail(403, "profil", e);
+    }
+  }
+
+  // ── Device registry: 2 active machines per account ───────────
+  const devStatus = req.method === "GET" && req.url?.match(/^\/devices\/(0x[0-9a-fA-F]{40})\/(0x[0-9a-fA-F]{66})\/status$/);
+  if (devStatus) {
+    try {
+      return send(200, deviceStatus(devStatus[1], devStatus[2]));
+    } catch (e) {
+      return fail(400, "appareils", e);
+    }
+  }
+  const devList = req.method === "GET" && req.url?.match(/^\/devices\/(0x[0-9a-fA-F]{40})$/);
+  if (devList) {
+    try {
+      return send(200, devicesOf(devList[1]));
+    } catch (e) {
+      return fail(400, "appareils", e);
+    }
+  }
+  if (req.method === "POST" && req.url === "/devices/revoke") {
+    try {
+      const body = await readJson(req);
+      return send(200, await revokeDevice(String(body.message ?? ""), String(body.signature ?? "") as `0x${string}`));
+    } catch (e) {
+      return fail(403, "appareils", e);
     }
   }
 

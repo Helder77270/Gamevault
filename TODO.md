@@ -71,7 +71,9 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
       ancienne clé sans rôle (2026-10-07, bloc 47811332)
 - [ ] Régénérer le JWT Pinata (dashboard Pinata — a transité en clair) ;
       déplacer ADMIN_PRIVKEY (contracts/.env) vers un wallet matériel/multisig
-- [ ] Registre d'appareils par licence (1-2 actifs) + TTL ticket réduit
+- [x] Registre d'appareils : 2 actifs max par compte (2026-10-07)
+- [ ] Décider : raccourcir la fenêtre hors ligne (30 j) ? limite le temps de jeu
+      d'un appareil déconnecté qui reste hors ligne
 - [ ] Vérification du ticket EN RUST avant déchiffrement / spawn
 - [ ] Persistance sérieuse (SQLite) : nonces, écritures atomiques, clés de
       contenu chiffrées au repos + sauvegarde

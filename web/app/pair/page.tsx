@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAccount, useChainId, useSignMessage } from "wagmi";
 import { buildPairingMessage } from "@gamevault/shared/siwe";
@@ -9,6 +9,9 @@ import { ConnectButton } from "../components/ConnectButton";
 const TICKETD_URL = process.env.NEXT_PUBLIC_TICKETD_URL ?? "http://localhost:8787";
 
 type Status = "idle" | "signing" | "sent" | "ticketd-down" | "error";
+type Device = { pubkey: string; pairedAt: number; lastSeen: number };
+
+const shortKey = (k: string): string => `${k.slice(0, 8)}…${k.slice(-6)}`;
 
 function PairInner() {
   const params = useSearchParams();
@@ -24,6 +27,22 @@ function PairInner() {
   const [status, setStatus] = useState<Status>("idle");
   const [signature, setSignature] = useState("");
   const [detail, setDetail] = useState("");
+  const [devices, setDevices] = useState<{ max: number; devices: Device[] } | null>(null);
+
+  // Account device slots — shown BEFORE signing so an eviction is never a surprise
+  useEffect(() => {
+    if (!address) return;
+    fetch(`${TICKETD_URL}/devices/${address}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setDevices)
+      .catch(() => setDevices(null));
+  }, [address, status]);
+
+  const thisDeviceKnown = Boolean(devices?.devices.some((d) => d.pubkey === devicePubKey.toLowerCase()));
+  const willEvict =
+    devices && !thisDeviceKnown && devices.devices.length >= devices.max
+      ? [...devices.devices].sort((a, b) => a.lastSeen - b.lastSeen)[0]
+      : null;
 
   // Frozen at first render so the previewed message and the signed message
   // are byte-identical.
@@ -107,6 +126,16 @@ function PairInner() {
         </>
       )}
 
+      {isConnected && devices && (
+        <p className={willEvict ? "error-box" : "addr"}>
+          {thisDeviceKnown
+            ? `Cette machine fait déjà partie de vos appareils (${devices.devices.length}/${devices.max}) — renouvellement, aucune place consommée.`
+            : willEvict
+              ? `Votre compte est déjà actif sur ${devices.max} appareils. En signant, l'appareil le moins utilisé récemment (${shortKey(willEvict.pubkey)}, vu le ${new Date(willEvict.lastSeen).toLocaleString()}) sera déconnecté. Vous pouvez aussi libérer une place depuis votre profil.`
+              : `Appareils actifs sur ce compte : ${devices.devices.length}/${devices.max} — cette machine occupera une place.`}
+        </p>
+      )}
+
       {isConnected && status !== "sent" && status !== "ticketd-down" && (
         <>
           <h2 className="section">Message à signer (SIWE)</h2>
@@ -114,13 +143,25 @@ function PairInner() {
           <button className="btn" disabled={status === "signing"} onClick={() => void sign()}>
             {status === "signing" ? "Signature en cours…" : "Signer l'autorisation"}
           </button>
-          {status === "error" && <p className="error-box">{detail || "Signature refusée."}</p>}
+          {status === "error" && !detail && <p className="error-box">Signature refusée.</p>}
         </>
       )}
 
       {status === "sent" && (
         <p className="ok-box">
-          ✔ Signature envoyée à ticketd — le ticket scellé arrive sur le launcher. Réponse : {detail}
+          ✔ Machine autorisée — le ticket scellé arrive sur le launcher.
+          {devices ? ` Appareils actifs : ${devices.devices.length}/${devices.max}.` : ""}
+        </p>
+      )}
+      {status === "error" && detail && (
+        <p className="error-box">
+          {(() => {
+            try {
+              return (JSON.parse(detail) as { error?: string }).error ?? detail;
+            } catch {
+              return detail;
+            }
+          })()}
         </p>
       )}
       {status === "ticketd-down" && (
