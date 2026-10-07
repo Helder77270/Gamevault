@@ -14,6 +14,7 @@ import { DEV_PLATFORM_PRIV, devContentKeyFor } from "@gamevault/shared/devkeys";
 import { LICENSE_ABI, REGISTRY_ABI } from "@gamevault/shared/abi";
 import { CHAIN, DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { fetchBuild, putBuild, type StoredBuild } from "@gamevault/shared/storage";
+import { DATA_DIR, consumeNonce, devices, friends, getContentKey, nonceUsed, playstats, profiles, putContentKey, tx } from "./db.ts";
 
 const TICKET_TTL_SEC = 30 * 24 * 3600; // 30-day offline window
 const MESSAGE_MAX_AGE_MS = 10 * 60 * 1000; // pairing message freshness
@@ -64,32 +65,8 @@ const client = createPublicClient({
 // BY BUILD CID (the edition id is unknown until the studio's on-chain tx;
 // the CID links the two). Dev editions 2/3: deterministic derivation.
 
-const KEYSTORE_PATH = join(dirname(fileURLToPath(import.meta.url)), "../data/content-keys.json");
-
-/** A content key and WHO published it (wallet + studio it was signed for).
- *  Legacy entries (bare hex string) predate signed publishing. */
-interface KeyRecord {
-  key: string;
-  publisher: string; // lowercase wallet
-  studioId: string;
-}
-
-function keyStore(): Record<string, string | KeyRecord> {
-  return existsSync(KEYSTORE_PATH) ? JSON.parse(readFileSync(KEYSTORE_PATH, "utf8")) : {};
-}
-
-function keyRecord(cid: string): KeyRecord | { key: string; publisher: null; studioId: null } | undefined {
-  const v = keyStore()[cid];
-  if (v === undefined) return undefined;
-  return typeof v === "string" ? { key: v, publisher: null, studioId: null } : v;
-}
-
-function saveKey(cid: string, rec: KeyRecord): void {
-  mkdirSync(dirname(KEYSTORE_PATH), { recursive: true });
-  const store = keyStore();
-  store[cid] = rec;
-  writeFileSync(KEYSTORE_PATH, JSON.stringify(store, null, 2));
-}
+// Keys live encrypted in SQLite (db.ts) with WHO published them (wallet +
+// studio the publish was signed for); publisher NULL = legacy unsigned.
 
 // ── Signed studio publishing (audit T1/T3, 2026-10-07) ───────────────────
 // The studio's wallet signs a canonical message binding: its address, the
@@ -143,7 +120,7 @@ export async function publishBuild(plain: Uint8Array, message: string, signature
 
   const age = Date.now() - Date.parse(f.at);
   if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) throw new Error("message de publication expiré");
-  if (friendNonces.has(f.nonce)) throw new Error("nonce déjà utilisé");
+  if (nonceUsed(f.nonce)) throw new Error("nonce déjà utilisé");
   if (!(await verifyMessage({ address: f.wallet as `0x${string}`, message, signature }))) throw new Error("signature invalide");
   const digest = `0x${createHash("sha256").update(plain).digest("hex")}`;
   if (digest !== f.sha256) throw new Error("le fichier reçu ne correspond pas au fichier signé");
@@ -158,12 +135,12 @@ export async function publishBuild(plain: Uint8Array, message: string, signature
   if (owner.toLowerCase() !== f.wallet.toLowerCase()) {
     throw new Error(`le studio #${f.studioId} n'appartient pas à ce wallet`);
   }
-  friendNonces.add(f.nonce);
+  consumeNonce(f.nonce, MESSAGE_MAX_AGE_MS * 2);
 
   const contentKey = crypto.getRandomValues(new Uint8Array(32));
   const enc = encryptBuild(plain, contentKey);
   const stored = await putBuild(enc, f.name, jwt);
-  saveKey(stored.cid, { key: hex(contentKey), publisher: f.wallet.toLowerCase(), studioId: f.studioId });
+  putContentKey(stored.cid, contentKey, f.wallet.toLowerCase(), f.studioId);
   cacheBuild(stored.cid, enc); // primary distribution — IPFS is the backup
   console.log(`✔ build publié: ${f.name} -> ${stored.cid} (studio #${f.studioId}, ${f.wallet})`);
   return stored;
@@ -206,80 +183,69 @@ export async function getBuild(cid: string): Promise<Uint8Array> {
 // « owner et borrower amis depuis T » que lend() vérifie on-chain avec
 // l'âge minimal. Backdate = simulation des 3 jours en dev.
 
-const FRIENDS_PATH = join(dirname(fileURLToPath(import.meta.url)), "../data/friends.json");
 const ATTEST_TTL_SEC = 10 * 60;
 const MAX_FRIENDS = 16;
-
-interface FriendsDb {
-  /** "from|to" (lowercase) -> ms de la demande en attente */
-  requests: Record<string, number>;
-  /** "lo|hi" (paire triée, lowercase) -> amis depuis (secondes unix) */
-  friendships: Record<string, number>;
-}
-
-function friendsDb(): FriendsDb {
-  if (!existsSync(FRIENDS_PATH)) return { requests: {}, friendships: {} };
-  return JSON.parse(readFileSync(FRIENDS_PATH, "utf8"));
-}
-
-function saveFriendsDb(db: FriendsDb): void {
-  mkdirSync(dirname(FRIENDS_PATH), { recursive: true });
-  writeFileSync(FRIENDS_PATH, JSON.stringify(db, null, 2));
-}
-
-const pairKey = (a: string, b: string): string => {
-  const [lo, hi] = [a.toLowerCase(), b.toLowerCase()].sort();
-  return `${lo}|${hi}`;
-};
+const NONCE_TTL_MS = MESSAGE_MAX_AGE_MS * 2;
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
-const friendNonces = new Set<string>();
+const FRIEND_ACTIONS = ["request", "accept", "decline", "cancel", "remove"] as const;
+
+export function friendMessage(f: { action: string; me: string; other: string; at: string; nonce: string }): string {
+  return ["GameVault Amis", `action: ${f.action}`, `me: ${f.me}`, `other: ${f.other}`, `at: ${f.at}`, `nonce: ${f.nonce}`].join("\n");
+}
+
+/** Strict parse: exact line order, then re-serialize and compare — no
+ *  smuggled lines (audit T13). */
+function parseFriendMessage(message: string): { action: string; me: string; other: string; at: string; nonce: string } {
+  const lines = message.split("\n");
+  if (lines.length !== 6 || lines[0] !== "GameVault Amis") throw new Error("message inattendu");
+  const keys = ["action", "me", "other", "at", "nonce"];
+  const v: Record<string, string> = {};
+  keys.forEach((k, i) => {
+    const l = lines[i + 1];
+    if (!l.startsWith(`${k}: `)) throw new Error(`champ ${k} attendu`);
+    v[k] = l.slice(k.length + 2);
+  });
+  const f = { action: v.action, me: v.me, other: v.other, at: v.at, nonce: v.nonce };
+  if (friendMessage(f) !== message) throw new Error("message non canonique");
+  return f;
+}
 
 /** Message signé côté wallet :
- *  GameVault Amis\naction: request|accept|decline|remove\nme: 0x…\nother: 0x…\nat: ISO\nnonce: uuid */
+ *  GameVault Amis\naction: request|accept|decline|cancel|remove\nme: 0x…\nother: 0x…\nat: ISO\nnonce: uuid */
 export async function applyFriendAction(message: string, signature: `0x${string}`): Promise<{ ok: true }> {
-  const get = (k: string): string => message.match(new RegExp(`^${k}: (.+)$`, "m"))?.[1]?.trim() ?? "";
-  const action = get("action");
-  const me = get("me");
-  const other = get("other");
-  const at = get("at");
-  const nonce = get("nonce");
-  if (!message.startsWith("GameVault Amis")) throw new Error("message inattendu");
-  if (!["request", "accept", "decline", "cancel", "remove"].includes(action)) throw new Error("action inconnue");
+  const { action, me, other, at, nonce } = parseFriendMessage(message);
+  if (!(FRIEND_ACTIONS as readonly string[]).includes(action)) throw new Error("action inconnue");
   if (!ADDR_RE.test(me) || !ADDR_RE.test(other)) throw new Error("adresse invalide");
   if (me.toLowerCase() === other.toLowerCase()) throw new Error("pas d'amitié avec soi-même");
   const age = Date.now() - Date.parse(at);
   if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) throw new Error("message expiré");
-  if (friendNonces.has(nonce)) throw new Error("nonce déjà utilisé");
+  if (nonceUsed(nonce)) throw new Error("nonce déjà utilisé");
   const sigOk = await verifyMessage({ address: me as `0x${string}`, message, signature });
   if (!sigOk) throw new Error("signature invalide");
-  friendNonces.add(nonce);
 
-  const db = friendsDb();
-  const meL = me.toLowerCase();
-  const otherL = other.toLowerCase();
-  const pk2 = pairKey(me, other);
-  if (action === "request") {
-    if (db.friendships[pk2]) throw new Error("déjà amis");
-    db.requests[`${meL}|${otherL}`] = Date.now();
-  } else if (action === "accept") {
-    if (!db.requests[`${otherL}|${meL}`]) throw new Error("aucune demande de cette adresse");
-    // Anti-farm cap (audit T10): a lending ring needs many "friends".
-    const countOf = (a: string) => Object.keys(db.friendships).filter((k) => k.split("|").includes(a)).length;
-    if (countOf(meL) >= MAX_FRIENDS || countOf(otherL) >= MAX_FRIENDS) {
-      throw new Error(`limite de ${MAX_FRIENDS} amis atteinte`);
+  tx(() => {
+    consumeNonce(nonce, NONCE_TTL_MS);
+    if (action === "request") {
+      if (friends.since(me, other)) throw new Error("déjà amis");
+      friends.request(me, other);
+    } else if (action === "accept") {
+      if (!friends.hasRequest(other, me)) throw new Error("aucune demande de cette adresse");
+      // Anti-farm cap (audit T10): a lending ring needs many "friends".
+      if (friends.count(me) >= MAX_FRIENDS || friends.count(other) >= MAX_FRIENDS) {
+        throw new Error(`limite de ${MAX_FRIENDS} amis atteinte`);
+      }
+      friends.deleteRequest(other, me);
+      friends.deleteRequest(me, other);
+      friends.set(me, other, Math.floor(Date.now() / 1000));
+    } else if (action === "decline") {
+      friends.deleteRequest(other, me);
+    } else if (action === "cancel") {
+      friends.deleteRequest(me, other);
+    } else {
+      friends.remove(me, other);
     }
-    delete db.requests[`${otherL}|${meL}`];
-    delete db.requests[`${meL}|${otherL}`];
-    db.friendships[pk2] = Math.floor(Date.now() / 1000);
-  } else if (action === "decline") {
-    delete db.requests[`${otherL}|${meL}`];
-  } else if (action === "cancel") {
-    delete db.requests[`${meL}|${otherL}`];
-  } else {
-    delete db.friendships[pk2];
-  }
-  saveFriendsDb(db);
+  });
   console.log(`✔ amis: ${action} ${me} <-> ${other}`);
   return { ok: true };
 }
@@ -290,24 +256,16 @@ export function friendsOf(addr: string): {
   outgoing: { addr: string; name: string | null }[];
 } {
   if (!ADDR_RE.test(addr)) throw new Error("adresse invalide");
-  const db = friendsDb();
-  const profiles = profilesDb();
-  const nameOf = (a: string): string | null => profiles[a]?.name ?? null;
-  const meL = addr.toLowerCase();
-  const friends: { addr: string; since: number; name: string | null }[] = [];
-  for (const [key, since] of Object.entries(db.friendships)) {
-    const [lo, hi] = key.split("|");
-    if (lo === meL) friends.push({ addr: hi, since, name: nameOf(hi) });
-    else if (hi === meL) friends.push({ addr: lo, since, name: nameOf(lo) });
-  }
-  const incoming: { addr: string; name: string | null }[] = [];
-  const outgoing: { addr: string; name: string | null }[] = [];
-  for (const key of Object.keys(db.requests)) {
-    const [from, to] = key.split("|");
-    if (to === meL) incoming.push({ addr: from, name: nameOf(from) });
-    if (from === meL) outgoing.push({ addr: to, name: nameOf(to) });
-  }
-  return { friends, incoming, outgoing };
+  const list = friends.list(addr);
+  const incoming = friends.incoming(addr);
+  const outgoing = friends.outgoing(addr);
+  const names = profiles.names([...list.map((f) => f.addr), ...incoming, ...outgoing]);
+  const nameOf = (a: string): string | null => names[a] ?? null;
+  return {
+    friends: list.map((f) => ({ ...f, name: nameOf(f.addr) })),
+    incoming: incoming.map((a) => ({ addr: a, name: nameOf(a) })),
+    outgoing: outgoing.map((a) => ({ addr: a, name: nameOf(a) })),
+  };
 }
 
 /** L'attestation que lend() vérifie on-chain (EIP-712, liée à UNE licence).
@@ -322,7 +280,7 @@ export async function attestFriendship(
   // Same address the ownerOf/userOf checks use (honours GAMELICENSE_ADDRESS)
   const license = licenseAddress;
   if (!license) throw new Error("GameLicense non déployé");
-  const since = friendsDb().friendships[pairKey(owner, borrower)];
+  const since = friends.since(owner, borrower);
   if (!since) throw new Error("pas amis — la demande doit être acceptée d'abord");
   const deadline = Math.floor(Date.now() / 1000) + ATTEST_TTL_SEC;
   const account = privateKeyToAccount(attestSignerKey());
@@ -356,29 +314,9 @@ export async function attestFriendship(
 // redimensionné côté client ; ici on borne octets + type (magic bytes).
 // Les stats de jeu (cosmétiques) sont poussées par le launcher.
 
-const PROFILES_PATH = join(dirname(fileURLToPath(import.meta.url)), "../data/profiles.json");
-const AVATARS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../data/avatars");
-const PLAYSTATS_PATH = join(dirname(fileURLToPath(import.meta.url)), "../data/playstats.json");
+const AVATARS_DIR = join(DATA_DIR, "avatars");
 const AVATAR_MAX_BYTES = 300 * 1024;
 const AVATAR_MIN_BYTES = 256;
-
-interface Profile {
-  name: string;
-  avatarType?: string;
-  favorites: string[];
-  updatedAt: number;
-}
-
-function profilesDb(): Record<string, Profile> {
-  return existsSync(PROFILES_PATH) ? JSON.parse(readFileSync(PROFILES_PATH, "utf8")) : {};
-}
-function saveProfilesDb(db: Record<string, Profile>): void {
-  mkdirSync(dirname(PROFILES_PATH), { recursive: true });
-  writeFileSync(PROFILES_PATH, JSON.stringify(db, null, 2));
-}
-function playstatsDb(): Record<string, Record<string, number>> {
-  return existsSync(PLAYSTATS_PATH) ? JSON.parse(readFileSync(PLAYSTATS_PATH, "utf8")) : {};
-}
 
 const NAME_RE = /^[\p{L}\p{N} _.\-]{2,24}$/u;
 
@@ -389,36 +327,46 @@ function avatarKind(bytes: Uint8Array): string | null {
   return null;
 }
 
+export function profileMessage(f: { me: string; name: string; avatar: string; favorites: string; at: string; nonce: string }): string {
+  return ["GameVault Profil", `me: ${f.me}`, `name: ${f.name}`, `avatar: ${f.avatar}`, `favorites: ${f.favorites}`, `at: ${f.at}`, `nonce: ${f.nonce}`].join("\n");
+}
+
+function parseProfileMessage(message: string) {
+  const lines = message.split("\n");
+  if (lines.length !== 7 || lines[0] !== "GameVault Profil") throw new Error("message inattendu");
+  const keys = ["me", "name", "avatar", "favorites", "at", "nonce"];
+  const v: Record<string, string> = {};
+  keys.forEach((k, i) => {
+    const l = lines[i + 1];
+    if (!l.startsWith(`${k}: `) && l !== `${k}:`) throw new Error(`champ ${k} attendu`);
+    v[k] = l.slice(k.length + 2);
+  });
+  const f = { me: v.me, name: v.name, avatar: v.avatar, favorites: v.favorites, at: v.at, nonce: v.nonce };
+  if (profileMessage(f) !== message) throw new Error("message non canonique");
+  return f;
+}
+
 /** Message signé :
  *  GameVault Profil\nme: 0x…\nname: pseudo\navatar: <sha256hex|keep|none>\nfavorites: 1,2\nat: ISO\nnonce: uuid */
 export async function setProfile(message: string, signature: `0x${string}`, avatarB64?: string): Promise<{ ok: true }> {
-  const get = (k: string): string => message.match(new RegExp(`^${k}: (.*)$`, "m"))?.[1]?.trim() ?? "";
-  const me = get("me");
-  const name = get("name");
-  const avatar = get("avatar");
-  const favorites = get("favorites");
-  const at = get("at");
-  const nonce = get("nonce");
-  if (!message.startsWith("GameVault Profil")) throw new Error("message inattendu");
+  const { me, name, avatar, favorites, at, nonce } = parseProfileMessage(message);
   if (!ADDR_RE.test(me)) throw new Error("adresse invalide");
   if (!NAME_RE.test(name)) throw new Error("pseudo invalide (2-24 caractères, lettres/chiffres/espaces/-_.)");
   const age = Date.now() - Date.parse(at);
   if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) throw new Error("message expiré");
-  if (friendNonces.has(nonce)) throw new Error("nonce déjà utilisé");
+  if (nonceUsed(nonce)) throw new Error("nonce déjà utilisé");
   if (!(await verifyMessage({ address: me as `0x${string}`, message, signature }))) throw new Error("signature invalide");
-  friendNonces.add(nonce);
+  consumeNonce(nonce, NONCE_TTL_MS);
 
   const favList = favorites
     ? favorites.split(",").map((s) => s.trim()).filter((s) => /^\d{1,6}$/.test(s)).slice(0, 12)
     : [];
 
-  const db = profilesDb();
   const meL = me.toLowerCase();
-  const prev = db[meL];
-  let avatarType = prev?.avatarType;
+  let avatarType = profiles.get(meL)?.avatarType ?? null;
 
   if (avatar === "none") {
-    avatarType = undefined;
+    avatarType = null;
   } else if (avatar !== "keep") {
     if (!avatarB64) throw new Error("avatar annoncé mais absent du corps");
     const bytes = Buffer.from(avatarB64, "base64");
@@ -426,15 +374,13 @@ export async function setProfile(message: string, signature: `0x${string}`, avat
     if (bytes.length < AVATAR_MIN_BYTES) throw new Error("avatar trop petit pour être une image");
     const kind = avatarKind(bytes);
     if (!kind) throw new Error("avatar: formats acceptés jpeg/png/webp");
-    const digest = createHashHex(bytes);
-    if (digest !== avatar.toLowerCase()) throw new Error("le hash signé ne correspond pas à l'image envoyée");
+    if (createHashHex(bytes) !== avatar.toLowerCase()) throw new Error("le hash signé ne correspond pas à l'image envoyée");
     mkdirSync(AVATARS_DIR, { recursive: true });
     writeFileSync(join(AVATARS_DIR, meL), bytes);
     avatarType = kind;
   }
 
-  db[meL] = { name, avatarType, favorites: favList, updatedAt: Date.now() };
-  saveProfilesDb(db);
+  profiles.upsert(meL, { name, avatarType, favorites: favList, updatedAt: Date.now() });
   console.log(`✔ profil: ${me} -> « ${name} »${avatarType ? " (avatar)" : ""}`);
   return { ok: true };
 }
@@ -450,25 +396,20 @@ export function getProfile(addr: string): {
   updatedAt: number | null;
 } {
   if (!ADDR_RE.test(addr)) throw new Error("adresse invalide");
-  const p = profilesDb()[addr.toLowerCase()];
-  const stats = playstatsDb()[addr.toLowerCase()] ?? {};
-  const topPlayed = Object.entries(stats)
-    .map(([editionId, seconds]) => ({ editionId, seconds }))
-    .sort((a, b) => b.seconds - a.seconds)
-    .slice(0, 8);
+  const p = profiles.get(addr);
   return {
     addr,
     name: p?.name ?? null,
     hasAvatar: Boolean(p?.avatarType),
     favorites: p?.favorites ?? [],
-    topPlayed,
+    topPlayed: playstats.top(addr, 8),
     updatedAt: p?.updatedAt ?? null,
   };
 }
 
 export function getAvatar(addr: string): { bytes: Uint8Array; type: string } | null {
   if (!ADDR_RE.test(addr)) return null;
-  const p = profilesDb()[addr.toLowerCase()];
+  const p = profiles.get(addr);
   const file = join(AVATARS_DIR, addr.toLowerCase());
   if (!p?.avatarType || !existsSync(file)) return null;
   return { bytes: new Uint8Array(readFileSync(file)), type: p.avatarType };
@@ -481,25 +422,15 @@ const fold = (s: string): string => s.toLowerCase().normalize("NFD").replace(/[�
 export function searchProfiles(q: string): { addr: string; name: string; hasAvatar: boolean }[] {
   const query = q.trim();
   if (query.length < 2) return [];
-  const db = profilesDb();
-  const out: { addr: string; name: string; hasAvatar: boolean }[] = [];
   const byAddr = query.toLowerCase().startsWith("0x");
-  for (const [addr, p] of Object.entries(db)) {
-    const hit = byAddr ? addr.startsWith(query.toLowerCase()) : fold(p.name).includes(fold(query));
-    if (hit) out.push({ addr, name: p.name, hasAvatar: Boolean(p.avatarType) });
-    if (out.length >= 10) break;
-  }
-  return out;
+  return profiles
+    .all()
+    .filter((p) => (byAddr ? p.addr.startsWith(query.toLowerCase()) : fold(p.name).includes(fold(query))))
+    .slice(0, 10);
 }
 
 export function resolveNames(addrs: string[]): Record<string, string> {
-  const db = profilesDb();
-  const out: Record<string, string> = {};
-  for (const a of addrs.slice(0, 64)) {
-    const p = db[a.toLowerCase()];
-    if (p) out[a.toLowerCase()] = p.name;
-  }
-  return out;
+  return profiles.names(addrs);
 }
 
 /** Stats cosmétiques poussées par le launcher — non signées, locales. */
@@ -507,12 +438,7 @@ export function addPlaystat(addr: string, editionId: string, seconds: number): {
   if (!ADDR_RE.test(addr) || !/^\d{1,6}$/.test(editionId)) throw new Error("payload invalide");
   const s = Math.floor(seconds);
   if (!Number.isFinite(s) || s <= 0 || s > 24 * 3600) throw new Error("durée invalide");
-  const db = playstatsDb();
-  const key = addr.toLowerCase();
-  db[key] = db[key] ?? {};
-  db[key][editionId] = (db[key][editionId] ?? 0) + s;
-  mkdirSync(dirname(PLAYSTATS_PATH), { recursive: true });
-  writeFileSync(PLAYSTATS_PATH, JSON.stringify(db, null, 2));
+  playstats.add(addr, editionId, s);
   return { ok: true };
 }
 
@@ -524,64 +450,44 @@ export function addPlaystat(addr: string, editionId: string, seconds: number): {
 // Re-pairing / renewing a known device never consumes a slot. Offline, an
 // evicted machine keeps working until its ticket expires (offline window).
 
-const DEVICES_PATH = join(dirname(fileURLToPath(import.meta.url)), "../data/devices.json");
 export const MAX_DEVICES = 2;
 const SEEN_BUMP_MS = 10 * 60 * 1000;
 const DEVICE_RE = /^0x0[23][0-9a-fA-F]{64}$/;
 
-interface DeviceRec {
-  pubkey: string; // lowercase compressed secp256k1
-  pairedAt: number; // ms
-  lastSeen: number; // ms — pairing, renewal, online launch checks
-}
-
-function devicesDb(): Record<string, DeviceRec[]> {
-  return existsSync(DEVICES_PATH) ? JSON.parse(readFileSync(DEVICES_PATH, "utf8")) : {};
-}
-function saveDevicesDb(db: Record<string, DeviceRec[]>): void {
-  mkdirSync(dirname(DEVICES_PATH), { recursive: true });
-  writeFileSync(DEVICES_PATH, JSON.stringify(db, null, 2));
-}
-
-export function devicesOf(wallet: string): { max: number; devices: DeviceRec[] } {
+export function devicesOf(wallet: string): { max: number; devices: { pubkey: string; pairedAt: number; lastSeen: number }[] } {
   if (!ADDR_RE.test(wallet)) throw new Error("adresse invalide");
-  const list = [...(devicesDb()[wallet.toLowerCase()] ?? [])].sort((a, b) => b.lastSeen - a.lastSeen);
-  return { max: MAX_DEVICES, devices: list };
+  return { max: MAX_DEVICES, devices: devices.list(wallet) };
 }
 
 /** Called at ticket issuance: adds or refreshes the device, evicting the
- *  least recently seen one beyond MAX_DEVICES. Returns the evicted device. */
-function registerDevice(wallet: string, pubkey: string): DeviceRec | null {
-  const db = devicesDb();
-  const key = wallet.toLowerCase();
-  const pk = pubkey.toLowerCase();
-  const list = db[key] ?? [];
-  const now = Date.now();
-  const known = list.find((d) => d.pubkey === pk);
-  let evicted: DeviceRec | null = null;
-  if (known) {
-    known.lastSeen = now;
-  } else {
-    if (list.length >= MAX_DEVICES) {
-      list.sort((a, b) => a.lastSeen - b.lastSeen);
-      evicted = list.shift() ?? null;
+ *  least recently seen one beyond MAX_DEVICES — atomically. Returns the
+ *  evicted device. */
+function registerDevice(wallet: string, pubkey: string): { pubkey: string } | null {
+  return tx(() => {
+    const now = Date.now();
+    const list = devices.list(wallet); // newest first
+    const known = list.find((d) => d.pubkey === pubkey.toLowerCase());
+    if (known) {
+      devices.touch(wallet, pubkey, now);
+      return null;
     }
-    list.push({ pubkey: pk, pairedAt: now, lastSeen: now });
-  }
-  db[key] = list;
-  saveDevicesDb(db);
-  return evicted;
+    let evicted: { pubkey: string } | null = null;
+    if (list.length >= MAX_DEVICES) {
+      const oldest = list[list.length - 1];
+      devices.remove(wallet, oldest.pubkey);
+      evicted = oldest;
+    }
+    devices.upsert(wallet, { pubkey, pairedAt: now, lastSeen: now });
+    return evicted;
+  });
 }
 
 /** Online launch check: is this machine still one of the account's active devices? */
 export function deviceStatus(wallet: string, pubkey: string): { active: boolean } {
   if (!ADDR_RE.test(wallet) || !DEVICE_RE.test(pubkey)) throw new Error("paramètres invalides");
-  const db = devicesDb();
-  const list = db[wallet.toLowerCase()] ?? [];
-  const rec = list.find((d) => d.pubkey === pubkey.toLowerCase());
+  const rec = devices.get(wallet, pubkey);
   if (rec && Date.now() - rec.lastSeen > SEEN_BUMP_MS) {
-    rec.lastSeen = Date.now(); // keeps the machine you actually play on off the eviction list
-    saveDevicesDb(db);
+    devices.touch(wallet, pubkey, Date.now()); // keeps the machine you actually play on off the eviction list
   }
   return { active: Boolean(rec) };
 }
@@ -604,13 +510,12 @@ export async function revokeDevice(message: string, signature: `0x${string}`): P
   if (!ADDR_RE.test(f.me) || !DEVICE_RE.test(f.device)) throw new Error("paramètres invalides");
   const age = Date.now() - Date.parse(f.at);
   if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) throw new Error("message expiré");
-  if (friendNonces.has(f.nonce)) throw new Error("nonce déjà utilisé");
+  if (nonceUsed(f.nonce)) throw new Error("nonce déjà utilisé");
   if (!(await verifyMessage({ address: f.me as `0x${string}`, message, signature }))) throw new Error("signature invalide");
-  friendNonces.add(f.nonce);
-  const db = devicesDb();
-  const key = f.me.toLowerCase();
-  db[key] = (db[key] ?? []).filter((d) => d.pubkey !== f.device.toLowerCase());
-  saveDevicesDb(db);
+  tx(() => {
+    consumeNonce(f.nonce, NONCE_TTL_MS);
+    devices.remove(f.me, f.device);
+  });
   console.log(`✔ appareil ${f.device.slice(0, 12)}… libéré par ${f.me}`);
   return { ok: true };
 }
@@ -619,11 +524,8 @@ export async function revokeDevice(message: string, signature: `0x${string}`): P
 export function backdateFriendship(a: string, b: string, sinceSec: number): { ok: true; since: number } {
   if (!ADDR_RE.test(a) || !ADDR_RE.test(b)) throw new Error("adresse invalide");
   if (!Number.isFinite(sinceSec) || sinceSec <= 0) throw new Error("since invalide");
-  const db = friendsDb();
-  const key = pairKey(a, b);
-  if (!db.friendships[key]) throw new Error("pas amis — accepter d'abord, antidater ensuite");
-  db.friendships[key] = Math.floor(sinceSec);
-  saveFriendsDb(db);
+  if (!friends.since(a, b)) throw new Error("pas amis — accepter d'abord, antidater ensuite");
+  friends.set(a, b, Math.floor(sinceSec));
   console.warn(`⚠ DEV: amitié ${a} <-> ${b} antidatée au ${new Date(sinceSec * 1000).toISOString()}`);
   return { ok: true, since: Math.floor(sinceSec) };
 }
@@ -677,7 +579,7 @@ async function contentKeyFor(tokenId: string): Promise<Uint8Array> {
     if (first && first.editionId !== editionId) {
       throw new Error(`édition #${editionId} réutilise le build de l'édition #${first.editionId} — refusé`);
     }
-    const rec = keyRecord(cid);
+    const rec = getContentKey(cid);
     if (rec) {
       if (rec.studioId === null) {
         // legacy key (unsigned publish era) — dev only
@@ -694,7 +596,7 @@ async function contentKeyFor(tokenId: string): Promise<Uint8Array> {
           throw new Error(`l'édition #${editionId} n'appartient pas au studio #${rec.studioId} qui a publié ce build — refusé`);
         }
       }
-      return unhex(rec.key);
+      return rec.key;
     }
   }
   if (!DEV_MODE) throw new Error(`aucune clé de contenu pour l'édition #${editionId}`);
@@ -702,8 +604,6 @@ async function contentKeyFor(tokenId: string): Promise<Uint8Array> {
 }
 
 // --- Issuance ---------------------------------------------------------------
-
-const usedNonces = new Set<string>();
 
 // Issued tickets waiting for their launcher (the web page signs, the
 // LAUNCHER needs the ticket). Fetched once by nonce, then dropped.
@@ -738,7 +638,7 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
   if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) {
     throw new Error("pairing message expired — retry from the launcher");
   }
-  if (usedNonces.has(p.nonce)) throw new Error("nonce already used");
+  if (nonceUsed(p.nonce)) throw new Error("nonce already used");
 
   // 3. The owner really signed this exact message
   const sigOk = await verifyMessage({ address: p.address as `0x${string}`, message, signature });
@@ -796,7 +696,7 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
     }
   }
 
-  usedNonces.add(p.nonce);
+  consumeNonce(p.nonce, NONCE_TTL_MS);
 
   // 5. Seal the content key to the DEVICE and sign the ticket. A borrower's
   //    ticket dies with the loan: expiresAt = min(TTL, fin du prêt).

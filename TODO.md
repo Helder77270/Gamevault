@@ -75,8 +75,11 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
 - [ ] Décider : raccourcir la fenêtre hors ligne (30 j) ? limite le temps de jeu
       d'un appareil déconnecté qui reste hors ligne
 - [x] Vérification du ticket EN RUST avant déchiffrement / spawn (2026-10-07)
-- [ ] Persistance sérieuse (SQLite) : nonces, écritures atomiques, clés de
-      contenu chiffrées au repos + sauvegarde
+- [x] Persistance SQLite : nonces, transactions, clés de jeux chiffrées au
+      repos, sauvegarde (2026-10-07)
+- [ ] Copier KEYSTORE_MASTER_KEY dans un gestionnaire de mots de passe, puis
+      supprimer les copies EN CLAIR des clés (data/content-keys.migrated.json,
+      data/content-keys.backup-2026-10-07.json)
 - [ ] Runtime natif : Authenticode + studios vérifiés
 - [ ] Dépendances : monter `next`, `npm audit fix`, lockfile sur le registre
       officiel ; `tsc` strict + CI pour ticketd/shared/station
