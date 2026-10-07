@@ -603,7 +603,25 @@ button { font-family: inherit; }
 .pv-stat .v { margin-top: 4px; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
 .pv-stat .v.on { color: oklch(0.85 0.12 160); }
 .pv-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.pv-hint { font-size: 12.5px; line-height: 1.5; color: rgba(214,230,255,0.55); }
+.pv-main { display: flex; gap: 18px; align-items: flex-start; }
+.pv-hint { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.55; color: rgba(214,230,255,0.55); padding-top: 4px; }
+
+/* Menu contextuel en verre (DA v1, planche B) */
+.glass-menu {
+  width: 250px; flex: none; display: flex; flex-direction: column; gap: 6px; padding: 12px;
+  border-radius: 18px; border: 1px solid rgba(220,238,255,0.3);
+  background: rgba(16,22,40,0.55); backdrop-filter: blur(14px);
+  box-shadow: 0 24px 60px -24px rgba(0,0,0,0.9), 0 1px 0 rgba(255,255,255,0.25) inset;
+}
+.glass-menu .cta { width: 100%; text-align: center; padding: 13px 18px; font-size: 14.5px; }
+.gm-item {
+  cursor: pointer; width: 100%; text-align: left; padding: 11px 14px; border-radius: 12px;
+  border: none; background: transparent; color: var(--ink);
+  font-family: var(--sans); font-size: 13.5px; transition: background 0.12s;
+}
+.gm-item:hover { background: rgba(226,240,255,0.1); }
+.gm-item.violet { color: oklch(0.85 0.09 310); }
+.gm-item:disabled { opacity: 0.38; cursor: not-allowed; }
 .tech-acc { margin-top: auto; border: 1px solid rgba(200,225,255,0.12); border-radius: 12px; background: rgba(5,6,13,0.35); }
 .tech-acc summary {
   cursor: pointer; list-style: none; padding: 11px 16px; display: flex; justify-content: space-between; gap: 10px;

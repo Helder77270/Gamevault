@@ -460,12 +460,12 @@ function launchShow(g: Game): void {
   const layer = document.getElementById("overlay-layer");
   if (!layer) return;
   const ed = editionFor(g);
-  const hue = hueOf(ed?.editionId ?? "1");
+  sfxInsert(); // la carte entre dans la fente — le lancement commence là
   const el = document.createElement("div");
   el.id = "launch-ov";
   el.className = "launch-ov";
   el.innerHTML = `
-    <div class="lv-art" style="${artGrad(hue)}"><div class="sheen"></div></div>
+    <div class="lv-art" style="${artFor(ed?.editionId ?? "1")}"><div class="sheen"></div></div>
     <div class="lv-title">${esc(g.meta.title ?? ed?.title ?? "GAME")}</div>
     <div class="lv-sub">LICENCE #${esc(g.ticket?.tokenId ?? "?")} · SLOT A</div>
     <div class="steps lv-steps">
@@ -506,6 +506,7 @@ async function play(g: Game): Promise<void> {
       if (check === "revoked") {
         state.ownerCheck = "REVOKED";
         launchHide();
+        chimeCash(); // la vente a payé — c'est le son du cash
         fail(
           "Licence moved on-chain.",
           "Cette licence a changé de propriétaire. Le nouveau propriétaire doit appairer sa machine pour jouer.",
@@ -571,6 +572,7 @@ function startNativeWatchdog(): void {
       stopNativeWatchdog();
       await invoke("stop_game"); // kills the child, cleans the run dir
       state.nativeRun = null;
+      chimeCash();
       fail(
         "Licence moved on-chain.",
         "La licence a été revendue pendant la partie — le processus a été terminé. Le nouveau propriétaire doit appairer sa machine.",
@@ -602,7 +604,7 @@ function nativeView(run: NonNullable<typeof state.nativeRun>): string {
     : "SESSION RESYNCED · TICKET UNKNOWN — EJECT TO REARM THE GUARD";
   return `
     <div class="launch-ov" style="animation:none">
-      <div class="lv-art" style="${artGrad(hueOf(ed?.editionId ?? "1"))}"><div class="sheen"></div></div>
+      <div class="lv-art" style="${artFor(ed?.editionId ?? "1")}"><div class="sheen"></div></div>
       <div class="lv-title">${esc(run.g?.meta.title ?? ed?.title ?? "NATIVE GAME")}</div>
       <div class="lv-sub">NATIVE PROCESS · PID ${run.pid} · <span data-elapsed data-ts="${run.startedAt}">00:00</span></div>
       <div class="lv-sub" style="margin-top:4px">${guard}</div>
@@ -623,14 +625,14 @@ async function quit(): Promise<void> {
 
 let audio: AudioContext | null = null;
 
-function beep(freqs: number[], dur = 0.09, vol = 0.16): void {
+function beep(freqs: number[], dur = 0.09, vol = 0.16, wave: OscillatorType = "sine"): void {
   try {
     audio ??= new AudioContext();
     void audio.resume();
     freqs.forEach((f, i) => {
       const osc = audio!.createOscillator();
       const gain = audio!.createGain();
-      osc.type = "sine";
+      osc.type = wave;
       osc.frequency.value = f;
       const t0 = audio!.currentTime + i * dur;
       gain.gain.setValueAtTime(0.0001, t0);
@@ -645,9 +647,58 @@ function beep(freqs: number[], dur = 0.09, vol = 0.16): void {
   }
 }
 
-const chimeIn = (): void => beep([880, 1318]);
 const chimeOut = (): void => beep([660, 440]);
 const chimeLaunch = (): void => beep([523, 659, 880], 0.12);
+
+// ── Les moments signatures (DA v1) — WebAudio, zéro asset ─────
+
+/** Carte SD qui s'insère : clic mécanique + petite montée en rotation. */
+function sfxInsert(): void {
+  try {
+    audio ??= new AudioContext();
+    void audio.resume();
+    const t = audio.currentTime;
+    // clic : bouffée de bruit filtrée
+    const buf = audio.createBuffer(1, 2205, 44100);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const src = audio.createBufferSource();
+    src.buffer = buf;
+    const bp = audio.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 2600;
+    const g = audio.createGain();
+    g.gain.value = 0.5;
+    src.connect(bp).connect(g).connect(audio.destination);
+    src.start(t);
+    // whir : le lecteur prend ses tours
+    const o = audio.createOscillator();
+    o.type = "triangle";
+    o.frequency.setValueAtTime(90, t + 0.07);
+    o.frequency.exponentialRampToValueAtTime(360, t + 0.5);
+    const og = audio.createGain();
+    og.gain.setValueAtTime(0.0001, t + 0.07);
+    og.gain.exponentialRampToValueAtTime(0.11, t + 0.14);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.58);
+    o.connect(og).connect(audio.destination);
+    o.start(t + 0.07);
+    o.stop(t + 0.62);
+  } catch {
+    /* autoplay policy */
+  }
+}
+
+/** Achat : fanfare courte, glorifiante (arpège majeur + éclat). */
+function chimeBuy(): void {
+  beep([523, 659, 784, 1047], 0.1, 0.18);
+  setTimeout(() => beep([1568, 2093], 0.22, 0.09), 430);
+}
+
+/** Revente/révocation : le ka-ching du tiroir-caisse. */
+function chimeCash(): void {
+  beep([2637, 2093], 0.055, 0.16, "square");
+  setTimeout(() => beep([1047, 1319], 0.12, 0.12), 120);
+}
 
 // ── Card insert/eject events (overlay layer, outside diff-render) ──
 
@@ -662,7 +713,7 @@ function cardToast(kind: "in" | "out", title: string): void {
     <div class="ct-reader"><div class="ct-card"></div><div class="ct-slot"></div></div>
     <div class="ct-label">CARD ${kind === "in" ? "INSERTED" : "EJECTED"}<br><b>${esc(title.toUpperCase())}</b></div>`;
   layer.appendChild(el);
-  (kind === "in" ? chimeIn : chimeOut)();
+  (kind === "in" ? sfxInsert : chimeOut)();
   slotEvent = { kind, until: Date.now() + 3000 };
   setTimeout(() => el.classList.add("bye"), 2400);
   setTimeout(() => el.remove(), 3000);
@@ -675,6 +726,17 @@ const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeA
 const hueOf = (editionId: string): number => (Number(editionId) * 137) % 360;
 const artGrad = (hue: number): string =>
   `background:linear-gradient(160deg, oklch(0.62 0.13 ${hue}) 0%, oklch(0.34 0.1 ${hue + 30}) 65%, oklch(0.22 0.06 265) 100%);`;
+
+// Key art per edition (launcher/public/art). The edition-hue gradient stays
+// ON TOP at reduced opacity: images read as AURA-64 material, not stickers —
+// and the fallback (no file) is the plain gradient as before.
+const ART_FILES: Record<string, string> = { "1": "/art/ed1.webp", "2": "/art/ed2.webp", "3": "/art/ed3.webp", "4": "/art/ed4.webp" };
+function artFor(editionId: string): string {
+  const img = ART_FILES[editionId];
+  const hue = hueOf(editionId);
+  if (!img) return artGrad(hue);
+  return `background:linear-gradient(160deg, oklch(0.62 0.13 ${hue} / 0.38) 0%, oklch(0.34 0.1 ${hue + 30} / 0.45) 55%, oklch(0.1 0.04 265 / 0.82) 100%), url('${img}') center/cover;`;
+}
 
 function fail(title: string, msg: string, code: string, back: Screen): void {
   state.fatal = { title, msg, code, back };
@@ -848,7 +910,7 @@ function homeView(): string {
               .map(
                 (r) => `
               <button class="recent-tile" data-edition="${esc(r.e.editionId)}">
-                <div class="rart" style="${artGrad(hueOf(r.e.editionId))}"></div>
+                <div class="rart" style="${artFor(r.e.editionId)}"></div>
                 <div class="rbody">
                   <div class="rtitle">${esc(r.e.title)}</div>
                   <div class="rstats">▶ ×${r.log.playCount} · ${fmtDur(r.log.totalSeconds)} ·
@@ -904,7 +966,7 @@ function homeView(): string {
     <div class="home">
       ${top}
       <div class="heroB">
-        <button class="home-hero" id="home-hero" style="${artGrad(hueOf(ed?.editionId ?? "1"))}">
+        <button class="home-hero" id="home-hero" style="${artFor(ed?.editionId ?? "1")}">
           <span class="sheen"></span>
           <span class="hh-kicker">${can ? "CONTINUE" : "INSERTED"} · ÉD. #${esc(ed?.editionId ?? "?")}${seated.ticket ? ` · LICENCE #${esc(seated.ticket.tokenId)}` : ""}</span>
           <span class="hh-bottom">
@@ -958,7 +1020,7 @@ function previewPane(e: OnchainEdition): string {
   const { action, hint } = actionFor(e, g, ownedTok, can);
   return `
     <div class="shelf-preview">
-      <div class="pv-banner" style="${artGrad(hueOf(e.editionId))}">
+      <div class="pv-banner" style="${artFor(e.editionId)}">
         <div class="pv-note">ÉD. #${esc(e.editionId)} · ${esc(e.studio.toUpperCase())}</div>
         <div class="pv-foot">
           <div class="pv-title">${esc(e.title)}</div>
@@ -972,11 +1034,19 @@ function previewPane(e: OnchainEdition): string {
           <div class="pv-stat"><div class="k">CARTE</div><div class="v ${g ? "on" : ""}">${g ? `${esc(g.cartridge.mount_point)} · ${g.verdict.toUpperCase()}` : "NON INSÉRÉE"}</div></div>
           <div class="pv-stat"><div class="k">TICKET</div><div class="v">${ticketDaysLeft(g)}</div></div>
         </div>
-        <div class="pv-actions">
-          ${action}
-          <button class="pillbtn" data-edition="${esc(e.editionId)}">FICHE COMPLÈTE</button>
+        <div class="pv-main">
+          <div class="glass-menu">
+            ${action}
+            <button class="gm-item" data-edition="${esc(e.editionId)}">Fiche complète</button>
+            ${
+              g?.ticket && isOurs(g) && g.verdict === "authentic"
+                ? `<button class="gm-item violet" data-gosell="${esc(g.ticket.tokenId)}" data-goedition="${esc(e.editionId)}">Revendre</button>`
+                : ""
+            }
+            <button class="gm-item" disabled title="Prêt entre amis — arrive avec ERC-4907">Prêter à un ami · bientôt</button>
+          </div>
+          <div class="pv-hint">${esc(hint)}</div>
         </div>
-        <div class="pv-hint">${esc(hint)}</div>
         <details class="tech-acc" id="tech-acc" ${state.techOpen ? "open" : ""}>
           <summary><span>▸ DONNÉES TECHNIQUES — CID · HASH · TICKET</span><span>${state.techOpen ? "REPLIER" : "AFFICHER"}</span></summary>
           <div class="debug">éd. #${esc(e.editionId)} · jeu #${esc(e.gameId)} · studio #${esc(e.studioId)} · chain ${CHAIN.id}<br>
@@ -1008,7 +1078,7 @@ function shelfView(): string {
                     const status = shelfStatus(e, g, ownedTok, can).label;
                     return `
               <button class="gamecard" data-edition="${esc(e.editionId)}">
-                <div class="art ${can || ownedTok.length || g ? "" : "locked"}" style="${artGrad(hueOf(e.editionId))}">
+                <div class="art ${can || ownedTok.length || g ? "" : "locked"}" style="${artFor(e.editionId)}">
                   <div class="artnote">éd. #${esc(e.editionId)} · ${esc(e.studio)}</div>
                   <div class="lockdot">${can ? "🟢" : ownedTok.length || g ? "🟡" : "🔒"}</div>
                 </div>
@@ -1036,7 +1106,7 @@ function shelfView(): string {
                     const log = readLog()[e.editionId];
                     return `
             <button class="listrow ${selEd?.editionId === e.editionId ? "on" : ""}" data-selrow="${esc(e.editionId)}">
-              <div class="lr-art" style="${artGrad(hueOf(e.editionId))}"></div>
+              <div class="lr-art" style="${artFor(e.editionId)}"></div>
               <div style="min-width:0">
                 <div class="lr-title">${esc(e.title)}</div>
                 <div class="lr-meta">${esc(e.studio.toUpperCase())} · ÉD. #${esc(e.editionId)}</div>
@@ -1157,7 +1227,7 @@ function detailView(): string {
     <div class="detail">
       <div class="detail-left">
         <button class="pillbtn" data-go="shelf" style="align-self:flex-start">&#8592; SHELF</button>
-        <div class="hero-art" style="${artGrad(hueOf(e.editionId))}">
+        <div class="hero-art" style="${artFor(e.editionId)}">
           <div class="artnote">box art — éd. #${esc(e.editionId)}</div>
           <div class="sheen"></div>
         </div>
@@ -1255,7 +1325,7 @@ function insertView(): string {
   return `
     <div class="insert">
       <div class="reader">
-        ${cardIn ? `<div class="lic-card"><div class="lic-head"><div class="lic-brand">AURA-64 LICENCE</div><div class="lic-chip"></div></div><div class="lic-art" style="${artGrad(hueOf(e?.editionId ?? state.sel ?? "1"))}"></div><div class="lic-title">${esc(title)}</div><div class="lic-id">${g?.ticket ? `N° ${esc(g.ticket.tokenId)} · GV-${esc(g.ticket.tokenId.padStart(4, "0"))}-${esc((state.sel ?? "?").padStart(2, "0"))}` : "GV-????"}</div></div>` : ""}
+        ${cardIn ? `<div class="lic-card"><div class="lic-head"><div class="lic-brand">AURA-64 LICENCE</div><div class="lic-chip"></div></div><div class="lic-art" style="${artFor(e?.editionId ?? state.sel ?? "1")}"></div><div class="lic-title">${esc(title)}</div><div class="lic-id">${g?.ticket ? `N° ${esc(g.ticket.tokenId)} · GV-${esc(g.ticket.tokenId.padStart(4, "0"))}-${esc((state.sel ?? "?").padStart(2, "0"))}` : "GV-????"}</div></div>` : ""}
         <div class="slot-hw"><div class="slot-hw-line"></div><div class="slot-led ${cardIn ? "on" : ""}"></div></div>
       </div>
       <div class="insert-right">
@@ -1489,6 +1559,13 @@ function wire(root: HTMLElement): void {
       render();
     }),
   );
+  root.querySelectorAll<HTMLButtonElement>("[data-gosell]").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.sel = b.dataset.goedition ?? state.sel;
+      state.selling = b.dataset.gosell ?? null;
+      go("detail"); // le flux prix/LIST vit sur la fiche
+    }),
+  );
   document.getElementById("tech-acc")?.addEventListener("toggle", (ev) => {
     state.techOpen = (ev.target as HTMLDetailsElement).open;
     lastSig = sigOf(); // no rebuild — the browser already toggled the pane
@@ -1499,7 +1576,10 @@ function wire(root: HTMLElement): void {
     localStorage.setItem("gv-watch", addr);
     void forceRefresh();
   });
-  document.getElementById("buy-btn")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));
+  document.getElementById("buy-btn")?.addEventListener("click", () => {
+    chimeBuy(); // le moment de gloire
+    void openUrl(MARKETPLACE_URL);
+  });
   document.getElementById("open-pair-url")?.addEventListener("click", () => state.pairing && void openUrl(state.pairing.url));
   document.getElementById("cancel-pairing")?.addEventListener("click", cancelPairing);
   document.getElementById("cancel-install")?.addEventListener("click", () => {
