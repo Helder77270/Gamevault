@@ -19,10 +19,13 @@ const ZERO = "0x0000000000000000000000000000000000000000";
 const DAY = 86400;
 const FRIEND_AGE = 3 * DAY;
 
-type Friend = { addr: string; since: number };
+type Friend = { addr: string; since: number; name: string | null };
+type Contact = { addr: string; name: string | null };
 type Owned = { tokenId: string; editionId: string; user: string; expires: number; lastEnd: number };
 
 const short = (a: string): string => `${a.slice(0, 6)}…${a.slice(-4)}`;
+/** « Picsou (0x1234…abcd) » — le pseudo n'est pas unique, l'adresse tranche. */
+const label = (c: { addr: string; name: string | null }): string => (c.name ? `${c.name} (${short(c.addr)})` : short(c.addr));
 
 export default function FriendsPage() {
   const { address, isConnected } = useAccount();
@@ -31,8 +34,10 @@ export default function FriendsPage() {
   const { signMessageAsync } = useSignMessage();
 
   const [friends, setFriends] = useState<Friend[]>([]);
-  const [incoming, setIncoming] = useState<string[]>([]);
-  const [outgoing, setOutgoing] = useState<string[]>([]);
+  const [incoming, setIncoming] = useState<Contact[]>([]);
+  const [outgoing, setOutgoing] = useState<Contact[]>([]);
+  const [results, setResults] = useState<Contact[]>([]);
+  const [searched, setSearched] = useState(false);
   const [owned, setOwned] = useState<Owned[]>([]);
   const [borrowed, setBorrowed] = useState<Owned[]>([]);
   const [catalog, setCatalog] = useState<OnchainEdition[]>([]);
@@ -51,7 +56,7 @@ export default function FriendsPage() {
     try {
       const res = await fetch(`${TICKETD_URL}/friends/${address}`);
       if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as { friends: Friend[]; incoming: string[]; outgoing: string[] };
+      const data = (await res.json()) as { friends: Friend[]; incoming: Contact[]; outgoing: Contact[] };
       setFriends(data.friends);
       setIncoming(data.incoming);
       setOutgoing(data.outgoing);
@@ -96,6 +101,18 @@ export default function FriendsPage() {
     void refresh();
   }, [refresh]);
 
+  const doSearch = async () => {
+    setError("");
+    try {
+      const res = await fetch(`${TICKETD_URL}/profile/search?q=${encodeURIComponent(target.trim())}`);
+      if (!res.ok) throw new Error(await res.text());
+      setResults((await res.json()) as Contact[]);
+      setSearched(true);
+    } catch (e) {
+      setError(`recherche: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
   /** Action amis = message signé envoyé à ticketd. Gratuit, instantané. */
   const friendAction = async (action: "request" | "accept" | "decline" | "remove", other: string) => {
     if (!address) return;
@@ -118,7 +135,11 @@ export default function FriendsPage() {
       });
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
       await refresh();
-      if (action === "request") setTarget("");
+      if (action === "request") {
+        setTarget("");
+        setResults([]);
+        setSearched(false);
+      }
     } catch (e) {
       setError(String(e instanceof Error ? ((e as Error & { shortMessage?: string }).shortMessage ?? e.message) : e));
     }
@@ -183,27 +204,56 @@ export default function FriendsPage() {
 
       {isConnected && address && (
         <>
-          <h2 className="section">1 · Demander un ami — signature, 0 gas</h2>
+          <h2 className="section">1 · Trouver un ami — pseudo ou adresse, signature, 0 gas</h2>
           <p>
-            <input placeholder="0x… adresse du futur ami" style={{ width: "26rem" }} value={target} onChange={(e) => setTarget(e.target.value.trim())} />
-            <button className="btn" disabled={!/^0x[0-9a-fA-F]{40}$/.test(target) || !!busy} onClick={() => void friendAction("request", target)}>
-              {busy === `request-${target}` ? "Signature…" : "Envoyer la demande"}
+            <input
+              placeholder="Picsou… ou 0x1234…"
+              style={{ width: "22rem" }}
+              value={target}
+              onChange={(e) => { setTarget(e.target.value.trim()); setSearched(false); setResults([]); }}
+              onKeyDown={(e) => e.key === "Enter" && void doSearch()}
+            />
+            <button className="btn ghost" disabled={target.trim().length < 2} onClick={() => void doSearch()}>
+              Rechercher
             </button>
           </p>
+          {/^0x[0-9a-fA-F]{40}$/.test(target) && (
+            <p>
+              Adresse complète détectée —{" "}
+              <button className="btn" disabled={!!busy} onClick={() => void friendAction("request", target)}>
+                {busy === `request-${target}` ? "Signature…" : `Demander ${short(target)}`}
+              </button>
+            </p>
+          )}
+          {results.map((r) => (
+            <p key={r.addr} style={{ margin: "0.3rem 0" }}>
+              <b>{r.name}</b> <span className="addr">({short(r.addr)})</span>{" "}
+              <button
+                className="btn"
+                disabled={!!busy || r.addr.toLowerCase() === address.toLowerCase() || friends.some((f) => f.addr.toLowerCase() === r.addr.toLowerCase())}
+                onClick={() => void friendAction("request", r.addr)}
+              >
+                {busy === `request-${r.addr}` ? "Signature…" : "Demander"}
+              </button>
+            </p>
+          ))}
+          {searched && results.length === 0 && !/^0x[0-9a-fA-F]{40}$/.test(target) && (
+            <p className="addr">Aucun profil trouvé — demandez-lui son adresse, ou qu&apos;il crée son profil.</p>
+          )}
           {outgoing.length > 0 && (
-            <p className="addr">En attente de leur acceptation : {outgoing.map(short).join(" · ")}</p>
+            <p className="addr">En attente de leur acceptation : {outgoing.map(label).join(" · ")}</p>
           )}
 
           {incoming.length > 0 && (
             <>
               <h2 className="section">2 · Demandes reçues</h2>
-              {incoming.map((from) => (
-                <p key={from}>
-                  <code>{short(from)}</code>{" "}
-                  <button className="btn" disabled={!!busy} onClick={() => void friendAction("accept", from)}>
-                    {busy === `accept-${from}` ? "Signature…" : "Accepter"}
+              {incoming.map((c) => (
+                <p key={c.addr}>
+                  <b>{label(c)}</b>{" "}
+                  <button className="btn" disabled={!!busy} onClick={() => void friendAction("accept", c.addr)}>
+                    {busy === `accept-${c.addr}` ? "Signature…" : "Accepter"}
                   </button>{" "}
-                  <button className="btn ghost" disabled={!!busy} onClick={() => void friendAction("decline", from)}>
+                  <button className="btn ghost" disabled={!!busy} onClick={() => void friendAction("decline", c.addr)}>
                     Refuser
                   </button>
                 </p>
@@ -218,7 +268,7 @@ export default function FriendsPage() {
             const left = Math.max(1, Math.ceil((f.since + FRIEND_AGE - nowSec) / DAY));
             return (
               <p key={f.addr}>
-                <code>{short(f.addr)}</code>{" "}
+                <b>{label(f)}</b>{" "}
                 <span className="addr">{matured ? "· prêt possible ✔" : `· prêt possible dans ${left} j`}</span>{" "}
                 <button className="btn ghost" disabled={!!busy} onClick={() => void friendAction("remove", f.addr)}>
                   Retirer
@@ -257,7 +307,7 @@ export default function FriendsPage() {
                     <select id={`lend-to-${t.tokenId}`} defaultValue={maturedFriends[0].addr}>
                       {maturedFriends.map((f) => (
                         <option key={f.addr} value={f.addr}>
-                          {short(f.addr)}
+                          {label(f)}
                         </option>
                       ))}
                     </select>{" "}

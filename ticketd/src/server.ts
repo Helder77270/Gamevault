@@ -4,12 +4,18 @@
 
 import { createServer } from "node:http";
 import {
+  addPlaystat,
   applyFriendAction,
   attestFriendship,
   backdateFriendship,
   friendsOf,
+  getAvatar,
   getBuild,
+  getProfile,
   issueTicket,
+  resolveNames,
+  searchProfiles,
+  setProfile,
   takePendingTicket,
   publishBuild,
 } from "./service.ts";
@@ -38,6 +44,45 @@ createServer(async (req, res) => {
   if (pendingMatch) {
     const ticket = takePendingTicket(pendingMatch[1]);
     return ticket ? send(200, ticket) : send(404, { error: "no ticket yet" });
+  }
+
+  // ── Profils : pseudo + avatar + favoris, signés ; recherche ──
+  const avatarMatch = req.method === "GET" && req.url?.match(/^\/profile\/avatar\/(0x[0-9a-fA-F]{40})$/);
+  if (avatarMatch) {
+    const av = getAvatar(avatarMatch[1]);
+    if (!av) return send(404, { error: "pas d'avatar" });
+    res.writeHead(200, { "Content-Type": av.type, "Content-Length": av.bytes.length, "Cache-Control": "no-cache", ...CORS });
+    return res.end(Buffer.from(av.bytes));
+  }
+  const searchMatch = req.method === "GET" && req.url?.startsWith("/profile/search?");
+  if (searchMatch) {
+    const q = new URL(req.url!, "http://localhost").searchParams.get("q") ?? "";
+    return send(200, searchProfiles(q));
+  }
+  const profileMatch = req.method === "GET" && req.url?.match(/^\/profile\/(0x[0-9a-fA-F]{40})$/);
+  if (profileMatch) {
+    try {
+      return send(200, getProfile(profileMatch[1]));
+    } catch (e) {
+      return send(400, { error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  if (req.method === "POST" && req.url?.startsWith("/profile")) {
+    try {
+      let raw = "";
+      for await (const chunk of req) {
+        raw += chunk;
+        if (raw.length > 600 * 1024) return send(413, { error: "payload trop lourd" });
+      }
+      const body = JSON.parse(raw || "{}");
+      if (req.url === "/profile") return send(200, await setProfile(body.message, body.signature, body.avatarB64));
+      if (req.url === "/profile/resolve") return send(200, resolveNames(Array.isArray(body.addrs) ? body.addrs : []));
+      if (req.url === "/profile/playstat") return send(200, addPlaystat(body.addr, body.editionId, Number(body.seconds)));
+      return send(404, { error: "not found" });
+    } catch (e) {
+      console.warn(`⛔ profil: ${e instanceof Error ? e.message : e}`);
+      return send(403, { error: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   // ── Friends DB: wallet-signed actions, zero gas ──────────────

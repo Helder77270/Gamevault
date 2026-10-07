@@ -4,6 +4,7 @@
 import { createPublicClient, encodePacked, http, keccak256, verifyMessage } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -201,22 +202,28 @@ export async function applyFriendAction(message: string, signature: `0x${string}
   return { ok: true };
 }
 
-export function friendsOf(addr: string): { friends: { addr: string; since: number }[]; incoming: string[]; outgoing: string[] } {
+export function friendsOf(addr: string): {
+  friends: { addr: string; since: number; name: string | null }[];
+  incoming: { addr: string; name: string | null }[];
+  outgoing: { addr: string; name: string | null }[];
+} {
   if (!ADDR_RE.test(addr)) throw new Error("adresse invalide");
   const db = friendsDb();
+  const profiles = profilesDb();
+  const nameOf = (a: string): string | null => profiles[a]?.name ?? null;
   const meL = addr.toLowerCase();
-  const friends: { addr: string; since: number }[] = [];
+  const friends: { addr: string; since: number; name: string | null }[] = [];
   for (const [key, since] of Object.entries(db.friendships)) {
     const [lo, hi] = key.split("|");
-    if (lo === meL) friends.push({ addr: hi, since });
-    else if (hi === meL) friends.push({ addr: lo, since });
+    if (lo === meL) friends.push({ addr: hi, since, name: nameOf(hi) });
+    else if (hi === meL) friends.push({ addr: lo, since, name: nameOf(lo) });
   }
-  const incoming: string[] = [];
-  const outgoing: string[] = [];
+  const incoming: { addr: string; name: string | null }[] = [];
+  const outgoing: { addr: string; name: string | null }[] = [];
   for (const key of Object.keys(db.requests)) {
     const [from, to] = key.split("|");
-    if (to === meL) incoming.push(from);
-    if (from === meL) outgoing.push(to);
+    if (to === meL) incoming.push({ addr: from, name: nameOf(from) });
+    if (from === meL) outgoing.push({ addr: to, name: nameOf(to) });
   }
   return { friends, incoming, outgoing };
 }
@@ -237,6 +244,173 @@ export function attestFriendship(owner: string, borrower: string): { since: numb
   );
   const account = privateKeyToAccount(`0x${Buffer.from(platformPriv()).toString("hex")}` as `0x${string}`);
   return account.signMessage({ message: { raw: digest } }).then((sig) => ({ since, deadline, sig, license })) as never;
+}
+
+// ── Profils (décidé 2026-10-07) ──────────────────────────────────────────
+// Pseudo + avatar + favoris, modifiables à volonté par message SIGNÉ (zéro
+// gas, comme les amis). Les pseudos ne sont PAS uniques — la recherche
+// désambiguïse par l'adresse : « Picsou (0x1234…) ». L'avatar est
+// redimensionné côté client ; ici on borne octets + type (magic bytes).
+// Les stats de jeu (cosmétiques) sont poussées par le launcher.
+
+const PROFILES_PATH = join(dirname(fileURLToPath(import.meta.url)), "../data/profiles.json");
+const AVATARS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../data/avatars");
+const PLAYSTATS_PATH = join(dirname(fileURLToPath(import.meta.url)), "../data/playstats.json");
+const AVATAR_MAX_BYTES = 300 * 1024;
+const AVATAR_MIN_BYTES = 256;
+
+interface Profile {
+  name: string;
+  avatarType?: string;
+  favorites: string[];
+  updatedAt: number;
+}
+
+function profilesDb(): Record<string, Profile> {
+  return existsSync(PROFILES_PATH) ? JSON.parse(readFileSync(PROFILES_PATH, "utf8")) : {};
+}
+function saveProfilesDb(db: Record<string, Profile>): void {
+  mkdirSync(dirname(PROFILES_PATH), { recursive: true });
+  writeFileSync(PROFILES_PATH, JSON.stringify(db, null, 2));
+}
+function playstatsDb(): Record<string, Record<string, number>> {
+  return existsSync(PLAYSTATS_PATH) ? JSON.parse(readFileSync(PLAYSTATS_PATH, "utf8")) : {};
+}
+
+const NAME_RE = /^[\p{L}\p{N} _.\-]{2,24}$/u;
+
+function avatarKind(bytes: Uint8Array): string | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e) return "image/png";
+  if (bytes.length >= 12 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return "image/webp";
+  return null;
+}
+
+/** Message signé :
+ *  GameVault Profil\nme: 0x…\nname: pseudo\navatar: <sha256hex|keep|none>\nfavorites: 1,2\nat: ISO\nnonce: uuid */
+export async function setProfile(message: string, signature: `0x${string}`, avatarB64?: string): Promise<{ ok: true }> {
+  const get = (k: string): string => message.match(new RegExp(`^${k}: (.*)$`, "m"))?.[1]?.trim() ?? "";
+  const me = get("me");
+  const name = get("name");
+  const avatar = get("avatar");
+  const favorites = get("favorites");
+  const at = get("at");
+  const nonce = get("nonce");
+  if (!message.startsWith("GameVault Profil")) throw new Error("message inattendu");
+  if (!ADDR_RE.test(me)) throw new Error("adresse invalide");
+  if (!NAME_RE.test(name)) throw new Error("pseudo invalide (2-24 caractères, lettres/chiffres/espaces/-_.)");
+  const age = Date.now() - Date.parse(at);
+  if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) throw new Error("message expiré");
+  if (friendNonces.has(nonce)) throw new Error("nonce déjà utilisé");
+  if (!(await verifyMessage({ address: me as `0x${string}`, message, signature }))) throw new Error("signature invalide");
+  friendNonces.add(nonce);
+
+  const favList = favorites
+    ? favorites.split(",").map((s) => s.trim()).filter((s) => /^\d{1,6}$/.test(s)).slice(0, 12)
+    : [];
+
+  const db = profilesDb();
+  const meL = me.toLowerCase();
+  const prev = db[meL];
+  let avatarType = prev?.avatarType;
+
+  if (avatar === "none") {
+    avatarType = undefined;
+  } else if (avatar !== "keep") {
+    if (!avatarB64) throw new Error("avatar annoncé mais absent du corps");
+    const bytes = Buffer.from(avatarB64, "base64");
+    if (bytes.length > AVATAR_MAX_BYTES) throw new Error(`avatar trop lourd (max ${AVATAR_MAX_BYTES / 1024} Ko)`);
+    if (bytes.length < AVATAR_MIN_BYTES) throw new Error("avatar trop petit pour être une image");
+    const kind = avatarKind(bytes);
+    if (!kind) throw new Error("avatar: formats acceptés jpeg/png/webp");
+    const digest = createHashHex(bytes);
+    if (digest !== avatar.toLowerCase()) throw new Error("le hash signé ne correspond pas à l'image envoyée");
+    mkdirSync(AVATARS_DIR, { recursive: true });
+    writeFileSync(join(AVATARS_DIR, meL), bytes);
+    avatarType = kind;
+  }
+
+  db[meL] = { name, avatarType, favorites: favList, updatedAt: Date.now() };
+  saveProfilesDb(db);
+  console.log(`✔ profil: ${me} -> « ${name} »${avatarType ? " (avatar)" : ""}`);
+  return { ok: true };
+}
+
+const createHashHex = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
+
+export function getProfile(addr: string): {
+  addr: string;
+  name: string | null;
+  hasAvatar: boolean;
+  favorites: string[];
+  topPlayed: { editionId: string; seconds: number }[];
+  updatedAt: number | null;
+} {
+  if (!ADDR_RE.test(addr)) throw new Error("adresse invalide");
+  const p = profilesDb()[addr.toLowerCase()];
+  const stats = playstatsDb()[addr.toLowerCase()] ?? {};
+  const topPlayed = Object.entries(stats)
+    .map(([editionId, seconds]) => ({ editionId, seconds }))
+    .sort((a, b) => b.seconds - a.seconds)
+    .slice(0, 8);
+  return {
+    addr,
+    name: p?.name ?? null,
+    hasAvatar: Boolean(p?.avatarType),
+    favorites: p?.favorites ?? [],
+    topPlayed,
+    updatedAt: p?.updatedAt ?? null,
+  };
+}
+
+export function getAvatar(addr: string): { bytes: Uint8Array; type: string } | null {
+  if (!ADDR_RE.test(addr)) return null;
+  const p = profilesDb()[addr.toLowerCase()];
+  const file = join(AVATARS_DIR, addr.toLowerCase());
+  if (!p?.avatarType || !existsSync(file)) return null;
+  return { bytes: new Uint8Array(readFileSync(file)), type: p.avatarType };
+}
+
+const fold = (s: string): string => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+/** Recherche par pseudo (sous-chaîne, accents ignorés) OU préfixe d'adresse.
+ *  Plusieurs « Picsou » ? Chacun revient avec son adresse pour trancher. */
+export function searchProfiles(q: string): { addr: string; name: string; hasAvatar: boolean }[] {
+  const query = q.trim();
+  if (query.length < 2) return [];
+  const db = profilesDb();
+  const out: { addr: string; name: string; hasAvatar: boolean }[] = [];
+  const byAddr = query.toLowerCase().startsWith("0x");
+  for (const [addr, p] of Object.entries(db)) {
+    const hit = byAddr ? addr.startsWith(query.toLowerCase()) : fold(p.name).includes(fold(query));
+    if (hit) out.push({ addr, name: p.name, hasAvatar: Boolean(p.avatarType) });
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
+export function resolveNames(addrs: string[]): Record<string, string> {
+  const db = profilesDb();
+  const out: Record<string, string> = {};
+  for (const a of addrs.slice(0, 64)) {
+    const p = db[a.toLowerCase()];
+    if (p) out[a.toLowerCase()] = p.name;
+  }
+  return out;
+}
+
+/** Stats cosmétiques poussées par le launcher — non signées, locales. */
+export function addPlaystat(addr: string, editionId: string, seconds: number): { ok: true } {
+  if (!ADDR_RE.test(addr) || !/^\d{1,6}$/.test(editionId)) throw new Error("payload invalide");
+  const s = Math.floor(seconds);
+  if (!Number.isFinite(s) || s <= 0 || s > 24 * 3600) throw new Error("durée invalide");
+  const db = playstatsDb();
+  const key = addr.toLowerCase();
+  db[key] = db[key] ?? {};
+  db[key][editionId] = (db[key][editionId] ?? 0) + s;
+  mkdirSync(dirname(PLAYSTATS_PATH), { recursive: true });
+  writeFileSync(PLAYSTATS_PATH, JSON.stringify(db, null, 2));
+  return { ok: true };
 }
 
 /** DEV : antidater une amitié pour simuler les 3 jours (ticketd est local). */

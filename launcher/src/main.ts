@@ -84,8 +84,8 @@ const state = {
   installing: null as { edition: OnchainEdition; volumes: Volume[]; status: string; tokenId: string; stage: number } | null,
   catalog: [] as OnchainEdition[],
   owned: [] as { tokenId: string; editionId: string }[],
-  /** mutual friendships of the library wallet (FriendRegistry) */
-  friends: [] as { addr: string; since: number }[],
+  /** mutual friendships of the library wallet (ticketd DB, with pseudos) */
+  friends: [] as { addr: string; since: number; name: string | null }[],
   /** live loans touching the library wallet, lent or borrowed */
   loans: [] as { tokenId: string; owner: string; user: string; expires: number }[],
   ticketdOk: false,
@@ -137,11 +137,21 @@ function logPlayStart(editionId: string): void {
 
 function logPlayEnd(): void {
   if (!sessionEdition) return;
+  const seconds = Math.round((Date.now() - sessionStart) / 1000);
   const log = readLog();
   const e = log[sessionEdition];
   if (e) {
-    e.totalSeconds += Math.round((Date.now() - sessionStart) / 1000);
+    e.totalSeconds += seconds;
     writeLog(log);
+  }
+  // Profil « les plus joués » (cosmétique) — fire and forget vers ticketd
+  const addr = libraryAddress();
+  if (addr && seconds > 0) {
+    void fetch(`${TICKETD_URL}/profile/playstat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ addr, editionId: sessionEdition, seconds }),
+    }).catch(() => {});
   }
   sessionEdition = "";
 }
@@ -242,7 +252,7 @@ async function fetchFriends(): Promise<void> {
     // Friendship lives in the platform DB (ticketd) — zero gas, zero chain.
     const res = await fetch(`${TICKETD_URL}/friends/${me}`, { signal: AbortSignal.timeout(3000) });
     if (res.ok) {
-      const data = (await res.json()) as { friends: { addr: string; since: number }[] };
+      const data = (await res.json()) as { friends: { addr: string; since: number; name: string | null }[] };
       state.friends = data.friends;
     }
     // Live loans touching me — ON-CHAIN truth; token space is tiny, scan it.
@@ -1233,8 +1243,8 @@ function friendsView(): string {
           <div class="listrow" style="cursor:default">
             <div style="width:40px;height:40px;border-radius:999px;flex:none;background:linear-gradient(150deg, oklch(0.7 0.1 ${(Number.parseInt(f.addr.slice(2, 8), 16) % 360)}), oklch(0.4 0.08 265));border:1px solid rgba(255,255,255,0.2)"></div>
             <div style="min-width:0">
-              <div class="lr-title">${esc(short(f.addr, 8))}</div>
-              <div class="lr-meta">AMIS DEPUIS LE ${new Date(f.since * 1000).toLocaleDateString()}</div>
+              <div class="lr-title">${esc(f.name ?? short(f.addr, 8))}</div>
+              <div class="lr-meta">${f.name ? `${esc(short(f.addr, 6).toUpperCase())} · ` : ""}AMIS DEPUIS LE ${new Date(f.since * 1000).toLocaleDateString()}</div>
             </div>
             <div class="lr-right">
               <span class="lr-chip ${matured ? "ok" : "warn"}">${matured ? "PRÊT POSSIBLE" : `PRÊT DANS ${daysLeft} J`}</span>

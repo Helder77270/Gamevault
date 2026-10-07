@@ -33,6 +33,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <nav className="nav">
               <Link href="/">Marketplace</Link>
               <Link href="/friends">Amis &amp; Prêts</Link>
+              <Link href="/profile">Profil</Link>
               <Link href="/studio">Studio</Link>
               <Link href="/pair">Appairage</Link>
             </nav>
