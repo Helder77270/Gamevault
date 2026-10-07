@@ -1,0 +1,330 @@
+// Launcher i18n — FR / EN. The console vocabulary in caps (INSERT SD CARD
+// TO PLAY, GAME SHELF, LICENCE…) is part of the AURA-64 art direction and
+// stays identical in both languages; sentences and labels are translated.
+// EN is typed against FR: a key missing in one language fails tsc.
+
+export type Lang = "fr" | "en";
+
+const FR = {
+  // time / durations
+  "time.now": "À L'INSTANT",
+  "time.min": "IL Y A {n} MIN",
+  "time.h": "IL Y A {n} H",
+  "time.d": "IL Y A {n} J",
+  "dur.lt1": "< 1 MIN",
+  "ticket.days": "{n} J",
+  "ticket.expired": "EXPIRÉ",
+
+  // nav / chrome
+  "nav.home": "HOME",
+  "nav.shelf": "GAME SHELF",
+  "nav.friends": "AMIS",
+  "nav.settings": "Paramètres",
+  "top.store.title": "Ouvre la marketplace dans le navigateur — là où vit votre wallet",
+
+  // boot
+  "boot.note": "Chaque contrôle est réel : keystore, lecteur de cartes, chaîne Base Sepolia, service de tickets.",
+
+  // home
+  "home.titles": "{n} TITRES",
+  "home.attractSub": "LA CARTE EST LA CLÉ — LE JEU DÉMARRE TOUT SEUL",
+  "home.browse": "PARCOURIR LE GAME SHELF — {n} JOUABLE(S) →",
+  "home.ticketExpired": "TICKET EXPIRÉ — RENEW",
+  "home.firstPlay": "PREMIÈRE PARTIE",
+  "home.openSheet": "OUVRIR LA FICHE",
+  "home.cardPair": "+ CARTE / APPAIRER",
+
+  // shelf + preview
+  "shelf.selectTitle": "SÉLECTIONNEZ UN TITRE",
+  "shelf.gridView": "Vue grille",
+  "shelf.listView": "Vue liste",
+  "shelf.watchPlaceholder": "0x… votre adresse wallet",
+  "pv.ed": "ÉD. #{id}",
+  "pv.minted": "{m}/{s} MINTÉS",
+  "pv.playtime": "TEMPS DE JEU",
+  "pv.lastSession": "DERNIÈRE SESSION",
+  "pv.card": "CARTE",
+  "pv.notInserted": "NON INSÉRÉE",
+  "pv.fullSheet": "Fiche complète",
+  "pv.resell": "Revendre",
+  "pv.lend": "Prêter à un ami ↗",
+  "pv.lendTitle": "Le wallet signe dans le navigateur — comme l'achat",
+  "pv.lendDisabled": "Prêter à un ami",
+  "pv.lendDisabledTitle": "Possédez la licence pour la prêter",
+  "pv.tech": "▸ DONNÉES TECHNIQUES — CID · HASH · TICKET",
+  "pv.techHide": "REPLIER",
+  "pv.techShow": "AFFICHER",
+  "pv.noTicket": "aucun ticket sur carte",
+
+  // friends screen
+  "fr.title": "Amis & Prêts",
+  "fr.since": "AMIS DEPUIS LE {d}",
+  "fr.canLend": "PRÊT POSSIBLE",
+  "fr.lendIn": "PRÊT DANS {n} J",
+  "fr.none": "AUCUN AMI — AJOUTEZ-EN DEPUIS LE NAVIGATEUR.",
+  "fr.lentTo": "PRÊTÉE À {a}",
+  "fr.borrowedFrom": "EMPRUNTÉE À {a}",
+  "fr.atFriend": "CHEZ UN AMI",
+  "fr.yourTurn": "À VOUS DE JOUER",
+  "fr.noLoans": "AUCUN PRÊT EN COURS.",
+  "fr.meta": "{f} AMI(S) · {l} PRÊT(S) EN COURS",
+  "fr.metaNoAddr": " · SUIVEZ UNE ADRESSE (SHELF → FOLLOW)",
+  "fr.manage": "+ AJOUTER / GÉRER ↗",
+  "fr.myFriends": "MES AMIS",
+  "fr.loans": "PRÊTS EN COURS",
+  "fr.rule":
+    "La règle cartouche : prêter un jeu, c'est le donner pour de vrai — le prêteur perd l'accès pendant le prêt. Conditions : amis depuis 3 jours, 14 jours max, 24 h de repos entre deux prêts. L'amitié est gratuite (signature) ; le prêt se signe dans le navigateur.",
+
+  // actions (CTA + hints)
+  "act.pair": "INSERT · PAIR THIS MACHINE",
+  "act.renew": "RENEW LICENCE",
+  "act.fetch": "⬇ FETCH BUILD (IPFS)",
+  "act.write": "💾 WRITE TO CARD",
+  "act.buy": "BUY · {p} ETH ↗",
+  "hint.play": "Déchiffré en mémoire depuis la carte — la clé ne touche jamais le disque.",
+  "hint.pair": "Le propriétaire signe une fois — le ticket est scellé pour cette machine.",
+  "hint.renew": "Renouvellement en ligne : la propriété est revérifiée on-chain.",
+  "hint.fetch": "Build récupéré du serveur (miroir IPFS), hash vérifié contre le registre.",
+  "hint.write": "Licence #{id} possédée — écrivez-la sur une carte SD pour jouer.",
+  "hint.buy": "Le paiement s'ouvre dans le navigateur — là où vit votre wallet.",
+
+  // detail
+  "det.boxArt": "box art — éd. #{id}",
+  "det.blurb": "Une licence ERC-721 sur cartouche : jouable hors ligne, prêtable, revendable — royalties automatiques au studio.",
+  "det.notInserted": "NOT INSERTED",
+  "det.resold": "⛔ RESOLD ON-CHAIN — le nouveau propriétaire {a} doit appairer sa machine.",
+  "det.pricePlaceholder": "prix ETH",
+
+  // insert / reader
+  "ins.slot": "Insérez une carte pour commencer.",
+  "ins.slotSub": "Le lecteur détecte la carte, lit son bloc licence et vérifie la signature de la plateforme.",
+  "ins.choose": "Choisissez une carte à écrire.",
+  "ins.writing": "Écriture de votre carte licence.",
+  "ins.writeSub": "Le build chiffré arrive du serveur (miroir IPFS), vérifié contre le hash publié on-chain, puis gravé sur la carte.",
+  "ins.noCard": "AUCUNE CARTE AMOVIBLE — insérez une carte SD ou une clé USB.",
+  "ins.licenceNo": "LICENCE N°",
+  "ins.sigRequired": "Signature du propriétaire requise.",
+  "ins.sigSub": "La clé publique de CETTE machine est dans le QR — la signature du propriétaire autorise cet appareil et aucun autre.",
+  "ins.qrNote": "Scannez avec le téléphone du propriétaire — ou ouvrez la page sur ce PC.",
+  "ins.seated": "Carte en place. Lecture terminée.",
+  "ins.seatedSub": "Cette carte est prête — retournez à la fiche du jeu pour jouer ou l'appairer.",
+  "ins.gamePage": "FICHE DU JEU",
+  "ins.needTokenId": "Indiquez le n° de votre licence (affiché à l'achat).",
+  "ins.wrongEdition": "⛔ Le token #{id} est une licence de l'édition #{ed}{other}, pas de « {title} ».",
+  "ins.tokenMissing": "⛔ Token #{id} introuvable on-chain — achetez d'abord la licence.",
+  "dl.failed": "ÉCHEC : {e}",
+
+  // errors (fail screens)
+  "err.tryAgain": "Réessayer",
+  "err.home": "Retour à l'accueil",
+  "err.pairTimeoutT": "Appairage expiré",
+  "err.pairTimeoutM": "L'appairage a expiré — relancez depuis la fiche du jeu.",
+  "err.cardReadT": "Cette carte ne se lit pas.",
+  "err.badTicketM": "Le ticket reçu est invalide ou scellé pour un autre appareil.",
+  "err.scrambledM":
+    "Le bloc licence est revenu brouillé — le ticket n'est pas scellé pour cette machine, ou le build est corrompu. Re-téléchargez le build ou ré-appairez, puis réessayez.",
+  "err.cardWriteT": "Cette carte ne s'écrit pas.",
+  "err.movedT": "Licence déplacée on-chain.",
+  "err.movedM": "Cette licence a changé de main (revente ou prêt). Le nouveau détenteur doit appairer sa machine pour jouer.",
+  "err.resoldMidM": "La licence a changé de main pendant la partie — le processus a été terminé.",
+  "alert.badAddr": "Adresse invalide — 0x + 40 caractères hexadécimaux",
+  "alert.badPrice": "Prix invalide — exemple : 0.00002",
+
+  // settings
+  "set.title": "Paramètres",
+  "set.lang": "LANGUE",
+  "set.skin": "SKIN DU LAUNCHER",
+  "set.skin.midnight": "Midnight Drive",
+  "set.skin.midnightSub": "Bleu nuit, cyan & violet — le défaut AURA-64",
+  "set.skin.sunset": "Chrome Sunset",
+  "set.skin.sunsetSub": "Vaporwave : violet profond, néon magenta, horizon",
+  "set.skin.crt": "CRT Lounge",
+  "set.skin.crtSub": "Arcade feutrée : phosphore, ambre, scanlines",
+  "set.prefs": "PRÉFÉRENCES",
+  "set.sound": "Sons & effets",
+  "set.soundSub": "Insertion de carte, achat, ka-ching de revente…",
+  "set.volume": "Volume",
+  "set.motion": "Animations réduites",
+  "set.motionSub": "Coupe les flottements, reflets et clignotements",
+  "set.dev": "Mode développeur",
+  "set.devSub": "Affiche les données techniques (CID, hash, ticket)",
+  "set.on": "ACTIVÉ",
+  "set.off": "DÉSACTIVÉ",
+  "set.saved": "Enregistré sur cette machine.",
+  "set.about": "AURA-64 · GameVault launcher · Base Sepolia",
+} as const;
+
+type Key = keyof typeof FR;
+
+const EN: Record<Key, string> = {
+  "time.now": "JUST NOW",
+  "time.min": "{n} MIN AGO",
+  "time.h": "{n} H AGO",
+  "time.d": "{n} D AGO",
+  "dur.lt1": "< 1 MIN",
+  "ticket.days": "{n} D",
+  "ticket.expired": "EXPIRED",
+
+  "nav.home": "HOME",
+  "nav.shelf": "GAME SHELF",
+  "nav.friends": "FRIENDS",
+  "nav.settings": "Settings",
+  "top.store.title": "Opens the marketplace in your browser — where your wallet lives",
+
+  "boot.note": "Every check is real: keystore, card reader, Base Sepolia chain, ticket service.",
+
+  "home.titles": "{n} TITLES",
+  "home.attractSub": "THE CARD IS THE KEY — THE GAME BOOTS ON ITS OWN",
+  "home.browse": "BROWSE THE GAME SHELF — {n} PLAYABLE →",
+  "home.ticketExpired": "TICKET EXPIRED — RENEW",
+  "home.firstPlay": "FIRST SESSION",
+  "home.openSheet": "OPEN GAME PAGE",
+  "home.cardPair": "+ CARD / PAIR",
+
+  "shelf.selectTitle": "SELECT A TITLE",
+  "shelf.gridView": "Grid view",
+  "shelf.listView": "List view",
+  "shelf.watchPlaceholder": "0x… your wallet address",
+  "pv.ed": "ED. #{id}",
+  "pv.minted": "{m}/{s} MINTED",
+  "pv.playtime": "PLAY TIME",
+  "pv.lastSession": "LAST SESSION",
+  "pv.card": "CARD",
+  "pv.notInserted": "NOT INSERTED",
+  "pv.fullSheet": "Full game page",
+  "pv.resell": "Resell",
+  "pv.lend": "Lend to a friend ↗",
+  "pv.lendTitle": "Your wallet signs in the browser — like a purchase",
+  "pv.lendDisabled": "Lend to a friend",
+  "pv.lendDisabledTitle": "Own the licence to lend it",
+  "pv.tech": "▸ TECHNICAL DATA — CID · HASH · TICKET",
+  "pv.techHide": "HIDE",
+  "pv.techShow": "SHOW",
+  "pv.noTicket": "no ticket on card",
+
+  "fr.title": "Friends & Loans",
+  "fr.since": "FRIENDS SINCE {d}",
+  "fr.canLend": "CAN LEND",
+  "fr.lendIn": "LEND IN {n} D",
+  "fr.none": "NO FRIENDS YET — ADD SOME FROM THE BROWSER.",
+  "fr.lentTo": "LENT TO {a}",
+  "fr.borrowedFrom": "BORROWED FROM {a}",
+  "fr.atFriend": "AT A FRIEND'S",
+  "fr.yourTurn": "YOUR TURN TO PLAY",
+  "fr.noLoans": "NO ACTIVE LOANS.",
+  "fr.meta": "{f} FRIEND(S) · {l} ACTIVE LOAN(S)",
+  "fr.metaNoAddr": " · FOLLOW AN ADDRESS (SHELF → FOLLOW)",
+  "fr.manage": "+ ADD / MANAGE ↗",
+  "fr.myFriends": "MY FRIENDS",
+  "fr.loans": "ACTIVE LOANS",
+  "fr.rule":
+    "The cartridge rule: lending a game means really handing it over — the lender loses access during the loan. Conditions: friends for 3 days, 14 days max, 24 h rest between two loans. Friendship is free (a signature); the loan is signed in the browser.",
+
+  "act.pair": "INSERT · PAIR THIS MACHINE",
+  "act.renew": "RENEW LICENCE",
+  "act.fetch": "⬇ FETCH BUILD (IPFS)",
+  "act.write": "💾 WRITE TO CARD",
+  "act.buy": "BUY · {p} ETH ↗",
+  "hint.play": "Decrypted in memory from the card — the key never touches the disk.",
+  "hint.pair": "The owner signs once — the ticket is sealed to this machine.",
+  "hint.renew": "Online renewal: ownership is re-checked on-chain.",
+  "hint.fetch": "Build fetched from the server (IPFS mirror), hash checked against the registry.",
+  "hint.write": "You own licence #{id} — write it to an SD card to play.",
+  "hint.buy": "Payment opens in your browser — where your wallet lives.",
+
+  "det.boxArt": "box art — ed. #{id}",
+  "det.blurb": "An ERC-721 licence on a cartridge: playable offline, lendable, resellable — automatic royalties to the studio.",
+  "det.notInserted": "NOT INSERTED",
+  "det.resold": "⛔ RESOLD ON-CHAIN — the new owner {a} must pair their machine.",
+  "det.pricePlaceholder": "price ETH",
+
+  "ins.slot": "Slot a card to begin.",
+  "ins.slotSub": "The reader detects the card, reads its licence block and verifies the platform signature.",
+  "ins.choose": "Choose a card to write.",
+  "ins.writing": "Writing your licence card.",
+  "ins.writeSub": "The encrypted build comes from the server (IPFS mirror), is checked against the on-chain hash, then burned to the card.",
+  "ins.noCard": "NO REMOVABLE CARD — insert an SD card or a USB drive.",
+  "ins.licenceNo": "LICENCE #",
+  "ins.sigRequired": "Owner signature required.",
+  "ins.sigSub": "THIS machine's public key is in the QR — the owner's signature authorizes this device and no other.",
+  "ins.qrNote": "Scan with the owner's phone — or open the page on this PC.",
+  "ins.seated": "Card seated. Read complete.",
+  "ins.seatedSub": "This card is ready — go back to the game page to play or pair it.",
+  "ins.gamePage": "GAME PAGE",
+  "ins.needTokenId": "Enter your licence number (shown at purchase).",
+  "ins.wrongEdition": "⛔ Token #{id} is a licence of edition #{ed}{other}, not « {title} ».",
+  "ins.tokenMissing": "⛔ Token #{id} not found on-chain — buy the licence first.",
+  "dl.failed": "FAILED: {e}",
+
+  "err.tryAgain": "Try Again",
+  "err.home": "Back Home",
+  "err.pairTimeoutT": "Pairing timed out",
+  "err.pairTimeoutM": "Pairing expired — start again from the game page.",
+  "err.cardReadT": "This card won't read.",
+  "err.badTicketM": "The ticket received is invalid or sealed to another device.",
+  "err.scrambledM":
+    "The licence block came back scrambled — the ticket isn't sealed to this machine, or the build is corrupt. Re-download the build or re-pair, then try again.",
+  "err.cardWriteT": "This card won't write.",
+  "err.movedT": "Licence moved on-chain.",
+  "err.movedM": "This licence changed hands (resale or loan). The new holder must pair their machine to play.",
+  "err.resoldMidM": "The licence changed hands during the session — the process was terminated.",
+  "alert.badAddr": "Invalid address — 0x + 40 hex characters",
+  "alert.badPrice": "Invalid price — e.g. 0.00002",
+
+  "set.title": "Settings",
+  "set.lang": "LANGUAGE",
+  "set.skin": "LAUNCHER SKIN",
+  "set.skin.midnight": "Midnight Drive",
+  "set.skin.midnightSub": "Midnight blue, cyan & violet — the AURA-64 default",
+  "set.skin.sunset": "Chrome Sunset",
+  "set.skin.sunsetSub": "Vaporwave: deep violet, magenta neon, horizon",
+  "set.skin.crt": "CRT Lounge",
+  "set.skin.crtSub": "Mellow arcade: phosphor, amber, scanlines",
+  "set.prefs": "PREFERENCES",
+  "set.sound": "Sounds & effects",
+  "set.soundSub": "Card insertion, purchase, resale ka-ching…",
+  "set.volume": "Volume",
+  "set.motion": "Reduced motion",
+  "set.motionSub": "Stops floating, sheens and blinking",
+  "set.dev": "Developer mode",
+  "set.devSub": "Shows technical data (CID, hash, ticket)",
+  "set.on": "ON",
+  "set.off": "OFF",
+  "set.saved": "Saved on this machine.",
+  "set.about": "AURA-64 · GameVault launcher · Base Sepolia",
+};
+
+const DICTS: Record<Lang, Record<Key, string>> = { fr: FR, en: EN };
+
+function initialLang(): Lang {
+  try {
+    const saved = localStorage.getItem("gv-lang");
+    if (saved === "fr" || saved === "en") return saved;
+  } catch {
+    /* storage blocked */
+  }
+  return navigator.language.toLowerCase().startsWith("fr") ? "fr" : "en";
+}
+
+let current: Lang = initialLang();
+
+export const getLang = (): Lang => current;
+
+export function setLang(l: Lang): void {
+  current = l;
+  document.documentElement.lang = l;
+  try {
+    localStorage.setItem("gv-lang", l);
+  } catch {
+    /* storage blocked */
+  }
+}
+
+/** Locale for dates (toLocaleDateString). */
+export const locale = (): string => (current === "fr" ? "fr-FR" : "en-GB");
+
+export function t(key: Key, vars?: Record<string, string | number>): string {
+  let s = DICTS[current][key];
+  if (vars) for (const [k, v] of Object.entries(vars)) s = s.split(`{${k}}`).join(String(v));
+  return s;
+}

@@ -63,6 +63,92 @@ button { font-family: inherit; }
   padding: 3px 8px; border-radius: 999px; border: 1px solid var(--cyan-soft); background: oklch(0.7 0.1 200 / 0.1);
 }
 .toprow-right { display: flex; align-items: center; gap: 9px; }
+/* ── Skins (Paramètres) — Midnight Drive = :root par défaut ─── */
+[data-skin="sunset"] {
+  --bg: #0b0614;
+  --panel-hi: oklch(0.15 0.06 300);
+  --panel-lo: oklch(0.1 0.05 295);
+  --cyan: oklch(0.8 0.1 200);
+  --violet: oklch(0.72 0.19 340);
+  --line: rgba(255,200,235,0.2);
+  --line-soft: rgba(255,190,230,0.12);
+}
+[data-skin="sunset"] .console::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 62px; height: 220px; pointer-events: none; z-index: 1;
+  background:
+    repeating-linear-gradient(90deg, oklch(0.72 0.19 340 / 0.22) 0 1px, transparent 1px 72px),
+    repeating-linear-gradient(180deg, oklch(0.72 0.19 340 / 0.18) 0 1px, transparent 1px 34px);
+  transform: perspective(380px) rotateX(58deg); transform-origin: 50% 100%;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 70%); mask-image: linear-gradient(180deg, transparent, #000 70%);
+  opacity: 0.55;
+}
+[data-skin="sunset"] .topbar, [data-skin="sunset"] .bottombar { border-color: oklch(0.72 0.19 340 / 0.25); }
+
+[data-skin="crt"] {
+  --bg: #04060a;
+  --panel-hi: oklch(0.12 0.015 250);
+  --panel-lo: oklch(0.08 0.01 250);
+  --cyan: oklch(0.85 0.12 190);
+  --violet: oklch(0.8 0.13 75);
+  --ok: oklch(0.85 0.15 150);
+}
+[data-skin="crt"] .console::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 60;
+  background: repeating-linear-gradient(180deg, rgba(255,255,255,0.035) 0 1px, transparent 1px 3px);
+  box-shadow: inset 0 0 120px rgba(0,0,0,0.65);
+}
+[data-skin="crt"] .logo-text, [data-skin="crt"] .bar-clock { text-shadow: 0 0 10px oklch(0.85 0.12 190 / 0.6); }
+
+/* Animations réduites (Paramètres) */
+.reduced-motion *, .reduced-motion *::before, .reduced-motion *::after {
+  animation-duration: 0.001s !important; animation-iteration-count: 1 !important; transition-duration: 0.001s !important;
+}
+
+/* Bouton paramètres (engrenage) */
+.gearbtn {
+  cursor: pointer; width: 32px; height: 32px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); background: rgba(226,240,255,0.05); color: var(--sub); transition: all 0.15s;
+}
+.gearbtn:hover { color: var(--ink); background: rgba(226,240,255,0.14); }
+.gearbtn.active { color: #0a1020; background: linear-gradient(180deg, #f2f8ff, oklch(0.84 0.07 205)); border-color: rgba(255,255,255,0.5); }
+
+/* Écran Paramètres */
+.settings-wrap { flex: 1; overflow: auto; padding: 22px 40px 32px; display: flex; flex-direction: column; gap: 16px; max-width: 880px; width: 100%; margin: 0 auto; }
+.set-card {
+  border-radius: 18px; border: 1px solid rgba(220,238,255,0.22); padding: 18px 20px; display: flex; flex-direction: column; gap: 14px;
+  background: rgba(16,22,40,0.5); backdrop-filter: blur(10px); box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset;
+}
+.seg { display: flex; gap: 6px; }
+.seg-btn {
+  cursor: pointer; padding: 10px 20px; border-radius: 999px; border: 1px solid var(--line);
+  background: transparent; color: var(--sub); font-family: var(--sans); font-size: 14px; transition: all 0.15s;
+}
+.seg-btn:hover { color: var(--ink); }
+.seg-btn.on { color: #0a1020; font-weight: 600; border-color: rgba(255,255,255,0.5); background: linear-gradient(180deg, #f2f8ff, oklch(0.84 0.07 205)); }
+.skin-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.skin-tile {
+  cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: 7px; padding: 12px;
+  border-radius: 14px; border: 1px solid rgba(220,238,255,0.16); background: rgba(5,6,13,0.4); color: var(--ink); font-family: var(--sans);
+  transition: all 0.15s;
+}
+.skin-tile:hover { border-color: rgba(220,238,255,0.4); }
+.skin-tile.on { border-color: transparent; animation: focusBreath 2.6s ease-in-out infinite; }
+.skin-swatch { display: block; height: 52px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.18); }
+.skin-name { font-size: 14.5px; font-weight: 600; }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.set-row.dim { opacity: 0.45; }
+.set-label { font-size: 14px; font-weight: 600; }
+.set-sub { margin-top: 2px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em; color: var(--dim); }
+.set-toggle {
+  cursor: pointer; flex: none; position: relative; display: flex; align-items: center; gap: 10px; padding: 5px 12px 5px 5px;
+  border-radius: 999px; border: 1px solid var(--line); background: rgba(5,6,13,0.5); color: var(--dim);
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.16em; transition: all 0.15s;
+}
+.set-toggle .knob { width: 20px; height: 20px; border-radius: 999px; background: rgba(220,235,255,0.3); transition: all 0.2s; }
+.set-toggle.on { color: var(--ok); border-color: oklch(0.8 0.14 160 / 0.45); }
+.set-toggle.on .knob { background: var(--ok); box-shadow: 0 0 10px oklch(0.8 0.14 160 / 0.7); }
+#set-volume { width: 220px; accent-color: oklch(0.8 0.1 200); }
+
 /* Nav console au centre de la topbar */
 .topnav { position: absolute; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; }
 .navbtn {

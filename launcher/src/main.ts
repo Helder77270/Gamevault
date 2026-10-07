@@ -12,6 +12,7 @@ import { fetchOnchainCatalog, BLURBS, type OnchainEdition } from "@gamevault/sha
 import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
 import { fetchBuild, GATEWAYS } from "@gamevault/shared/storage";
 import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
+import { getLang, locale, setLang, t, type Lang } from "./i18n";
 
 const MARKETPLACE_URL = "http://localhost:3000";
 const TICKETD_URL = "http://localhost:8787";
@@ -56,7 +57,49 @@ interface Pairing {
   error?: string;
 }
 
-type Screen = "boot" | "home" | "shelf" | "detail" | "insert" | "friends" | "error";
+type Screen = "boot" | "home" | "shelf" | "detail" | "insert" | "friends" | "settings" | "error";
+
+// ── Settings (per machine, localStorage) ─────────────────────
+type Skin = "midnight" | "sunset" | "crt";
+interface Settings {
+  skin: Skin;
+  sound: boolean;
+  volume: number; // 0..1
+  reducedMotion: boolean;
+  dev: boolean;
+}
+
+const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true };
+
+function loadSettings(): Settings {
+  try {
+    const raw = JSON.parse(localStorage.getItem("gv-settings") ?? "{}") as Partial<Settings>;
+    const s = { ...SETTINGS_DEFAULT, ...raw };
+    if (!["midnight", "sunset", "crt"].includes(s.skin)) s.skin = "midnight";
+    s.volume = Math.min(1, Math.max(0, Number(s.volume) || 0));
+    return s;
+  } catch {
+    return { ...SETTINGS_DEFAULT };
+  }
+}
+
+const settings: Settings = loadSettings();
+
+function applySettings(): void {
+  const root = document.documentElement;
+  root.dataset.skin = settings.skin;
+  root.classList.toggle("reduced-motion", settings.reducedMotion);
+  root.lang = getLang();
+}
+
+function saveSettings(): void {
+  try {
+    localStorage.setItem("gv-settings", JSON.stringify(settings));
+  } catch {
+    /* storage blocked — settings live for this session only */
+  }
+  applySettings();
+}
 
 interface BootLine {
   label: string;
@@ -166,17 +209,17 @@ function recentPlays(): { e: OnchainEdition; log: PlayLogEntry }[] {
 }
 
 function fmtDur(s: number): string {
-  if (s < 60) return "< 1 MIN";
+  if (s < 60) return t("dur.lt1");
   if (s < 3600) return `${Math.round(s / 60)} MIN`;
   return `${Math.floor(s / 3600)} H ${String(Math.round((s % 3600) / 60)).padStart(2, "0")}`;
 }
 
 function fmtAgo(ts: number): string {
   const d = Date.now() - ts;
-  if (d < 60_000) return "À L'INSTANT";
-  if (d < 3_600_000) return `IL Y A ${Math.round(d / 60_000)} MIN`;
-  if (d < 86_400_000) return `IL Y A ${Math.round(d / 3_600_000)} H`;
-  return `IL Y A ${Math.round(d / 86_400_000)} J`;
+  if (d < 60_000) return t("time.now");
+  if (d < 3_600_000) return t("time.min", { n: Math.round(d / 60_000) });
+  if (d < 86_400_000) return t("time.h", { n: Math.round(d / 3_600_000) });
+  return t("time.d", { n: Math.round(d / 86_400_000) });
 }
 
 // ── Verification ──────────────────────────────────────────────
@@ -354,7 +397,7 @@ async function startPairing(g: Game): Promise<void> {
     if (Date.now() - startedAt > 10 * 60 * 1000) {
       stopPolling();
       state.pairing = null;
-      fail("Pairing timed out", "L'appairage a expiré — relancez depuis la fiche du jeu.", "ERR 0x31 · PAIRING TIMEOUT", "detail");
+      fail(t("err.pairTimeoutT"), t("err.pairTimeoutM"), "ERR 0x31 · PAIRING TIMEOUT", "detail");
       return;
     }
     try {
@@ -377,12 +420,7 @@ async function completePairing(g: Game, ticket: SignedTicket): Promise<void> {
   stopPolling();
   if (!verifyPlatformSig(ticket) || ticket.devicePubKey.toLowerCase() !== state.devicePubKey.toLowerCase()) {
     state.pairing = null;
-    fail(
-      "This card won't read.",
-      "Le ticket reçu est invalide ou scellé pour un autre appareil.",
-      "ERR 0x21 · LICENCE CHECKSUM MISMATCH · SLOT A",
-      "detail",
-    );
+    fail(t("err.cardReadT"), t("err.badTicketM"), "ERR 0x21 · LICENCE CHECKSUM MISMATCH · SLOT A", "detail");
     return;
   }
   await invoke("write_ticket", { mountPoint: g.cartridge.mount_point, ticketJson: JSON.stringify(ticket, null, 2) });
@@ -422,7 +460,7 @@ async function downloadBuild(g: Game): Promise<void> {
     await invoke("write_build", { mountPoint: mount, dataB64: btoa(bin) });
     delete state.dlStatus[mount];
   } catch (e) {
-    state.dlStatus[mount] = `ÉCHEC : ${String(e)}`;
+    state.dlStatus[mount] = t("dl.failed", { e: String(e) });
   }
   await refresh();
 }
@@ -441,7 +479,7 @@ async function installTo(volume: Volume): Promise<void> {
   const tokenId = (document.getElementById("install-token") as HTMLInputElement | null)?.value.trim() ?? inst.tokenId;
   inst.tokenId = tokenId;
   if (!/^\d+$/.test(tokenId)) {
-    inst.status = "Indiquez le n° de votre licence (affiché à l'achat).";
+    inst.status = t("ins.needTokenId");
     return render();
   }
   if (chainClient && DEPLOYMENTS.gameLicense) {
@@ -454,11 +492,11 @@ async function installTo(volume: Volume): Promise<void> {
       });
       if (ed.toString() !== inst.edition.editionId) {
         const other = state.catalog.find((c) => c.editionId === ed.toString());
-        inst.status = `⛔ Le token #${tokenId} est une licence de l'édition #${ed}${other ? ` (« ${other.title} »)` : ""}, pas de « ${inst.edition.title} ».`;
+        inst.status = t("ins.wrongEdition", { id: tokenId, ed: ed.toString(), other: other ? ` (« ${other.title} »)` : "", title: inst.edition.title });
         return render();
       }
     } catch {
-      inst.status = `⛔ Token #${tokenId} introuvable on-chain — achetez d'abord la licence.`;
+      inst.status = t("ins.tokenMissing", { id: tokenId });
       return render();
     }
   }
@@ -499,7 +537,7 @@ async function installTo(volume: Volume): Promise<void> {
     else render();
   } catch (e) {
     state.installing = null;
-    fail("This card won't write.", String(e), "ERR 0x42 · CARD WRITE FAILED", "detail");
+    fail(t("err.cardWriteT"), String(e), "ERR 0x42 · CARD WRITE FAILED", "detail");
   }
 }
 
@@ -575,12 +613,7 @@ async function play(g: Game): Promise<void> {
         state.ownerCheck = "REVOKED";
         launchHide();
         chimeCash(); // la vente a payé — c'est le son du cash
-        fail(
-          "Licence moved on-chain.",
-          "Cette licence a changé de propriétaire. Le nouveau propriétaire doit appairer sa machine pour jouer.",
-          "ERR 0x51 · OWNERSHIP MOVED ON-CHAIN",
-          "detail",
-        );
+        fail(t("err.movedT"), t("err.movedM"), "ERR 0x51 · OWNERSHIP MOVED ON-CHAIN", "detail");
         return;
       }
       state.ownerCheck = check === "ok" ? "OWNER ✔ LIVE" : "OFFLINE · 30D WINDOW";
@@ -598,10 +631,8 @@ async function play(g: Game): Promise<void> {
       const msg = String(e);
       launchHide();
       fail(
-        "This card won't read.",
-        msg.includes("clé d'appareil") || msg.includes("authentication")
-          ? "Le bloc licence est revenu brouillé — le ticket n'est pas scellé pour cette machine, ou le build est corrompu. Re-téléchargez le build ou ré-appairez, puis réessayez."
-          : msg,
+        t("err.cardReadT"),
+        msg.includes("clé d'appareil") || msg.includes("authentication") ? t("err.scrambledM") : msg,
         `ERR 0x21 · ${msg.slice(0, 60)}`,
         "detail",
       );
@@ -634,19 +665,14 @@ let nativeWatchdog: number | undefined;
 function startNativeWatchdog(): void {
   stopNativeWatchdog();
   nativeWatchdog = window.setInterval(async () => {
-    const t = state.nativeRun?.g?.ticket;
-    if (!t) return;
-    if ((await checkOwnerOnline(t)) === "revoked") {
+    const ticket = state.nativeRun?.g?.ticket;
+    if (!ticket) return;
+    if ((await checkOwnerOnline(ticket)) === "revoked") {
       stopNativeWatchdog();
       await invoke("stop_game"); // kills the child, cleans the run dir
       state.nativeRun = null;
       chimeCash();
-      fail(
-        "Licence moved on-chain.",
-        "La licence a été revendue pendant la partie — le processus a été terminé. Le nouveau propriétaire doit appairer sa machine.",
-        "ERR 0x52 · RESOLD MID-SESSION · PROCESS TERMINATED",
-        "detail",
-      );
+      fail(t("err.movedT"), t("err.resoldMidM"), "ERR 0x52 · RESOLD MID-SESSION · PROCESS TERMINATED", "detail");
     }
   }, NATIVE_OWNER_CHECK_MS);
 }
@@ -694,6 +720,8 @@ async function quit(): Promise<void> {
 let audio: AudioContext | null = null;
 
 function beep(freqs: number[], dur = 0.09, vol = 0.16, wave: OscillatorType = "sine"): void {
+  if (!settings.sound || settings.volume <= 0) return;
+  vol *= settings.volume;
   try {
     audio ??= new AudioContext();
     void audio.resume();
@@ -722,10 +750,12 @@ const chimeLaunch = (): void => beep([523, 659, 880], 0.12);
 
 /** Carte SD qui s'insère : clic mécanique + petite montée en rotation. */
 function sfxInsert(): void {
+  if (!settings.sound || settings.volume <= 0) return;
   try {
     audio ??= new AudioContext();
     void audio.resume();
-    const t = audio.currentTime;
+    const t0 = audio.currentTime;
+    const v = settings.volume;
     // clic : bouffée de bruit filtrée
     const buf = audio.createBuffer(1, 2205, 44100);
     const d = buf.getChannelData(0);
@@ -736,21 +766,21 @@ function sfxInsert(): void {
     bp.type = "bandpass";
     bp.frequency.value = 2600;
     const g = audio.createGain();
-    g.gain.value = 0.5;
+    g.gain.value = 0.5 * v;
     src.connect(bp).connect(g).connect(audio.destination);
-    src.start(t);
+    src.start(t0);
     // whir : le lecteur prend ses tours
     const o = audio.createOscillator();
     o.type = "triangle";
-    o.frequency.setValueAtTime(90, t + 0.07);
-    o.frequency.exponentialRampToValueAtTime(360, t + 0.5);
+    o.frequency.setValueAtTime(90, t0 + 0.07);
+    o.frequency.exponentialRampToValueAtTime(360, t0 + 0.5);
     const og = audio.createGain();
-    og.gain.setValueAtTime(0.0001, t + 0.07);
-    og.gain.exponentialRampToValueAtTime(0.11, t + 0.14);
-    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.58);
+    og.gain.setValueAtTime(0.0001, t0 + 0.07);
+    og.gain.exponentialRampToValueAtTime(Math.max(0.0002, 0.11 * v), t0 + 0.14);
+    og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.58);
     o.connect(og).connect(audio.destination);
-    o.start(t + 0.07);
-    o.stop(t + 0.62);
+    o.start(t0 + 0.07);
+    o.stop(t0 + 0.62);
   } catch {
     /* autoplay policy */
   }
@@ -868,7 +898,7 @@ function bootView(): string {
             )
             .join("")}
         </div>
-        <div class="boot-note">Chaque contrôle est réel : keystore, lecteur de cartes, chaîne Base Sepolia, service de tickets.</div>
+        <div class="boot-note">${esc(t("boot.note"))}</div>
         <button class="pillbtn" id="skip-boot" style="margin-top:8px">SKIP &#8250;</button>
       </div>
     </div>`;
@@ -935,7 +965,7 @@ function homeBg(): string {
 function ticketDaysLeft(g: Game | undefined): string {
   if (!g?.ticket) return "—";
   const d = Math.ceil((g.ticket.expiresAt * 1000 - Date.now()) / 86_400_000);
-  return d > 0 ? `${d} J` : "EXPIRÉ";
+  return d > 0 ? t("ticket.days", { n: d }) : t("ticket.expired");
 }
 
 function homeView(): string {
@@ -944,7 +974,7 @@ function homeView(): string {
   const mm = String(now.getMinutes()).padStart(2, "0");
   const ss = String(now.getSeconds()).padStart(2, "0");
   const date = now
-    .toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "short" })
+    .toLocaleDateString(locale(), { weekday: "short", day: "2-digit", month: "short" })
     .toUpperCase();
   const addr = libraryAddress();
   const playable = state.catalog.filter(playableNow).length;
@@ -966,7 +996,7 @@ function homeView(): string {
       <button class="home-store" id="home-store">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6h15l-1.5 9h-12z"></path><path d="M6 6 5 3H2"></path><circle cx="9" cy="20" r="1.6"></circle><circle cx="18" cy="20" r="1.6"></circle></svg>
         STORE
-        <span class="hs-count">${state.catalog.length} TITRES</span>
+        <span class="hs-count">${t("home.titles", { n: state.catalog.length })}</span>
       </button>
     </div>`;
 
@@ -1004,10 +1034,10 @@ function homeView(): string {
             </span>
             <span>
               <span class="atk-line">INSERT SD CARD TO PLAY</span>
-              <span class="atk-sub">LA CARTE EST LA CLÉ — LE JEU DÉMARRE TOUT SEUL</span>
+              <span class="atk-sub">${t("home.attractSub")}</span>
             </span>
           </button>
-          <button class="pillbtn dashed" data-go="shelf">PARCOURIR LE GAME SHELF — ${playable} JOUABLE${playable > 1 ? "S" : ""} →</button>
+          <button class="pillbtn dashed" data-go="shelf">${t("home.browse", { n: playable })}</button>
         </div>
         ${recentRow}
       </div>`;
@@ -1023,13 +1053,13 @@ function homeView(): string {
     : seated.verdict === "unpaired" || !isOurs(seated)
       ? { label: "PAIR THIS MACHINE", cls: "warn" }
       : seated.verdict === "expired"
-        ? { label: "TICKET EXPIRÉ — RENEW", cls: "warn" }
+        ? { label: t("home.ticketExpired"), cls: "warn" }
         : !seated.cartridge.has_build
           ? { label: "NO BUILD — FETCH IPFS", cls: "warn" }
           : { label: seated.verdict.toUpperCase(), cls: "warn" };
   const stats = log
     ? `▶ ×${log.playCount} · ${fmtDur(log.totalSeconds)} · <span data-ago data-ts="${log.lastPlayedAt}">${fmtAgo(log.lastPlayedAt)}</span>`
-    : "PREMIÈRE PARTIE";
+    : t("home.firstPlay");
 
   return `
     ${homeBg()}
@@ -1038,13 +1068,13 @@ function homeView(): string {
       <div class="heroB">
         <button class="home-hero" id="home-hero" style="${artFor(ed?.editionId ?? "1")}">
           <span class="sheen"></span>
-          <span class="hh-kicker">${can ? "CONTINUE" : "INSERTED"} · ÉD. #${esc(ed?.editionId ?? "?")}${seated.ticket ? ` · LICENCE #${esc(seated.ticket.tokenId)}` : ""}</span>
+          <span class="hh-kicker">${can ? "CONTINUE" : "INSERTED"} · ${t("pv.ed", { id: esc(ed?.editionId ?? "?") })}${seated.ticket ? ` · LICENCE #${esc(seated.ticket.tokenId)}` : ""}</span>
           <span class="hh-bottom">
             <span style="min-width:0">
               <span class="hh-title">${esc(title)}</span>
               <span class="hh-stats">${stats}</span>
             </span>
-            <span class="hh-play ${can ? "" : "ghost"}">${can ? "▶ PLAY" : "OUVRIR LA FICHE"}</span>
+            <span class="hh-play ${can ? "" : "ghost"}">${can ? "▶ PLAY" : t("home.openSheet")}</span>
           </span>
         </button>
         <div class="card-widget">
@@ -1062,7 +1092,7 @@ function homeView(): string {
           </div>
           <div class="cw-pills">
             <button class="pillbtn" data-go="shelf">GAME SHELF · ${playable}/${state.catalog.length}</button>
-            <button class="pillbtn violet" id="home-insert">+ CARTE / APPAIRER</button>
+            <button class="pillbtn violet" id="home-insert">${t("home.cardPair")}</button>
           </div>
         </div>
       </div>
@@ -1091,43 +1121,47 @@ function previewPane(e: OnchainEdition): string {
   return `
     <div class="shelf-preview">
       <div class="pv-banner" style="${artFor(e.editionId)}">
-        <div class="pv-note">ÉD. #${esc(e.editionId)} · ${esc(e.studio.toUpperCase())}</div>
+        <div class="pv-note">${t("pv.ed", { id: esc(e.editionId) })} · ${esc(e.studio.toUpperCase())}</div>
         <div class="pv-foot">
           <div class="pv-title">${esc(e.title)}</div>
-          <div class="pv-kick">${g?.ticket ? `LICENCE #${esc(g.ticket.tokenId)} · ` : ownedTok.length ? `LICENCE #${esc(ownedTok[0].tokenId)} · ` : ""}${e.minted}/${e.supply} MINTÉS · ROYALTIES ${e.royaltyBps / 100}%</div>
+          <div class="pv-kick">${g?.ticket ? `LICENCE #${esc(g.ticket.tokenId)} · ` : ownedTok.length ? `LICENCE #${esc(ownedTok[0].tokenId)} · ` : ""}${t("pv.minted", { m: e.minted, s: e.supply })} · ROYALTIES ${e.royaltyBps / 100}%</div>
         </div>
       </div>
       <div class="pv-body">
         <div class="pv-stats">
-          <div class="pv-stat"><div class="k">TEMPS DE JEU</div><div class="v">${log ? fmtDur(log.totalSeconds) : "—"}</div></div>
-          <div class="pv-stat"><div class="k">DERNIÈRE SESSION</div><div class="v">${log ? `<span data-ago data-ts="${log.lastPlayedAt}">${fmtAgo(log.lastPlayedAt)}</span>` : "—"}</div></div>
-          <div class="pv-stat"><div class="k">CARTE</div><div class="v ${g ? "on" : ""}">${g ? `${esc(g.cartridge.mount_point)} · ${g.verdict.toUpperCase()}` : "NON INSÉRÉE"}</div></div>
+          <div class="pv-stat"><div class="k">${t("pv.playtime")}</div><div class="v">${log ? fmtDur(log.totalSeconds) : "—"}</div></div>
+          <div class="pv-stat"><div class="k">${t("pv.lastSession")}</div><div class="v">${log ? `<span data-ago data-ts="${log.lastPlayedAt}">${fmtAgo(log.lastPlayedAt)}</span>` : "—"}</div></div>
+          <div class="pv-stat"><div class="k">${t("pv.card")}</div><div class="v ${g ? "on" : ""}">${g ? `${esc(g.cartridge.mount_point)} · ${g.verdict.toUpperCase()}` : t("pv.notInserted")}</div></div>
           <div class="pv-stat"><div class="k">TICKET</div><div class="v">${ticketDaysLeft(g)}</div></div>
         </div>
         <div class="pv-main">
           <div class="glass-menu">
             ${action}
-            <button class="gm-item" data-edition="${esc(e.editionId)}">Fiche complète</button>
+            <button class="gm-item" data-edition="${esc(e.editionId)}">${t("pv.fullSheet")}</button>
             ${
               g?.ticket && isOurs(g) && g.verdict === "authentic"
-                ? `<button class="gm-item violet" data-gosell="${esc(g.ticket.tokenId)}" data-goedition="${esc(e.editionId)}">Revendre</button>`
+                ? `<button class="gm-item violet" data-gosell="${esc(g.ticket.tokenId)}" data-goedition="${esc(e.editionId)}">${t("pv.resell")}</button>`
                 : ""
             }
             ${
               (g?.ticket && isOurs(g)) || ownedTok.length
-                ? `<button class="gm-item" data-lendfriend="1" title="Le wallet signe dans le navigateur — comme l'achat">Prêter à un ami ↗</button>`
-                : `<button class="gm-item" disabled title="Possédez la licence pour la prêter">Prêter à un ami</button>`
+                ? `<button class="gm-item" data-lendfriend="1" title="${esc(t("pv.lendTitle"))}">${t("pv.lend")}</button>`
+                : `<button class="gm-item" disabled title="${esc(t("pv.lendDisabledTitle"))}">${t("pv.lendDisabled")}</button>`
             }
           </div>
           <div class="pv-hint">${esc(hint)}</div>
         </div>
-        <details class="tech-acc" id="tech-acc" ${state.techOpen ? "open" : ""}>
-          <summary><span>▸ DONNÉES TECHNIQUES — CID · HASH · TICKET</span><span>${state.techOpen ? "REPLIER" : "AFFICHER"}</span></summary>
-          <div class="debug">éd. #${esc(e.editionId)} · jeu #${esc(e.gameId)} · studio #${esc(e.studioId)} · chain ${CHAIN.id}<br>
+        ${
+          settings.dev
+            ? `<details class="tech-acc" id="tech-acc" ${state.techOpen ? "open" : ""}>
+          <summary><span>${t("pv.tech")}</span><span>${state.techOpen ? t("pv.techHide") : t("pv.techShow")}</span></summary>
+          <div class="debug">ed. #${esc(e.editionId)} · game #${esc(e.gameId)} · studio #${esc(e.studioId)} · chain ${CHAIN.id}<br>
             cid ${esc(e.buildCid)}<br>
-            ${g?.ticket ? `ticket #${esc(g.ticket.tokenId)} · owner ${esc(short(g.ticket.ownerAddress, 8))} · expire ${new Date(g.ticket.expiresAt * 1000).toLocaleString()}` : "aucun ticket sur carte"}
+            ${g?.ticket ? `ticket #${esc(g.ticket.tokenId)} · owner ${esc(short(g.ticket.ownerAddress, 8))} · exp ${new Date(g.ticket.expiresAt * 1000).toLocaleString(locale())}` : t("pv.noTicket")}
           </div>
-        </details>
+        </details>`
+            : ""
+        }
       </div>
     </div>`;
 }
@@ -1153,7 +1187,7 @@ function shelfView(): string {
                     return `
               <button class="gamecard" data-edition="${esc(e.editionId)}">
                 <div class="art ${can || ownedTok.length || g ? "" : "locked"}" style="${artFor(e.editionId)}">
-                  <div class="artnote">éd. #${esc(e.editionId)} · ${esc(e.studio)}</div>
+                  <div class="artnote">${t("pv.ed", { id: esc(e.editionId) })} · ${esc(e.studio)}</div>
                   <div class="lockdot">${can ? "🟢" : ownedTok.length || g ? "🟡" : "🔒"}</div>
                 </div>
                 <div class="gtitle">${esc(e.title)}</div>
@@ -1183,7 +1217,7 @@ function shelfView(): string {
               <div class="lr-art" style="${artFor(e.editionId)}"></div>
               <div style="min-width:0">
                 <div class="lr-title">${esc(e.title)}</div>
-                <div class="lr-meta">${esc(e.studio.toUpperCase())} · ÉD. #${esc(e.editionId)}</div>
+                <div class="lr-meta">${esc(e.studio.toUpperCase())} · ${t("pv.ed", { id: esc(e.editionId) })}</div>
               </div>
               <div class="lr-right">
                 <span class="lr-chip ${st.cls}">${esc(st.label)}</span>
@@ -1195,7 +1229,7 @@ function shelfView(): string {
               : `<div class="slot-dim">${DEPLOYMENTS.gameRegistry ? "READING CHAIN…" : "NO CONTRACTS DEPLOYED"}</div>`
           }
         </div>
-        ${selEd ? previewPane(selEd) : `<div class="shelf-preview"><div class="pv-body"><span class="slot-dim">SÉLECTIONNEZ UN TITRE</span></div></div>`}
+        ${selEd ? previewPane(selEd) : `<div class="shelf-preview"><div class="pv-body"><span class="slot-dim">${t("shelf.selectTitle")}</span></div></div>`}
       </div>`;
 
   return `
@@ -1212,8 +1246,8 @@ function shelfView(): string {
           <button class="pillbtn ${state.filter === "all" ? "active" : ""}" id="filt-all">ALL</button>
           <button class="pillbtn ${state.filter === "play" ? "active" : ""}" id="filt-play">PLAYABLE</button>
           <div class="view-toggle">
-            <button id="view-grid" class="${isList ? "" : "active"}" aria-label="Vue grille"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5"></rect><rect x="3" y="13" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg></button>
-            <button id="view-list" class="${isList ? "active" : ""}" aria-label="Vue liste"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="4" width="18" height="3.4" rx="1.4"></rect><rect x="3" y="10.3" width="18" height="3.4" rx="1.4"></rect><rect x="3" y="16.6" width="18" height="3.4" rx="1.4"></rect></svg></button>
+            <button id="view-grid" class="${isList ? "" : "active"}" aria-label="${t("shelf.gridView")}"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5"></rect><rect x="3" y="13" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg></button>
+            <button id="view-list" class="${isList ? "active" : ""}" aria-label="${t("shelf.listView")}"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="4" width="18" height="3.4" rx="1.4"></rect><rect x="3" y="10.3" width="18" height="3.4" rx="1.4"></rect><rect x="3" y="16.6" width="18" height="3.4" rx="1.4"></rect></svg></button>
           </div>
           <button class="pillbtn violet" id="home-insert">+ INSERT CARD</button>
           <button class="pillbtn" id="refresh-btn">🔄</button>
@@ -1223,7 +1257,7 @@ function shelfView(): string {
         !addr
           ? `<div class="watch-row">
               <span class="slot-dim">VIEW YOUR LICENCES:</span>
-              <input class="aura-input" id="watch-addr" placeholder="0x… votre adresse wallet" style="width:24rem" />
+              <input class="aura-input" id="watch-addr" placeholder="${t("shelf.watchPlaceholder")}" style="width:24rem" />
               <button class="pillbtn" id="watch-btn">FOLLOW</button>
             </div>`
           : ""
@@ -1248,15 +1282,15 @@ function friendsView(): string {
             <div style="width:40px;height:40px;border-radius:999px;flex:none;background:linear-gradient(150deg, oklch(0.7 0.1 ${(Number.parseInt(f.addr.slice(2, 8), 16) % 360)}), oklch(0.4 0.08 265));border:1px solid rgba(255,255,255,0.2)"></div>
             <div style="min-width:0">
               <div class="lr-title">${esc(f.name ?? short(f.addr, 8))}</div>
-              <div class="lr-meta">${f.name ? `${esc(short(f.addr, 6).toUpperCase())} · ` : ""}AMIS DEPUIS LE ${new Date(f.since * 1000).toLocaleDateString()}</div>
+              <div class="lr-meta">${f.name ? `${esc(short(f.addr, 6).toUpperCase())} · ` : ""}${t("fr.since", { d: new Date(f.since * 1000).toLocaleDateString(locale()) })}</div>
             </div>
             <div class="lr-right">
-              <span class="lr-chip ${matured ? "ok" : "warn"}">${matured ? "PRÊT POSSIBLE" : `PRÊT DANS ${daysLeft} J`}</span>
+              <span class="lr-chip ${matured ? "ok" : "warn"}">${matured ? t("fr.canLend") : t("fr.lendIn", { n: daysLeft })}</span>
             </div>
           </div>`;
         })
         .join("")
-    : `<div class="slot-dim" style="padding:14px 4px">AUCUN AMI ON-CHAIN — AJOUTEZ-EN DEPUIS LE NAVIGATEUR.</div>`;
+    : `<div class="slot-dim" style="padding:14px 4px">${t("fr.none")}</div>`;
 
   const loanRows = state.loans.length
     ? state.loans
@@ -1270,15 +1304,15 @@ function friendsView(): string {
             <div class="lr-art" style="${artFor(owned?.editionId ?? "0")}"></div>
             <div style="min-width:0">
               <div class="lr-title">${esc(title)} · #${esc(l.tokenId)}</div>
-              <div class="lr-meta">${lent ? `PRÊTÉE À ${esc(short(l.user, 6).toUpperCase())}` : `EMPRUNTÉE À ${esc(short(l.owner, 6).toUpperCase())}`}</div>
+              <div class="lr-meta">${lent ? t("fr.lentTo", { a: esc(short(l.user, 6).toUpperCase()) }) : t("fr.borrowedFrom", { a: esc(short(l.owner, 6).toUpperCase()) })}</div>
             </div>
             <div class="lr-right">
-              <span class="lr-chip ${lent ? "warn" : "ok"}">${lent ? "CHEZ UN AMI" : "À VOUS DE JOUER"} · J-${days}</span>
+              <span class="lr-chip ${lent ? "warn" : "ok"}">${lent ? t("fr.atFriend") : t("fr.yourTurn")} · J-${days}</span>
             </div>
           </div>`;
         })
         .join("")
-    : `<div class="slot-dim" style="padding:14px 4px">AUCUN PRÊT EN COURS.</div>`;
+    : `<div class="slot-dim" style="padding:14px 4px">${t("fr.noLoans")}</div>`;
 
   return `
     <div class="shelf">
@@ -1286,30 +1320,90 @@ function friendsView(): string {
         <div style="display:flex;align-items:center;gap:18px">
           <button class="backbtn" data-go="home">&#8592;</button>
           <div>
-            <div class="shelf-title">Amis &amp; Prêts</div>
-            <div class="shelf-meta">${state.friends.length} AMI${state.friends.length > 1 ? "S" : ""} · ${state.loans.length} PRÊT${state.loans.length > 1 ? "S" : ""} EN COURS${me ? "" : " · CONNECTEZ UNE ADRESSE (SHELF → FOLLOW)"}</div>
+            <div class="shelf-title">${esc(t("fr.title"))}</div>
+            <div class="shelf-meta">${t("fr.meta", { f: state.friends.length, l: state.loans.length })}${me ? "" : t("fr.metaNoAddr")}</div>
           </div>
         </div>
         <div style="display:flex;gap:8px">
-          <button class="pillbtn violet" id="friends-manage">+ AJOUTER / GÉRER ↗</button>
+          <button class="pillbtn violet" id="friends-manage">${t("fr.manage")}</button>
           <button class="pillbtn" id="refresh-btn">🔄</button>
         </div>
       </div>
       <div class="shelf-split" style="padding-top:20px">
         <div class="shelf-listcol" style="width:46%">
-          <div class="mono-label" style="margin:2px 0 8px">MES AMIS</div>
+          <div class="mono-label" style="margin:2px 0 8px">${t("fr.myFriends")}</div>
           ${friendRows}
         </div>
         <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
-          <div class="mono-label" style="margin:2px 0 -4px">PRÊTS EN COURS</div>
+          <div class="mono-label" style="margin:2px 0 -4px">${t("fr.loans")}</div>
           ${loanRows}
           <div class="pv-hint" style="border-left:2px solid oklch(0.8 0.1 200 / 0.5);padding-left:12px;line-height:1.8;margin-top:auto">
-            La règle cartouche : prêter un jeu, c'est le donner pour de vrai — le
-            prêteur perd l'accès pendant le prêt. Conditions on-chain : amis
-            mutuels depuis 3 jours, 14 jours max, 24 h de repos entre deux prêts,
-            ${""}16 amis max. Le prêt se fait depuis le navigateur (votre wallet).
+            ${esc(t("fr.rule"))}
           </div>
         </div>
+      </div>
+    </div>`;
+}
+
+function settingsView(): string {
+  const lang = getLang();
+  const skins: { id: Skin; name: string; sub: string; swatch: string }[] = [
+    { id: "midnight", name: t("set.skin.midnight"), sub: t("set.skin.midnightSub"), swatch: "linear-gradient(135deg, #05060d 0 40%, oklch(0.8 0.1 200) 40% 70%, oklch(0.8 0.11 310) 70%)" },
+    { id: "sunset", name: t("set.skin.sunset"), sub: t("set.skin.sunsetSub"), swatch: "linear-gradient(135deg, oklch(0.12 0.05 300) 0 40%, oklch(0.72 0.19 340) 40% 70%, oklch(0.75 0.15 45) 70%)" },
+    { id: "crt", name: t("set.skin.crt"), sub: t("set.skin.crtSub"), swatch: "linear-gradient(135deg, oklch(0.11 0.015 250) 0 40%, oklch(0.85 0.12 190) 40% 70%, oklch(0.8 0.13 75) 70%)" },
+  ];
+  const toggle = (id: string, on: boolean, label: string, sub: string) => `
+    <div class="set-row">
+      <div><div class="set-label">${esc(label)}</div><div class="set-sub">${esc(sub)}</div></div>
+      <button class="set-toggle ${on ? "on" : ""}" id="${id}" role="switch" aria-checked="${on}" aria-label="${esc(label)}">
+        <span class="knob"></span><span class="set-state">${on ? t("set.on") : t("set.off")}</span>
+      </button>
+    </div>`;
+  return `
+    <div class="shelf">
+      <div class="shelf-head">
+        <div style="display:flex;align-items:center;gap:18px">
+          <button class="backbtn" data-go="home">&#8592;</button>
+          <div>
+            <div class="shelf-title">${esc(t("set.title"))}</div>
+            <div class="shelf-meta">${esc(t("set.saved"))}</div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-wrap">
+        <section class="set-card">
+          <div class="mono-label">${t("set.lang")}</div>
+          <div class="seg">
+            <button class="seg-btn ${lang === "fr" ? "on" : ""}" data-setlang="fr">Français</button>
+            <button class="seg-btn ${lang === "en" ? "on" : ""}" data-setlang="en">English</button>
+          </div>
+        </section>
+        <section class="set-card">
+          <div class="mono-label">${t("set.skin")}</div>
+          <div class="skin-grid">
+            ${skins
+              .map(
+                (s) => `
+              <button class="skin-tile ${settings.skin === s.id ? "on" : ""}" data-setskin="${s.id}">
+                <span class="skin-swatch" style="background:${s.swatch}"></span>
+                <span class="skin-name">${esc(s.name)}</span>
+                <span class="set-sub">${esc(s.sub)}</span>
+              </button>`,
+              )
+              .join("")}
+          </div>
+        </section>
+        <section class="set-card">
+          <div class="mono-label">${t("set.prefs")}</div>
+          ${toggle("set-sound", settings.sound, t("set.sound"), t("set.soundSub"))}
+          <div class="set-row ${settings.sound ? "" : "dim"}">
+            <div><div class="set-label">${esc(t("set.volume"))}</div></div>
+            <input type="range" id="set-volume" min="0" max="100" step="5" value="${Math.round(settings.volume * 100)}" ${settings.sound ? "" : "disabled"} aria-label="${esc(t("set.volume"))}" />
+          </div>
+          ${toggle("set-motion", settings.reducedMotion, t("set.motion"), t("set.motionSub"))}
+          ${toggle("set-dev", settings.dev, t("set.dev"), t("set.devSub"))}
+        </section>
+        <div class="set-sub" style="text-align:center;margin-top:4px">${esc(t("set.about"))}</div>
       </div>
     </div>`;
 }
@@ -1320,36 +1414,36 @@ function actionFor(e: OnchainEdition, g: Game | undefined, ownedTok: { tokenId: 
   if (can && g) {
     return {
       action: `<button class="cta" data-play="${esc(g.cartridge.mount_point)}">▶ &nbsp;PLAY</button>`,
-      hint: "Déchiffré en mémoire depuis la carte — la clé ne touche jamais le disque.",
+      hint: t("hint.play"),
     };
   }
   if (g && (g.verdict === "unpaired" || !isOurs(g))) {
     return {
-      action: `<button class="cta violet" data-pair="${esc(g.cartridge.mount_point)}">INSERT · PAIR THIS MACHINE</button>`,
-      hint: "Le propriétaire signe une fois — le ticket est scellé pour cette machine.",
+      action: `<button class="cta violet" data-pair="${esc(g.cartridge.mount_point)}">${t("act.pair")}</button>`,
+      hint: t("hint.pair"),
     };
   }
   if (g && g.verdict === "expired" && isOurs(g)) {
     return {
-      action: `<button class="cta violet" data-pair="${esc(g.cartridge.mount_point)}">RENEW LICENCE</button>`,
-      hint: "Renouvellement en ligne : la propriété est revérifiée on-chain.",
+      action: `<button class="cta violet" data-pair="${esc(g.cartridge.mount_point)}">${t("act.renew")}</button>`,
+      hint: t("hint.renew"),
     };
   }
   if (g && !g.cartridge.has_build) {
     return {
-      action: `<button class="cta violet" data-dl="${esc(g.cartridge.mount_point)}">⬇ FETCH BUILD (IPFS)</button>`,
-      hint: state.dlStatus[g.cartridge.mount_point] ?? "Build récupéré depuis IPFS, hash vérifié contre le registre.",
+      action: `<button class="cta violet" data-dl="${esc(g.cartridge.mount_point)}">${t("act.fetch")}</button>`,
+      hint: state.dlStatus[g.cartridge.mount_point] ?? t("hint.fetch"),
     };
   }
   if (ownedTok.length) {
     return {
-      action: `<button class="cta violet" data-install="${esc(e.editionId)}" data-token="${esc(ownedTok[0].tokenId)}">💾 WRITE TO CARD</button>`,
-      hint: `Licence #${ownedTok[0].tokenId} possédée — écrivez-la sur une carte SD pour jouer.`,
+      action: `<button class="cta violet" data-install="${esc(e.editionId)}" data-token="${esc(ownedTok[0].tokenId)}">${t("act.write")}</button>`,
+      hint: t("hint.write", { id: ownedTok[0].tokenId }),
     };
   }
   return {
-    action: `<button class="cta sunset" id="buy-btn">BUY · ${formatEth(e.priceWei)} ETH ↗</button>`,
-    hint: "Le paiement s'ouvre dans le navigateur — là où vit votre wallet.",
+    action: `<button class="cta sunset" id="buy-btn">${t("act.buy", { p: formatEth(e.priceWei) })}</button>`,
+    hint: t("hint.buy"),
   };
 }
 
@@ -1371,7 +1465,7 @@ function detailView(): string {
       marketRow = `<button class="pillbtn" data-unlist="${esc(g.ticket.tokenId)}">🏷 LISTED ${formatEth(m.price)} ETH — UNLIST ↗</button>`;
     } else if (state.selling === g.ticket.tokenId) {
       marketRow = `
-        <input class="aura-input" id="sell-price" placeholder="prix ETH" style="width:8rem" />
+        <input class="aura-input" id="sell-price" placeholder="${t("det.pricePlaceholder")}" style="width:8rem" />
         <button class="pillbtn violet" data-confirm-sell="${esc(g.ticket.tokenId)}">LIST ↗</button>
         <button class="pillbtn" id="cancel-sell">CANCEL</button>`;
     } else {
@@ -1384,25 +1478,25 @@ function detailView(): string {
       <div class="detail-left">
         <button class="pillbtn" data-go="shelf" style="align-self:flex-start">&#8592; SHELF</button>
         <div class="hero-art" style="${artFor(e.editionId)}">
-          <div class="artnote">box art — éd. #${esc(e.editionId)}</div>
+          <div class="artnote">${t("det.boxArt", { id: esc(e.editionId) })}</div>
           <div class="sheen"></div>
         </div>
       </div>
       <div class="detail-right">
         <div class="detail-kicker">${esc(e.studio.toUpperCase())} &nbsp;&#183;&nbsp; ROYALTIES ${e.royaltyBps / 100}% &nbsp;&#183;&nbsp; ${e.minted}/${e.supply} MINTED</div>
         <div class="detail-title">${esc(e.title)}</div>
-        <div class="detail-blurb">${esc(BLURBS[e.editionId] ?? "Une licence ERC-721 sur cartouche : jouable hors ligne, prêtable, revendable — royalties automatiques au studio.")}</div>
+        <div class="detail-blurb">${esc(BLURBS[e.editionId] ?? t("det.blurb"))}</div>
         <div class="stat-row">
           <div class="stat"><div class="k">LICENCE CARD</div><div class="v">${
             g?.ticket ? `#${esc(g.ticket.tokenId)} · ${short(g.ticket.ownerAddress, 6)}` : ownedTok.length ? ownedTok.map((o) => `#${o.tokenId}`).join(" · ") : "—"
           }</div></div>
-          <div class="stat"><div class="k">CARTRIDGE</div><div class="v">${g ? `${esc(g.cartridge.mount_point)} · ${g.verdict.toUpperCase()}` : "NOT INSERTED"}</div></div>
+          <div class="stat"><div class="k">CARTRIDGE</div><div class="v">${g ? `${esc(g.cartridge.mount_point)} · ${g.verdict.toUpperCase()}` : t("det.notInserted")}</div></div>
           <div class="stat"><div class="k">${g?.ticket && g.verdict === "authentic" ? "EXPIRES" : "BUILD CID"}</div><div class="v">${
-            g?.ticket && g.verdict === "authentic" ? new Date(g.ticket.expiresAt * 1000).toLocaleDateString() : short(e.buildCid, 8)
+            g?.ticket && g.verdict === "authentic" ? new Date(g.ticket.expiresAt * 1000).toLocaleDateString(locale()) : short(e.buildCid, 8)
           }</div></div>
         </div>
-        ${resold && m ? `<div class="errbox">⛔ RESOLD ON-CHAIN — new owner ${short(m.owner)} must pair their machine.</div>` : ""}
-        <div class="debug" style="margin-top:14px">éd. #${esc(e.editionId)} · jeu #${esc(e.gameId)} · studio #${esc(e.studioId)} · chain ${CHAIN.id} · cid ${esc(e.buildCid)}</div>
+        ${resold && m ? `<div class="errbox">${t("det.resold", { a: short(m.owner) })}</div>` : ""}
+        ${settings.dev ? `<div class="debug" style="margin-top:14px">ed. #${esc(e.editionId)} · game #${esc(e.gameId)} · studio #${esc(e.studioId)} · chain ${CHAIN.id} · cid ${esc(e.buildCid)}</div>` : ""}
         <div class="detail-actions">
           ${action}
           <div class="detail-hint">${esc(hint)}</div>
@@ -1420,14 +1514,14 @@ function insertView(): string {
   const title = e?.title ?? g?.meta.title ?? "Licence";
   const cardIn = Boolean(g) || (inst?.stage ?? 0) >= 3;
 
-  let headline = "Slot a card to begin.";
-  let sub = "Le lecteur détecte la carte, lit son bloc licence et vérifie la signature de la plateforme.";
+  let headline = t("ins.slot");
+  let sub = t("ins.slotSub");
   let steps: { label: string; st: "idle" | "run" | "ok" | "fail"; note: string }[] = [];
   let extra = "";
 
   if (inst) {
-    headline = inst.stage === 0 ? "Choose a card to write." : "Writing your licence card.";
-    sub = "Le build chiffré arrive d'IPFS, vérifié contre le hash publié on-chain, puis gravé sur la carte.";
+    headline = inst.stage === 0 ? t("ins.choose") : t("ins.writing");
+    sub = t("ins.writeSub");
     steps = [
       { label: "DETECT CARD", st: inst.stage >= 1 ? "ok" : "run", note: inst.stage >= 1 ? "SELECTED" : "CHOOSE BELOW" },
       { label: "FETCH BUILD · IPFS", st: inst.stage === 1 ? "run" : inst.stage > 1 ? "ok" : "idle", note: inst.stage > 1 ? "VERIFIED" : inst.stage === 1 ? "…" : "—" },
@@ -1436,7 +1530,7 @@ function insertView(): string {
     ];
     if (inst.stage === 0) {
       extra = `
-        <p style="margin-top:18px"><label class="slot-dim">LICENCE #
+        <p style="margin-top:18px"><label class="slot-dim">${t("ins.licenceNo")}
           <input class="aura-input" id="install-token" inputmode="numeric" placeholder="ex. 2" value="${esc(inst.tokenId)}" style="width:6rem;margin-left:8px" /></label></p>
         <div class="vol-list">
           ${
@@ -1446,14 +1540,14 @@ function insertView(): string {
                     (v) => `<button class="pillbtn" data-volume="${esc(v.mount_point)}">💾 ${esc(v.volume_label || "CARD")} — ${esc(v.mount_point)}${v.has_gamevault ? " · REWRITE" : ""}</button>`,
                   )
                   .join("")
-              : `<span class="slot-dim">NO REMOVABLE CARD — insert an SD card or USB drive.</span>`
+              : `<span class="slot-dim">${t("ins.noCard")}</span>`
           }
         </div>
         ${inst.status ? `<div class="errbox">${esc(inst.status)}</div>` : ""}`;
     }
   } else if (p) {
-    headline = "Owner signature required.";
-    sub = "La clé publique de CETTE machine est dans le QR — la signature du propriétaire autorise cet appareil et aucun autre.";
+    headline = t("ins.sigRequired");
+    sub = t("ins.sigSub");
     steps = [
       { label: "DETECT CARD", st: "ok", note: "SEATED" },
       { label: "READ LICENCE BLOCK", st: "ok", note: `#${g?.ticket?.tokenId ?? "?"}` },
@@ -1462,14 +1556,14 @@ function insertView(): string {
     ];
     extra = `
       <div class="qr-zone">
-        <img src="${p.qrDataUrl}" alt="QR appairage" />
-        <div class="qr-note">Scannez avec le téléphone du propriétaire — ou ouvrez la page sur ce PC.
+        <img src="${p.qrDataUrl}" alt="QR" />
+        <div class="qr-note">${esc(t("ins.qrNote"))}
           <div style="margin-top:10px"><button class="pillbtn" id="open-pair-url">OPEN IN BROWSER ↗</button></div>
         </div>
       </div>`;
   } else if (g) {
-    headline = "Card seated. Read complete.";
-    sub = "Cette carte est prête — retournez à la fiche du jeu pour jouer ou l'appairer.";
+    headline = t("ins.seated");
+    sub = t("ins.seatedSub");
     steps = [
       { label: "DETECT CARD", st: "ok", note: esc(g.cartridge.mount_point) },
       { label: "READ LICENCE BLOCK", st: g.ticket ? "ok" : "fail", note: g.ticket ? `#${g.ticket.tokenId}` : "UNREADABLE" },
@@ -1495,7 +1589,7 @@ function insertView(): string {
         <div class="insert-actions">
           ${p ? `<button class="pillbtn dashed" id="cancel-pairing">CANCEL</button>` : ""}
           ${inst ? `<button class="pillbtn dashed" id="cancel-install">CANCEL</button>` : ""}
-          <button class="pillbtn" data-go="${state.sel ? "detail" : "home"}">${state.sel ? "GAME PAGE" : "HOME"}</button>
+          <button class="pillbtn" data-go="${state.sel ? "detail" : "home"}">${state.sel ? t("ins.gamePage") : "HOME"}</button>
         </div>
       </div>
     </div>`;
@@ -1512,8 +1606,8 @@ function errorView(): string {
         <p>${esc(f.msg)}</p>
         <div class="errcode">${esc(f.code)}</div>
         <div class="err-actions">
-          <button class="cta amber" id="err-retry">Try Again</button>
-          <button class="cta amber-ghost" data-go="home">Back Home</button>
+          <button class="cta amber" id="err-retry">${t("err.tryAgain")}</button>
+          <button class="cta amber-ghost" data-go="home">${t("err.home")}</button>
         </div>
       </div>
     </div>`;
@@ -1526,7 +1620,7 @@ function playerView(g: Game): string {
         <span class="title">🎮 ${esc(g.meta.title ?? "GAME")} · LICENCE #${esc(g.ticket?.tokenId ?? "?")} · DECRYPTED IN MEMORY${state.ownerCheck ? ` · ${esc(state.ownerCheck)}` : ""}</span>
         <button class="pillbtn" id="quit-btn">✕ EJECT</button>
       </header>
-      <iframe src="${GAME_URL}" title="jeu"></iframe>
+      <iframe src="${GAME_URL}" title="game"></iframe>
     </div>`;
 }
 
@@ -1539,8 +1633,27 @@ const SCREENS: Record<Screen, () => string> = {
   detail: detailView,
   insert: insertView,
   friends: friendsView,
+  settings: settingsView,
   error: errorView,
 };
+
+/** index.html chrome (outside the render() tree) — re-applied on language change. */
+function applyStaticI18n(): void {
+  const label = (id: string, text: string) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  label("nav-home", t("nav.home"));
+  label("nav-shelf", t("nav.shelf"));
+  label("nav-friends", t("nav.friends"));
+  const gear = document.getElementById("nav-settings");
+  if (gear) {
+    gear.setAttribute("aria-label", t("nav.settings"));
+    gear.title = t("nav.settings");
+  }
+  const store = document.getElementById("store-btn");
+  if (store) store.title = t("top.store.title");
+}
 
 function renderChrome(): void {
   // Topbar nav active state (static chrome — survives screen rebuilds)
@@ -1548,6 +1661,7 @@ function renderChrome(): void {
     "nav-home": ["home"],
     "nav-shelf": ["shelf", "detail", "insert"],
     "nav-friends": ["friends"],
+    "nav-settings": ["settings"],
   };
   for (const [id, screens] of Object.entries(navMap)) {
     document.getElementById(id)?.classList.toggle("active", screens.includes(state.screen));
@@ -1581,7 +1695,7 @@ function renderChrome(): void {
   const now = new Date();
   const hh = String(now.getHours()).padStart(2, "0");
   const mm = String(now.getMinutes()).padStart(2, "0");
-  const dateStr = now.toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "short" }).toUpperCase();
+  const dateStr = now.toLocaleDateString(locale(), { weekday: "short", day: "2-digit", month: "short" }).toUpperCase();
   const dateEl = document.getElementById("bar-date");
   if (dateEl) dateEl.textContent = dateStr;
   const clockEl = document.getElementById("bar-clock");
@@ -1728,6 +1842,38 @@ function wire(root: HTMLElement): void {
       render();
     }),
   );
+  // ── Settings screen ──
+  root.querySelectorAll<HTMLButtonElement>("[data-setlang]").forEach((b) =>
+    b.addEventListener("click", () => {
+      setLang(b.dataset.setlang as Lang);
+      applySettings();
+      applyStaticI18n();
+      render();
+    }),
+  );
+  root.querySelectorAll<HTMLButtonElement>("[data-setskin]").forEach((b) =>
+    b.addEventListener("click", () => {
+      settings.skin = b.dataset.setskin as Skin;
+      saveSettings();
+      render();
+    }),
+  );
+  const flip = (id: string, key: "sound" | "reducedMotion" | "dev") =>
+    document.getElementById(id)?.addEventListener("click", () => {
+      settings[key] = !settings[key];
+      saveSettings();
+      render();
+      if (key === "sound" && settings.sound) chimeOut();
+    });
+  flip("set-sound", "sound");
+  flip("set-motion", "reducedMotion");
+  flip("set-dev", "dev");
+  document.getElementById("set-volume")?.addEventListener("change", (ev) => {
+    settings.volume = Number((ev.target as HTMLInputElement).value) / 100;
+    saveSettings();
+    beep([880], 0.08); // preview at the new level
+  });
+
   root.querySelectorAll<HTMLButtonElement>("[data-lendfriend]").forEach((b) =>
     b.addEventListener("click", () => void openUrl(`${MARKETPLACE_URL}/friends`)),
   );
@@ -1744,7 +1890,7 @@ function wire(root: HTMLElement): void {
   });
   document.getElementById("watch-btn")?.addEventListener("click", () => {
     const addr = (document.getElementById("watch-addr") as HTMLInputElement | null)?.value.trim() ?? "";
-    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) return alert("Adresse invalide — 0x + 40 hex");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) return alert(t("alert.badAddr"));
     localStorage.setItem("gv-watch", addr);
     void forceRefresh();
   });
@@ -1808,7 +1954,7 @@ function wire(root: HTMLElement): void {
   root.querySelectorAll<HTMLButtonElement>("[data-confirm-sell]").forEach((b) =>
     b.addEventListener("click", () => {
       const price = (document.getElementById("sell-price") as HTMLInputElement | null)?.value.trim() ?? "";
-      if (!/^\d*\.?\d+$/.test(price)) return alert("Prix invalide — exemple : 0.00002");
+      if (!/^\d*\.?\d+$/.test(price)) return alert(t("alert.badPrice"));
       state.selling = null;
       void openUrl(tradeUrl("list", b.dataset.confirmSell!, price));
       render();
@@ -1953,6 +2099,8 @@ async function refresh(): Promise<void> {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  applySettings();
+  applyStaticI18n();
   loadSession();
   document.getElementById("restart-btn")?.addEventListener("click", () => void runBoot());
   document.getElementById("store-btn")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));
