@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "defaultLocale": "fr",
+  "stats": [
+    {
+      "id": "COINS_COLLECTED",
+      "type": "int",
+      "aggregation": "sum",
+      "displayName": { "fr": "Pièces ramassées", "en": "Coins collected" },
+      "defaultValue": 0,
+      "minValue": 0,
+      "maxChange": 10,
+      "incrementOnly": true
+    },
+    {
+      "id": "RUNS_WON",
+      "type": "int",
+      "aggregation": "sum",
+      "displayName": { "fr": "Parties gagnées", "en": "Runs won" },
+      "defaultValue": 0,
+      "minValue": 0,
+      "maxChange": 1,
+      "incrementOnly": true
+    },
+    {
+      "id": "BEST_WIN_TIME_MS",
+      "type": "int",
+      "aggregation": "min",
+      "displayName": { "fr": "Meilleur temps (ms)", "en": "Best time (ms)" },
+      "minValue": 3000,
+      "maxValue": 3600000
+    }
+  ],
+  "achievements": [
+    {
+      "id": "FIRST_COIN",
+      "name": { "fr": "Premier éclat", "en": "First Shine" },
+      "description": { "fr": "Ramasser une première pièce.", "en": "Collect your first coin." },
+      "icon": "icons/first_coin.png",
+      "iconLocked": "icons/first_coin_locked.png",
+      "unlock": { "type": "direct" },
+      "grade": "bronze",
+      "points": 10,
+      "order": 0
+    },
+    {
+      "id": "FIRST_WIN",
+      "name": { "fr": "Dix sur dix", "en": "Ten out of Ten" },
+      "description": { "fr": "Gagner une partie en ramassant 10 pièces.", "en": "Win a run by collecting 10 coins." },
+      "icon": "icons/first_win.png",
+      "iconLocked": "icons/first_win_locked.png",
+      "unlock": { "type": "direct" },
+      "grade": "bronze",
+      "points": 20,
+      "order": 1
+    },
+    {
+      "id": "HOARDER",
+      "name": { "fr": "Trésorier", "en": "Hoarder" },
+      "description": { "fr": "Ramasser 250 pièces au total.", "en": "Collect 250 coins in total." },
+      "icon": "icons/hoarder.png",
+      "iconLocked": "icons/hoarder_locked.png",
+      "unlock": { "type": "stat", "thresholds": [{ "stat": "COINS_COLLECTED", "value": 250 }] },
+      "grade": "silver",
+      "points": 50,
+      "order": 2
+    },
+    {
+      "id": "VETERAN",
+      "name": { "fr": "Coureur aguerri", "en": "Seasoned Runner" },
+      "description": { "fr": "Gagner 25 parties.", "en": "Win 25 runs." },
+      "icon": "icons/veteran.png",
+      "iconLocked": "icons/veteran_locked.png",
+      "unlock": { "type": "stat", "thresholds": [{ "stat": "RUNS_WON", "value": 25 }] },
+      "grade": "silver",
+      "points": 50,
+      "order": 3
+    },
+    {
+      "id": "SPEEDRUNNER",
+      "name": { "fr": "Éclair", "en": "Lightning" },
+      "description": { "fr": "Gagner une partie en moins de 20 secondes.", "en": "Win a run in under 20 seconds." },
+      "icon": "icons/speedrunner.png",
+      "iconLocked": "icons/speedrunner_locked.png",
+      "unlock": { "type": "stat", "thresholds": [{ "stat": "BEST_WIN_TIME_MS", "value": 20000 }] },
+      "grade": "gold",
+      "points": 100,
+      "order": 4
+    },
+    {
+      "id": "SO_CLOSE",
+      "name": { "fr": "Si près du but", "en": "So Close" },
+      "description": { "fr": "Se faire toucher avec 9 pièces sur 10.", "en": "Get hit while holding 9 of 10 coins." },
+      "lockedDescription": { "fr": "Succès secret.", "en": "Secret achievement." },
+      "hidden": true,
+      "icon": "icons/so_close.png",
+      "iconLocked": "icons/hidden.png",
+      "unlock": { "type": "direct" },
+      "grade": "bronze",
+      "points": 20,
+      "order": 5
+    }
+  ]
+}
