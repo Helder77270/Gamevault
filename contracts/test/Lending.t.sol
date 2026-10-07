@@ -27,7 +27,7 @@ contract LendingTest is Test {
     function setUp() public {
         registry = new GameRegistry();
         friendsReg = new FriendRegistry();
-        license = new GameLicense(registry, friendsReg);
+        license = new GameLicense(registry, friendsReg, 3 days, 14 days, 1 days);
         registry.setLicense(address(license));
         market = new Marketplace(license, platform);
 
@@ -69,7 +69,7 @@ contract LendingTest is Test {
         _befriend(alice, bob);
         vm.warp(block.timestamp + 3 days - 1);
         vm.prank(alice);
-        vm.expectRevert("GameLicense: friends < 3 days");
+        vm.expectRevert("GameLicense: friendship too young");
         license.lend(tokenId, bob, uint64(block.timestamp + 1 days));
     }
 
@@ -219,5 +219,33 @@ contract LendingTest is Test {
         vm.prank(bob);
         vm.expectRevert("FriendRegistry: no request");
         friendsReg.accept(alice);
+    }
+
+    function test_PendingEnumeration() public {
+        vm.prank(alice);
+        friendsReg.request(bob);
+        vm.prank(carol);
+        friendsReg.request(bob);
+        address[] memory pend = friendsReg.pendingFor(bob);
+        assertEq(pend.length, 2);
+
+        vm.prank(bob);
+        friendsReg.accept(alice);
+        pend = friendsReg.pendingFor(bob);
+        assertEq(pend.length, 1);
+        assertEq(pend[0], carol);
+
+        vm.prank(bob);
+        friendsReg.decline(carol);
+        assertEq(friendsReg.pendingFor(bob).length, 0);
+        assertEq(friendsReg.requestedAt(carol, bob), 0);
+    }
+
+    function test_RequestTwiceKeepsOneInboxEntry() public {
+        vm.startPrank(alice);
+        friendsReg.request(bob);
+        friendsReg.request(bob);
+        vm.stopPrank();
+        assertEq(friendsReg.pendingFor(bob).length, 1);
     }
 }

@@ -39,16 +39,27 @@ contract GameLicense is ERC721, ERC2981, ReentrancyGuard, IGameVaultEvents {
     /// read from the stale _users record — see _loanEndedAt().
     mapping(uint256 tokenId => uint64) public lastLoanEnd;
 
-    uint64 public constant MIN_FRIEND_AGE = 3 days;
-    uint64 public constant MAX_LOAN_DURATION = 14 days;
-    uint64 public constant LOAN_COOLDOWN = 1 days;
+    /// Lending guard durations — set at deploy (prod: 3 d / 14 d / 24 h;
+    /// a demo deployment can shrink them without touching the code).
+    uint64 public immutable MIN_FRIEND_AGE;
+    uint64 public immutable MAX_LOAN_DURATION;
+    uint64 public immutable LOAN_COOLDOWN;
 
     /// ERC-4907 standard event — subgraphs and wallets understand it.
     event UpdateUser(uint256 indexed tokenId, address indexed user, uint64 expires);
 
-    constructor(GameRegistry registryContract, FriendRegistry friendRegistry) ERC721("GameVault License", "GVL") {
+    constructor(
+        GameRegistry registryContract,
+        FriendRegistry friendRegistry,
+        uint64 minFriendAge,
+        uint64 maxLoanDuration,
+        uint64 loanCooldown
+    ) ERC721("GameVault License", "GVL") {
         registry = registryContract;
         friends = friendRegistry;
+        MIN_FRIEND_AGE = minFriendAge;
+        MAX_LOAN_DURATION = maxLoanDuration;
+        LOAN_COOLDOWN = loanCooldown;
     }
 
     // ── ERC-4907 views ───────────────────────────────────────────
@@ -82,7 +93,7 @@ contract GameLicense is ERC721, ERC2981, ReentrancyGuard, IGameVaultEvents {
         require(nowTs >= _loanEndedAt(tokenId) + LOAN_COOLDOWN || _loanEndedAt(tokenId) == 0, "GameLicense: cooldown");
         uint64 since = friends.friendsSince(msg.sender, to);
         require(since != 0, "GameLicense: not friends");
-        require(nowTs >= since + MIN_FRIEND_AGE, "GameLicense: friends < 3 days");
+        require(nowTs >= since + MIN_FRIEND_AGE, "GameLicense: friendship too young");
         require(expires > nowTs && expires <= nowTs + MAX_LOAN_DURATION, "GameLicense: bad duration");
 
         _users[tokenId] = UserInfo(to, expires);

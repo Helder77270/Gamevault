@@ -23,7 +23,9 @@ contract Deploy is Script {
 
         GameRegistry registry = new GameRegistry();
         FriendRegistry friendsReg = new FriendRegistry();
-        GameLicense license = new GameLicense(registry, friendsReg);
+        // Prod guard values. For a DEMO deployment (lending shown live on
+        // stage), shrink them: e.g. (10 minutes, 1 days, 10 minutes).
+        GameLicense license = new GameLicense(registry, friendsReg, 3 days, 14 days, 1 days);
         registry.setLicense(address(license));
         Marketplace market = new Marketplace(license, vm.addr(pk));
 

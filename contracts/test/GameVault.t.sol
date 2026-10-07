@@ -26,7 +26,7 @@ contract GameVaultTest is Test {
     function setUp() public {
         registry = new GameRegistry();
         friendsReg = new FriendRegistry();
-        license = new GameLicense(registry, friendsReg);
+        license = new GameLicense(registry, friendsReg, 3 days, 14 days, 1 days);
         registry.setLicense(address(license));
         market = new Marketplace(license, platform);
 

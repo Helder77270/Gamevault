@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import { FRIEND_ABI, LICENSE_ABI } from "@gamevault/shared/abi";
-import { DEPLOYMENTS, DEPLOY_BLOCK } from "@gamevault/shared/deployments";
+import { DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { fetchOnchainCatalog, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { ConnectButton } from "../components/ConnectButton";
 
@@ -45,8 +45,15 @@ export default function FriendsPage() {
   const refresh = useCallback(async () => {
     if (!client || !address || !FRIENDS || !LICENSE) return;
     setNowSec(Math.floor(Date.now() / 1000));
+    const problems: string[] = [];
+
+    // Friends + incoming inbox (on-chain enumeration — no log scanning,
+    // public RPCs cap eth_getLogs)
     try {
-      const list = await client.readContract({ address: FRIENDS, abi: FRIEND_ABI, functionName: "friendsOf", args: [address] });
+      const [list, pend] = await Promise.all([
+        client.readContract({ address: FRIENDS, abi: FRIEND_ABI, functionName: "friendsOf", args: [address] }),
+        client.readContract({ address: FRIENDS, abi: FRIEND_ABI, functionName: "pendingFor", args: [address] }),
+      ]);
       const fs = await Promise.all(
         list.map(async (f) => ({
           addr: f,
@@ -54,26 +61,14 @@ export default function FriendsPage() {
         })),
       );
       setFriends(fs);
+      setIncoming(pend.map((from) => ({ from })));
+    } catch (e) {
+      problems.push(`amis: ${e instanceof Error ? e.message : e}`);
+    }
 
-      // Incoming requests: FriendRequested(to = me) logs, still pending.
-      const logs = await client.getLogs({
-        address: FRIENDS,
-        event: { name: "FriendRequested", type: "event", inputs: [{ name: "from", type: "address", indexed: true }, { name: "to", type: "address", indexed: true }] },
-        args: { to: address },
-        fromBlock: BigInt(DEPLOY_BLOCK),
-      });
-      const froms = Array.from(new Set(logs.map((l) => (l.args.from as string) ?? ""))).filter(Boolean);
-      const pend: Incoming[] = [];
-      for (const from of froms) {
-        const [reqAt, since] = await Promise.all([
-          client.readContract({ address: FRIENDS, abi: FRIEND_ABI, functionName: "requestedAt", args: [from as `0x${string}`, address] }),
-          client.readContract({ address: FRIENDS, abi: FRIEND_ABI, functionName: "friendsSince", args: [from as `0x${string}`, address] }),
-        ]);
-        if (Number(reqAt) !== 0 && Number(since) === 0) pend.push({ from });
-      }
-      setIncoming(pend);
-
-      // Owned + borrowed licences with their loan state
+    // Owned + borrowed licences with their loan state — independent of the
+    // friends read: one failing never blanks the other.
+    try {
       const next = await client.readContract({ address: LICENSE, abi: LICENSE_ABI, functionName: "nextTokenId" });
       const mine: Owned[] = [];
       const lent2me: Owned[] = [];
@@ -96,8 +91,9 @@ export default function FriendsPage() {
       setOwned(mine);
       setBorrowed(lent2me);
     } catch (e) {
-      setError(String(e instanceof Error ? e.message : e));
+      problems.push(`licences: ${e instanceof Error ? e.message : e}`);
     }
+    setError(problems.join(" · "));
   }, [client, address]);
 
   useEffect(() => {

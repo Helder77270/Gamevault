@@ -157,6 +157,20 @@ export const FRIEND_ABI = [
     outputs: [{ type: "uint64" }],
   },
   {
+    name: "pendingFor",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "who", type: "address" }],
+    outputs: [{ type: "address[]" }],
+  },
+  {
+    name: "decline",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "from", type: "address" }],
+    outputs: [],
+  },
+  {
     name: "FriendRequested",
     type: "event",
     inputs: [

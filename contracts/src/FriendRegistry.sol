@@ -11,8 +11,16 @@ contract FriendRegistry {
     /// lending surface small and the friendsOf() view cheap.
     uint256 public constant MAX_FRIENDS = 16;
 
+    /// Spam guard on the incoming-request inbox.
+    uint256 public constant MAX_PENDING = 32;
+
     /// requestedAt[from][to] — pending, not yet mutual.
     mapping(address => mapping(address => uint64)) public requestedAt;
+
+    /// Incoming requests, ENUMERABLE — public RPCs cap eth_getLogs, so UIs
+    /// read this instead of scanning events.
+    mapping(address => address[]) private _incoming;
+    mapping(address => mapping(address => uint256)) private _incomingIdx; // +1
 
     /// Canonical pair (lo, hi) -> timestamp the friendship became MUTUAL.
     mapping(address => mapping(address => uint64)) private _since;
@@ -44,12 +52,29 @@ contract FriendRegistry {
         return _friends[who].length;
     }
 
+    /// @notice Who asked `who` to be friends — still pending.
+    function pendingFor(address who) external view returns (address[] memory) {
+        return _incoming[who];
+    }
+
     function request(address to) external {
         require(to != msg.sender, "FriendRegistry: self");
         require(friendsSince(msg.sender, to) == 0, "FriendRegistry: already friends");
         require(_friends[msg.sender].length < MAX_FRIENDS, "FriendRegistry: friend cap");
+        if (_incomingIdx[to][msg.sender] == 0) {
+            require(_incoming[to].length < MAX_PENDING, "FriendRegistry: inbox full");
+            _incoming[to].push(msg.sender);
+            _incomingIdx[to][msg.sender] = _incoming[to].length;
+        }
         requestedAt[msg.sender][to] = uint64(block.timestamp);
         emit FriendRequested(msg.sender, to);
+    }
+
+    /// @notice Refuse (or tidy away) an incoming request.
+    function decline(address from) external {
+        require(requestedAt[from][msg.sender] != 0, "FriendRegistry: no request");
+        delete requestedAt[from][msg.sender];
+        _removeIncoming(msg.sender, from);
     }
 
     function accept(address from) external {
@@ -59,6 +84,8 @@ contract FriendRegistry {
         require(_friends[from].length < MAX_FRIENDS, "FriendRegistry: their friend cap");
         delete requestedAt[from][msg.sender];
         delete requestedAt[msg.sender][from];
+        _removeIncoming(msg.sender, from);
+        _removeIncoming(from, msg.sender);
 
         (address lo, address hi) = _pair(msg.sender, from);
         _since[lo][hi] = uint64(block.timestamp);
@@ -89,5 +116,16 @@ contract FriendRegistry {
         _idx[who][last] = i;
         list.pop();
         delete _idx[who][friend_];
+    }
+
+    function _removeIncoming(address who, address from) private {
+        uint256 i = _incomingIdx[who][from];
+        if (i == 0) return;
+        address[] storage list = _incoming[who];
+        address last = list[list.length - 1];
+        list[i - 1] = last;
+        _incomingIdx[who][last] = i;
+        list.pop();
+        delete _incomingIdx[who][from];
     }
 }
