@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { decodeEventLog, parseEther } from "viem";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import { REGISTRY_ABI } from "@gamevault/shared/abi";
 import { DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { ConnectButton } from "../components/ConnectButton";
@@ -14,9 +14,25 @@ import { ConnectButton } from "../components/ConnectButton";
 const REGISTRY = DEPLOYMENTS.gameRegistry as `0x${string}`;
 const TICKETD_URL = process.env.NEXT_PUBLIC_TICKETD_URL ?? "http://localhost:8787";
 
+/** Must match ticketd's publishMessage() byte for byte (canonical form). */
+function publishMessage(f: { wallet: string; studioId: string; sha256: string; name: string; at: string; nonce: string }): string {
+  return [
+    "GameVault Publish",
+    `wallet: ${f.wallet}`,
+    `studio: ${f.studioId}`,
+    `sha256: ${f.sha256}`,
+    `name: ${f.name}`,
+    `at: ${f.at}`,
+    `nonce: ${f.nonce}`,
+  ].join("\n");
+}
+
+const toBase64 = (s: string): string => btoa(String.fromCharCode(...Array.from(new TextEncoder().encode(s))));
+
 export default function StudioPage() {
-  const { isConnected } = useAccount();
+  const { isConnected, address } = useAccount();
   const { writeContractAsync } = useWriteContract();
+  const { signMessageAsync } = useSignMessage();
   const publicClient = usePublicClient();
 
   const [studioName, setStudioName] = useState("");
@@ -102,16 +118,46 @@ export default function StudioPage() {
             "ou un .exe mono-fichier — pas le fichier source .js.",
         );
       }
-      setStatus("1/2 — chiffrement + épinglage IPFS (via la plateforme)…");
-      const res = await fetch(`${TICKETD_URL}/publish?name=${encodeURIComponent(file.name)}`, {
+      if (!address) throw new Error("wallet non connecté");
+      // The studio signs THIS exact file (sha256) for THIS studio — ticketd
+      // will only release the game key to editions of that studio.
+      setStatus("1/3 — signature de la publication (votre wallet)…");
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+      const sha256 = `0x${Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+      const name = file.name.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 80) || "build";
+      const message = publishMessage({
+        wallet: address,
+        studioId,
+        sha256,
+        name,
+        at: new Date().toISOString(),
+        nonce: crypto.randomUUID(),
+      });
+      const signature = await signMessageAsync({ message });
+
+      setStatus("2/3 — chiffrement + épinglage IPFS (via la plateforme)…");
+      const res = await fetch(`${TICKETD_URL}/publish`, {
         method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "X-GameVault-Message": toBase64(message),
+          "X-GameVault-Signature": signature,
+        },
         body: bytes,
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const body = await res.text();
+        let msg = body;
+        try {
+          msg = (JSON.parse(body) as { error?: string }).error ?? body;
+        } catch {
+          /* not JSON */
+        }
+        throw new Error(msg);
+      }
       const stored = (await res.json()) as { cid: string; sha256: string };
 
-      setStatus("2/2 — enregistrement on-chain (votre signature)…");
+      setStatus("3/3 — enregistrement on-chain (votre signature)…");
       const tx = await writeContractAsync({
         address: REGISTRY,
         abi: REGISTRY_ABI,

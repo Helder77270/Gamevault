@@ -54,28 +54,106 @@ const client = createPublicClient({
 
 const KEYSTORE_PATH = join(dirname(fileURLToPath(import.meta.url)), "../data/content-keys.json");
 
-function keyStore(): Record<string, string> {
+/** A content key and WHO published it (wallet + studio it was signed for).
+ *  Legacy entries (bare hex string) predate signed publishing. */
+interface KeyRecord {
+  key: string;
+  publisher: string; // lowercase wallet
+  studioId: string;
+}
+
+function keyStore(): Record<string, string | KeyRecord> {
   return existsSync(KEYSTORE_PATH) ? JSON.parse(readFileSync(KEYSTORE_PATH, "utf8")) : {};
 }
 
-function saveKey(cid: string, keyHex: string): void {
+function keyRecord(cid: string): KeyRecord | { key: string; publisher: null; studioId: null } | undefined {
+  const v = keyStore()[cid];
+  if (v === undefined) return undefined;
+  return typeof v === "string" ? { key: v, publisher: null, studioId: null } : v;
+}
+
+function saveKey(cid: string, rec: KeyRecord): void {
   mkdirSync(dirname(KEYSTORE_PATH), { recursive: true });
   const store = keyStore();
-  store[cid] = keyHex;
+  store[cid] = rec;
   writeFileSync(KEYSTORE_PATH, JSON.stringify(store, null, 2));
 }
 
-/** Studio publish: encrypt with a fresh random key, pin to IPFS, remember
- *  the key by CID. The studio then records the CID on-chain themselves. */
-export async function publishBuild(plain: Uint8Array, name: string): Promise<StoredBuild> {
+// ── Signed studio publishing (audit T1/T3, 2026-10-07) ───────────────────
+// The studio's wallet signs a canonical message binding: its address, the
+// on-chain studio it publishes for, the sha256 of the EXACT uploaded bytes,
+// the file name, a timestamp and a nonce. ticketd checks the wallet owns
+// that studio on-chain, then stores (key, publisher, studioId) by CID.
+// contentKeyFor later refuses any edition not belonging to that studio.
+
+const PUBLISH_NAME_RE = /^[A-Za-z0-9._-]{1,80}$/;
+
+export function publishMessage(f: { wallet: string; studioId: string; sha256: string; name: string; at: string; nonce: string }): string {
+  return [
+    "GameVault Publish",
+    `wallet: ${f.wallet}`,
+    `studio: ${f.studioId}`,
+    `sha256: ${f.sha256}`,
+    `name: ${f.name}`,
+    `at: ${f.at}`,
+    `nonce: ${f.nonce}`,
+  ].join("\n");
+}
+
+function parsePublishMessage(message: string): { wallet: string; studioId: string; sha256: string; name: string; at: string; nonce: string } {
+  const lines = message.split("\n");
+  const keys = ["wallet", "studio", "sha256", "name", "at", "nonce"];
+  if (lines.length !== 7 || lines[0] !== "GameVault Publish") throw new Error("message de publication inattendu");
+  const v: Record<string, string> = {};
+  keys.forEach((k, i) => {
+    const line = lines[i + 1];
+    if (!line.startsWith(`${k}: `)) throw new Error(`message de publication : champ ${k} attendu`);
+    v[k] = line.slice(k.length + 2);
+  });
+  const f = { wallet: v.wallet, studioId: v.studio, sha256: v.sha256, name: v.name, at: v.at, nonce: v.nonce };
+  // Canonical form only: re-serialize and compare (no injected/extra content)
+  if (publishMessage(f) !== message) throw new Error("message de publication non canonique");
+  if (!ADDR_RE.test(f.wallet)) throw new Error("wallet invalide");
+  if (!/^\d{1,9}$/.test(f.studioId)) throw new Error("studio invalide");
+  if (!/^0x[0-9a-f]{64}$/.test(f.sha256)) throw new Error("sha256 invalide");
+  if (!PUBLISH_NAME_RE.test(f.name)) throw new Error("nom de fichier invalide");
+  if (!/^[0-9a-fA-F-]{36}$/.test(f.nonce)) throw new Error("nonce invalide");
+  return f;
+}
+
+/** Studio publish: verify the signed request, encrypt with a fresh random
+ *  key, pin to IPFS, remember (key, publisher, studio) by CID. The studio
+ *  then records the CID on-chain with its own wallet. */
+export async function publishBuild(plain: Uint8Array, message: string, signature: `0x${string}`): Promise<StoredBuild> {
   const jwt = process.env.PINATA_JWT;
   if (!jwt) throw new Error("PINATA_JWT manquant dans ticketd/.env");
+  const f = parsePublishMessage(message);
+
+  const age = Date.now() - Date.parse(f.at);
+  if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) throw new Error("message de publication expiré");
+  if (friendNonces.has(f.nonce)) throw new Error("nonce déjà utilisé");
+  if (!(await verifyMessage({ address: f.wallet as `0x${string}`, message, signature }))) throw new Error("signature invalide");
+  const digest = `0x${createHash("sha256").update(plain).digest("hex")}`;
+  if (digest !== f.sha256) throw new Error("le fichier reçu ne correspond pas au fichier signé");
+
+  if (!DEPLOYMENTS.gameRegistry) throw new Error("GameRegistry non déployé");
+  const [owner] = await client.readContract({
+    address: DEPLOYMENTS.gameRegistry as `0x${string}`,
+    abi: REGISTRY_ABI,
+    functionName: "studios",
+    args: [BigInt(f.studioId)],
+  });
+  if (owner.toLowerCase() !== f.wallet.toLowerCase()) {
+    throw new Error(`le studio #${f.studioId} n'appartient pas à ce wallet`);
+  }
+  friendNonces.add(f.nonce);
+
   const contentKey = crypto.getRandomValues(new Uint8Array(32));
   const enc = encryptBuild(plain, contentKey);
-  const stored = await putBuild(enc, name, jwt);
-  saveKey(stored.cid, hex(contentKey));
+  const stored = await putBuild(enc, f.name, jwt);
+  saveKey(stored.cid, { key: hex(contentKey), publisher: f.wallet.toLowerCase(), studioId: f.studioId });
   cacheBuild(stored.cid, enc); // primary distribution — IPFS is the backup
-  console.log(`✔ build publié: ${name} -> ${stored.cid} (clé mémorisée, cache local)`);
+  console.log(`✔ build publié: ${f.name} -> ${stored.cid} (studio #${f.studioId}, ${f.wallet})`);
   return stored;
 }
 
@@ -468,12 +546,29 @@ async function contentKeyFor(tokenId: string): Promise<Uint8Array> {
       args: [BigInt(editionId)],
     });
     const cid = edition[4];
-    const owner = await editionForCid(cid);
-    if (owner && owner.editionId !== editionId) {
-      throw new Error(`édition #${editionId} réutilise le build de l'édition #${owner.editionId} — refusé`);
+    const first = await editionForCid(cid);
+    if (first && first.editionId !== editionId) {
+      throw new Error(`édition #${editionId} réutilise le build de l'édition #${first.editionId} — refusé`);
     }
-    const stored = keyStore()[cid];
-    if (stored) return unhex(stored);
+    const rec = keyRecord(cid);
+    if (rec) {
+      if (rec.studioId === null) {
+        // legacy key (unsigned publish era) — dev only
+        if (!DEV_MODE) throw new Error(`build de l'édition #${editionId} publié sans signature studio — refusé`);
+      } else {
+        // The key is released only for editions of the studio that signed the publish
+        const [studioId] = await client.readContract({
+          address: DEPLOYMENTS.gameRegistry as `0x${string}`,
+          abi: REGISTRY_ABI,
+          functionName: "games",
+          args: [edition[0]],
+        });
+        if (studioId.toString() !== rec.studioId) {
+          throw new Error(`l'édition #${editionId} n'appartient pas au studio #${rec.studioId} qui a publié ce build — refusé`);
+        }
+      }
+      return unhex(rec.key);
+    }
   }
   if (!DEV_MODE) throw new Error(`aucune clé de contenu pour l'édition #${editionId}`);
   return devContentKeyFor(editionId);

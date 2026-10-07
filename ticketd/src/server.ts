@@ -75,7 +75,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       ? {
           "Access-Control-Allow-Origin": origin,
           "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
+          "Access-Control-Allow-Headers": "Content-Type, X-GameVault-Message, X-GameVault-Signature",
           Vary: "Origin",
         }
       : {};
@@ -181,14 +181,20 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     }
   }
 
-  // Studio publish: raw build bytes in -> encrypted + pinned, key stored
-  if (req.method === "POST" && req.url?.startsWith("/publish")) {
+  // Studio publish: raw build bytes in, studio-signed request in headers
+  // (message base64 — headers cannot carry newlines) -> encrypted + pinned.
+  if (req.method === "POST" && req.url === "/publish") {
     try {
-      const name = new URL(req.url, "http://localhost").searchParams.get("name") ?? "build.enc";
+      const msgB64 = req.headers["x-gamevault-message"];
+      const signature = req.headers["x-gamevault-signature"];
+      if (typeof msgB64 !== "string" || typeof signature !== "string") {
+        return send(401, { error: "publication non signée par un studio" });
+      }
+      const message = Buffer.from(msgB64, "base64").toString("utf8");
       const bytes = await readBody(req, MAX_UPLOAD);
-      return send(200, await publishBuild(new Uint8Array(bytes), name));
+      return send(200, await publishBuild(new Uint8Array(bytes), message, signature as `0x${string}`));
     } catch (e) {
-      return fail(500, "publish", e);
+      return fail(403, "publish", e);
     }
   }
 

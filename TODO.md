@@ -66,8 +66,7 @@ disparue) ; tokens #1 (runner) et #2 (native) mintés au wallet dev. RESTE :
 
 ## P2bis — Sécurité : chantiers structurels de l'audit (docs/audit-2026-10-07.md)
 Les correctifs rapides sont faits ; restent les décisions/chantiers :
-- [ ] `/publish` signé par le wallet du studio + liaison éditeur ↔ clé de
-      contenu (ferme définitivement T1)
+- [x] `/publish` signé par le wallet du studio + clé liée au studio (2026-10-07)
 - [ ] Séparer les clés (tickets / attestations / frais) + signataire
       d'attestations rotatable on-chain ; ROTATION de la clé et du JWT
       Pinata déjà exposés (redéploiement)
