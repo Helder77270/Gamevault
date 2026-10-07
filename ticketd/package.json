@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --env-file-if-exists=.env --experimental-strip-types --watch src/server.ts",
+    "dev": "node --env-file-if-exists=.env --env-file-if-exists=.env.dev --experimental-strip-types --watch src/server.ts",
     "start": "node --env-file-if-exists=.env --experimental-strip-types src/server.ts",
     "selftest": "node --experimental-strip-types src/selftest.ts"
   },

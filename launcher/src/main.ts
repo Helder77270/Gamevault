@@ -21,10 +21,12 @@ const GAME_URL = navigator.userAgent.includes("Windows") ? "http://game.localhos
 // backup. Integrity is checked HERE against the on-chain sha256 either way.
 const BUILD_MIRRORS = [`${TICKETD_URL}/build/`, ...GATEWAYS];
 
-// Platform public keys embedded in the launcher (real key + dev fixture key)
+// Platform public keys embedded in the launcher. The DEV fixture key is
+// derived from a PUBLIC seed (shared/devkeys) — anyone can sign with it —
+// so it is accepted in `vite dev` builds only, never in a release (audit L1).
 const PLATFORM_PUBS = [
   unhex("0x0314864d3e6672b07e9a046c044f329cc38c7ad7c3af7075b4d54e273bddbc1149"),
-  unhex("0x038d78e7c9ea67e401f6e9dbf8fccae4563dc21c0e3f569338012ba95c50700f2b"),
+  ...(import.meta.env.DEV ? [unhex("0x038d78e7c9ea67e401f6e9dbf8fccae4563dc21c0e3f569338012ba95c50700f2b")] : []),
 ];
 const verifyPlatformSig = (t: SignedTicket): boolean => PLATFORM_PUBS.some((k) => verifyTicket(t, k));
 
@@ -224,19 +226,49 @@ function fmtAgo(ts: number): string {
 
 // ── Verification ──────────────────────────────────────────────
 
+// The card is attacker-controlled input (audit L2/L10): every field that
+// reaches the DOM or a Tauri command must match its expected shape first.
+const HEX_RE = /^0x[0-9a-fA-F]*$/;
+const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
+
+function isTicketShape(v: unknown): v is SignedTicket {
+  if (!v || typeof v !== "object") return false;
+  const x = v as Record<string, unknown>;
+  return (
+    typeof x.tokenId === "string" && /^\d{1,12}$/.test(x.tokenId) &&
+    typeof x.contract === "string" && ADDR_RE.test(x.contract) &&
+    typeof x.ownerAddress === "string" && ADDR_RE.test(x.ownerAddress) &&
+    typeof x.devicePubKey === "string" && HEX_RE.test(x.devicePubKey) &&
+    typeof x.wrappedContentKey === "string" && HEX_RE.test(x.wrappedContentKey) &&
+    typeof x.platformSignature === "string" && HEX_RE.test(x.platformSignature) &&
+    Number.isInteger(x.chainId) && Number.isInteger(x.issuedAt) && Number.isInteger(x.expiresAt)
+  );
+}
+
+function cleanMeta(raw: unknown): Game["meta"] {
+  if (!raw || typeof raw !== "object") return {};
+  const x = raw as Record<string, unknown>;
+  const str = (v: unknown, max: number) => (typeof v === "string" ? v.slice(0, max) : undefined);
+  const edition = str(x.edition, 12);
+  return { title: str(x.title, 80), studio: str(x.studio, 80), edition: edition && /^\d+$/.test(edition) ? edition : undefined };
+}
+
 function judge(c: Cartridge): Game {
   let meta: Game["meta"] = {};
   try {
-    meta = c.meta_json ? JSON.parse(c.meta_json) : {};
+    meta = c.meta_json ? cleanMeta(JSON.parse(c.meta_json)) : {};
   } catch {
     /* meta is cosmetic */
   }
   let ticket: SignedTicket | null = null;
   try {
-    ticket = JSON.parse(c.ticket_json) as SignedTicket;
+    const parsed: unknown = JSON.parse(c.ticket_json);
+    if (!isTicketShape(parsed)) return { cartridge: c, ticket: null, meta, verdict: "unreadable" };
+    ticket = parsed;
   } catch {
     return { cartridge: c, ticket: null, meta, verdict: "unreadable" };
   }
+  if (ticket.chainId !== CHAIN.id) return { cartridge: c, ticket, meta, verdict: "tampered" };
   if (ticket.platformSignature === "0x") return { cartridge: c, ticket, meta, verdict: "unpaired" };
   if (!verifyPlatformSig(ticket)) return { cartridge: c, ticket, meta, verdict: "tampered" };
   if (isExpired(ticket)) return { cartridge: c, ticket, meta, verdict: "expired" };
@@ -385,7 +417,7 @@ async function startPairing(g: Game): Promise<void> {
   const nonce = crypto.randomUUID();
   const url =
     `${MARKETPLACE_URL}/pair?device=${encodeURIComponent(state.devicePubKey)}` +
-    `&nonce=${nonce}&token=${encodeURIComponent(g.ticket.tokenId)}&contract=${encodeURIComponent(g.ticket.contract)}`;
+    `&nonce=${nonce}&token=${encodeURIComponent(g.ticket.tokenId)}&contract=${encodeURIComponent(DEPLOYMENTS.gameLicense || g.ticket.contract)}`;
   const qrDataUrl = await QRCode.toDataURL(url, { width: 200, margin: 2 });
   state.pairing = { nonce, url, qrDataUrl, status: "waiting" };
   state.screen = "insert";
@@ -418,7 +450,12 @@ function stopPolling(): void {
 
 async function completePairing(g: Game, ticket: SignedTicket): Promise<void> {
   stopPolling();
-  if (!verifyPlatformSig(ticket) || ticket.devicePubKey.toLowerCase() !== state.devicePubKey.toLowerCase()) {
+  if (
+    !isTicketShape(ticket) ||
+    !verifyPlatformSig(ticket) ||
+    ticket.devicePubKey.toLowerCase() !== state.devicePubKey.toLowerCase() ||
+    ticket.tokenId !== g.ticket?.tokenId // the ticket must be for THIS card (audit L12)
+  ) {
     state.pairing = null;
     fail(t("err.cardReadT"), t("err.badTicketM"), "ERR 0x21 · LICENCE CHECKSUM MISMATCH · SLOT A", "detail");
     return;
@@ -1488,7 +1525,7 @@ function detailView(): string {
         <div class="detail-blurb">${esc(BLURBS[e.editionId] ?? t("det.blurb"))}</div>
         <div class="stat-row">
           <div class="stat"><div class="k">LICENCE CARD</div><div class="v">${
-            g?.ticket ? `#${esc(g.ticket.tokenId)} · ${short(g.ticket.ownerAddress, 6)}` : ownedTok.length ? ownedTok.map((o) => `#${o.tokenId}`).join(" · ") : "—"
+            g?.ticket ? `#${esc(g.ticket.tokenId)} · ${esc(short(g.ticket.ownerAddress, 6))}` : ownedTok.length ? ownedTok.map((o) => `#${esc(o.tokenId)}`).join(" · ") : "—"
           }</div></div>
           <div class="stat"><div class="k">CARTRIDGE</div><div class="v">${g ? `${esc(g.cartridge.mount_point)} · ${g.verdict.toUpperCase()}` : t("det.notInserted")}</div></div>
           <div class="stat"><div class="k">${g?.ticket && g.verdict === "authentic" ? "EXPIRES" : "BUILD CID"}</div><div class="v">${
@@ -1550,7 +1587,7 @@ function insertView(): string {
     sub = t("ins.sigSub");
     steps = [
       { label: "DETECT CARD", st: "ok", note: "SEATED" },
-      { label: "READ LICENCE BLOCK", st: "ok", note: `#${g?.ticket?.tokenId ?? "?"}` },
+      { label: "READ LICENCE BLOCK", st: "ok", note: `#${esc(g?.ticket?.tokenId ?? "?")}` },
       { label: "OWNER SIGNATURE", st: "run", note: "WAITING…" },
       { label: "UNLOCK TITLE", st: "idle", note: "—" },
     ];
@@ -1566,7 +1603,7 @@ function insertView(): string {
     sub = t("ins.seatedSub");
     steps = [
       { label: "DETECT CARD", st: "ok", note: esc(g.cartridge.mount_point) },
-      { label: "READ LICENCE BLOCK", st: g.ticket ? "ok" : "fail", note: g.ticket ? `#${g.ticket.tokenId}` : "UNREADABLE" },
+      { label: "READ LICENCE BLOCK", st: g.ticket ? "ok" : "fail", note: g.ticket ? `#${esc(g.ticket.tokenId)}` : "UNREADABLE" },
       { label: "VERIFY SIGNATURE", st: g.verdict === "authentic" ? "ok" : g.verdict === "unpaired" ? "run" : "fail", note: g.verdict.toUpperCase() },
       { label: "UNLOCK TITLE", st: playableNow(editionFor(g) ?? ({ editionId: "" } as OnchainEdition)) ? "ok" : "idle", note: isOurs(g) ? "THIS MACHINE" : "PAIR NEEDED" },
     ];

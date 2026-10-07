@@ -28,7 +28,7 @@ fn run_root() -> PathBuf {
 
 /// Kill + clean a native run and tell the UI. Used by EJECT and revocation.
 fn end_native(app: &AppHandle, slot: &Arc<Mutex<Option<NativeRun>>>, killed: bool) {
-    if let Some(mut run) = slot.lock().unwrap().take() {
+    if let Some(mut run) = slot.lock().unwrap_or_else(|e| e.into_inner()).take() {
         let _ = run.child.kill();
         let _ = run.child.wait();
         let secs = run.started.elapsed().as_secs();
@@ -37,6 +37,16 @@ fn end_native(app: &AppHandle, slot: &Arc<Mutex<Option<NativeRun>>>, killed: boo
             "native-exited",
             serde_json::json!({ "code": null, "seconds": secs, "killed": killed }),
         );
+    }
+}
+
+/// Commands only touch volumes the launcher itself detected — never an
+/// arbitrary path handed over by the webview.
+fn known_mount(mount_point: &str) -> Result<(), String> {
+    if media::list_removable().iter().any(|v| v.mount_point == mount_point) {
+        Ok(())
+    } else {
+        Err("support inconnu — insérez une carte détectée par le lecteur".into())
     }
 }
 
@@ -57,6 +67,7 @@ fn play_game(
     native: tauri::State<NativeSession>,
     mount_point: String,
 ) -> Result<Value, String> {
+    known_mount(&mount_point)?;
     let gv = Path::new(&mount_point).join("gamevault");
 
     let ticket: Value = serde_json::from_str(
@@ -85,7 +96,7 @@ fn play_game(
         return launch_native(app, native, &ticket, plain).map_err(|e| format!("runtime natif: {e}"));
     }
 
-    *state.0.lock().unwrap() = Some(plain);
+    *state.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(plain);
     Ok(serde_json::json!({ "kind": "html" }))
 }
 
@@ -100,11 +111,15 @@ fn launch_native(
 ) -> Result<Value, String> {
     use sha2::{Digest, Sha256};
 
-    if native.0.lock().unwrap().is_some() {
+    if native.0.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
         return Err("un jeu natif tourne déjà".into());
     }
 
-    let token = ticket["tokenId"].as_str().unwrap_or("x");
+    // Used in a path: digits only (an absolute path here would replace the run root)
+    let token = ticket["tokenId"]
+        .as_str()
+        .filter(|s| !s.is_empty() && s.len() <= 12 && s.bytes().all(|b| b.is_ascii_digit()))
+        .ok_or("tokenId invalide")?;
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
@@ -132,13 +147,13 @@ fn launch_native(
     let pid = child.id();
 
     let slot = native.0.clone();
-    *slot.lock().unwrap() = Some(NativeRun { child, dir, started: Instant::now() });
+    *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(NativeRun { child, dir, started: Instant::now() });
 
     // Watcher: polls the child; on natural exit -> cleanup + event.
     let watcher_slot = native.0.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_millis(600));
-        let mut guard = watcher_slot.lock().unwrap();
+        let mut guard = watcher_slot.lock().unwrap_or_else(|e| e.into_inner());
         match guard.as_mut() {
             Some(run) => match run.child.try_wait() {
                 Ok(Some(status)) => {
@@ -155,7 +170,11 @@ fn launch_native(
                 }
                 Ok(None) => {}
                 Err(_) => {
+                    // Lost track of the child: still never leave plaintext behind
+                    let dir = run.dir.clone();
                     *guard = None;
+                    drop(guard);
+                    let _ = std::fs::remove_dir_all(&dir);
                     break;
                 }
             },
@@ -169,14 +188,14 @@ fn launch_native(
 /// Quit: drop the HTML bundle from memory AND/OR kill the native process.
 #[tauri::command]
 fn stop_game(app: AppHandle, state: tauri::State<GameSession>, native: tauri::State<NativeSession>) {
-    *state.0.lock().unwrap() = None;
+    *state.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
     end_native(&app, &native.0, true);
 }
 
 /// Resync after a webview reload: is a native game still running under us?
 #[tauri::command]
 fn native_status(native: tauri::State<NativeSession>) -> Value {
-    match native.0.lock().unwrap().as_ref() {
+    match native.0.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
         Some(run) => serde_json::json!({
             "running": true,
             "pid": run.child.id(),
@@ -209,6 +228,7 @@ fn install_cartridge(
     data_b64: String,
 ) -> Result<(), String> {
     use base64::Engine;
+    known_mount(&mount_point)?;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data_b64)
         .map_err(|e| format!("base64: {e}"))?;
@@ -229,6 +249,7 @@ fn install_cartridge(
 #[tauri::command]
 fn write_build(mount_point: String, data_b64: String) -> Result<(), String> {
     use base64::Engine;
+    known_mount(&mount_point)?;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data_b64)
         .map_err(|e| format!("base64: {e}"))?;
@@ -242,6 +263,7 @@ fn write_build(mount_point: String, data_b64: String) -> Result<(), String> {
 /// Write a freshly issued ticket back onto the cartridge (why USB/SD > CD-R).
 #[tauri::command]
 fn write_ticket(mount_point: String, ticket_json: String) -> Result<(), String> {
+    known_mount(&mount_point)?;
     // sanity: refuse to write something that isn't a JSON object
     serde_json::from_str::<Value>(&ticket_json).map_err(|e| format!("ticket invalide: {e}"))?;
     let path = Path::new(&mount_point).join("gamevault").join("ticket.json");
@@ -262,7 +284,7 @@ pub fn run() {
         })
         .register_uri_scheme_protocol("game", |ctx, _request| {
             let state = ctx.app_handle().state::<GameSession>();
-            let guard = state.0.lock().unwrap();
+            let guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
             match guard.as_ref() {
                 Some(html) => tauri::http::Response::builder()
                     .header("Content-Type", "text/html; charset=utf-8")

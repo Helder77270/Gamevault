@@ -12,47 +12,26 @@ import { signTicket, wrapKey, hex, unhex, encryptBuild, type SignedTicket, type 
 import { parsePairingMessage } from "@gamevault/shared/siwe";
 import { DEV_PLATFORM_PRIV, devContentKeyFor } from "@gamevault/shared/devkeys";
 import { LICENSE_ABI, REGISTRY_ABI } from "@gamevault/shared/abi";
-import { DEPLOYMENTS } from "@gamevault/shared/deployments";
+import { CHAIN, DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { fetchBuild, putBuild, type StoredBuild } from "@gamevault/shared/storage";
 
 const TICKET_TTL_SEC = 30 * 24 * 3600; // 30-day offline window
 const MESSAGE_MAX_AGE_MS = 10 * 60 * 1000; // pairing message freshness
 
-const ERC721_OWNER_OF = [
-  {
-    name: "ownerOf",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "tokenId", type: "uint256" }],
-    outputs: [{ type: "address" }],
-  },
-  {
-    name: "userOf",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "tokenId", type: "uint256" }],
-    outputs: [{ type: "address" }],
-  },
-  {
-    name: "userExpires",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "tokenId", type: "uint256" }],
-    outputs: [{ type: "uint256" }],
-  },
-] as const;
-
 // --- Config (env) -----------------------------------------------------------
+
+// GAMEVAULT_SKIP_OWNER_CHECK=1 is for the selftest only (no chain there)
+const skipOwnerCheck = process.env.GAMEVAULT_SKIP_OWNER_CHECK === "1";
+/** Dev fallbacks (public DEV keys) are allowed ONLY here — fail-closed otherwise. */
+const DEV_MODE = process.env.GAMEVAULT_DEV === "1" || skipOwnerCheck;
 
 function platformPriv(): Uint8Array {
   const env = process.env.PLATFORM_PRIVKEY;
   if (env) return unhex(env);
+  if (!DEV_MODE) throw new Error("PLATFORM_PRIVKEY manquant — refus de signer avec la clé DEV publique");
   console.warn("⚠ PLATFORM_PRIVKEY not set — using the DEV platform key (fixtures only)");
   return DEV_PLATFORM_PRIV;
 }
-
-// GAMEVAULT_SKIP_OWNER_CHECK=1 is for the selftest only (no chain there)
-const skipOwnerCheck = process.env.GAMEVAULT_SKIP_OWNER_CHECK === "1";
 const licenseAddress =
   !skipOwnerCheck && (process.env.GAMELICENSE_ADDRESS || DEPLOYMENTS.gameLicense)
     ? ((process.env.GAMELICENSE_ADDRESS || DEPLOYMENTS.gameLicense) as `0x${string}`)
@@ -119,9 +98,14 @@ export async function getBuild(cid: string): Promise<Uint8Array> {
   if (!/^[A-Za-z0-9]{10,100}$/.test(cid)) throw new Error("CID invalide");
   const p = join(BUILDS_DIR, cid);
   if (existsSync(p)) return new Uint8Array(readFileSync(p));
-  const bytes = await fetchBuild(cid); // server-side: no CORS, gateway fallback
+  // Cache miss: only for CIDs registered on-chain, verified against the
+  // on-chain sha256 BEFORE caching (audit T7 — no amplification of
+  // arbitrary CIDs, no permanently poisoned cache).
+  const ed = await editionForCid(cid);
+  if (!ed) throw new Error("CID inconnu du registre");
+  const bytes = await fetchBuild(cid, ed.buildHash); // server-side: no CORS, gateway fallback
   cacheBuild(cid, bytes);
-  console.log(`✔ build ${cid} récupéré d'IPFS -> cache local (${bytes.length} o)`);
+  console.log(`✔ build ${cid} récupéré d'IPFS, hash vérifié -> cache local (${bytes.length} o)`);
   return bytes;
 }
 
@@ -134,6 +118,7 @@ export async function getBuild(cid: string): Promise<Uint8Array> {
 
 const FRIENDS_PATH = join(dirname(fileURLToPath(import.meta.url)), "../data/friends.json");
 const ATTEST_TTL_SEC = 10 * 60;
+const MAX_FRIENDS = 16;
 
 interface FriendsDb {
   /** "from|to" (lowercase) -> ms de la demande en attente */
@@ -189,6 +174,11 @@ export async function applyFriendAction(message: string, signature: `0x${string}
     db.requests[`${meL}|${otherL}`] = Date.now();
   } else if (action === "accept") {
     if (!db.requests[`${otherL}|${meL}`]) throw new Error("aucune demande de cette adresse");
+    // Anti-farm cap (audit T10): a lending ring needs many "friends".
+    const countOf = (a: string) => Object.keys(db.friendships).filter((k) => k.split("|").includes(a)).length;
+    if (countOf(meL) >= MAX_FRIENDS || countOf(otherL) >= MAX_FRIENDS) {
+      throw new Error(`limite de ${MAX_FRIENDS} amis atteinte`);
+    }
     delete db.requests[`${otherL}|${meL}`];
     delete db.requests[`${meL}|${otherL}`];
     db.friendships[pk2] = Math.floor(Date.now() / 1000);
@@ -231,9 +221,13 @@ export function friendsOf(addr: string): {
 }
 
 /** L'attestation que lend() vérifie on-chain. Gratuite, courte durée. */
-export function attestFriendship(owner: string, borrower: string): { since: number; deadline: number; sig: `0x${string}`; license: string } | Promise<never> {
+export async function attestFriendship(
+  owner: string,
+  borrower: string,
+): Promise<{ since: number; deadline: number; sig: `0x${string}`; license: string }> {
   if (!ADDR_RE.test(owner) || !ADDR_RE.test(borrower)) throw new Error("adresse invalide");
-  const license = DEPLOYMENTS.gameLicense;
+  // Same address the ownerOf/userOf checks use (honours GAMELICENSE_ADDRESS)
+  const license = licenseAddress;
   if (!license) throw new Error("GameLicense non déployé");
   const since = friendsDb().friendships[pairKey(owner, borrower)];
   if (!since) throw new Error("pas amis — la demande doit être acceptée d'abord");
@@ -241,11 +235,12 @@ export function attestFriendship(owner: string, borrower: string): { since: numb
   const digest = keccak256(
     encodePacked(
       ["string", "uint256", "address", "address", "address", "uint64", "uint64"],
-      ["GAMEVAULT_FRIEND_ATTEST", BigInt(84532), license, owner as `0x${string}`, borrower as `0x${string}`, BigInt(since), BigInt(deadline)],
+      ["GAMEVAULT_FRIEND_ATTEST", BigInt(CHAIN.id), license, owner as `0x${string}`, borrower as `0x${string}`, BigInt(since), BigInt(deadline)],
     ),
   );
   const account = privateKeyToAccount(`0x${Buffer.from(platformPriv()).toString("hex")}` as `0x${string}`);
-  return account.signMessage({ message: { raw: digest } }).then((sig) => ({ since, deadline, sig, license })) as never;
+  const sig = await account.signMessage({ message: { raw: digest } });
+  return { since, deadline, sig, license };
 }
 
 // ── Profils (décidé 2026-10-07) ──────────────────────────────────────────
@@ -428,28 +423,59 @@ export function backdateFriendship(a: string, b: string, sinceSec: number): { ok
   return { ok: true, since: Math.floor(sinceSec) };
 }
 
-async function contentKeyFor(tokenId: string): Promise<Uint8Array> {
-  let editionId = "2"; // runner fallback when no chain (selftest)
-  if (licenseAddress) {
-    const ed = await client.readContract({
-      address: licenseAddress,
-      abi: LICENSE_ABI,
-      functionName: "editionOf",
-      args: [BigInt(tokenId)],
-    });
-    editionId = ed.toString();
-    // published edition? resolve its on-chain CID -> stored key
-    if (DEPLOYMENTS.gameRegistry) {
-      const edition = await client.readContract({
-        address: DEPLOYMENTS.gameRegistry as `0x${string}`,
-        abi: REGISTRY_ABI,
-        functionName: "editions",
-        args: [BigInt(editionId)],
-      });
-      const stored = keyStore()[edition[4]];
-      if (stored) return unhex(stored);
-    }
+// ── CID → first edition binding (audit T1, 2026-10-07) ──────────────────
+// The registry is permissionless: anyone can create a 0-ETH edition that
+// points at ANOTHER studio's CID and get that game's content key sealed to
+// their device. Mitigation without a contract change: a CID belongs to the
+// FIRST edition that registered it (the real studio registers right after
+// publishing; CIDs are not discoverable before). Editions are immutable, so
+// the index only grows — cached in memory, extended on demand.
+
+const cidIndex = new Map<string, { editionId: string; buildHash: string }>();
+let indexedUpTo = 0n;
+
+async function indexEditions(): Promise<void> {
+  if (!DEPLOYMENTS.gameRegistry) return;
+  const reg = DEPLOYMENTS.gameRegistry as `0x${string}`;
+  const count = await client.readContract({ address: reg, abi: REGISTRY_ABI, functionName: "editionCount" });
+  for (let i = indexedUpTo + 1n; i <= count; i++) {
+    const e = await client.readContract({ address: reg, abi: REGISTRY_ABI, functionName: "editions", args: [i] });
+    if (!cidIndex.has(e[4])) cidIndex.set(e[4], { editionId: i.toString(), buildHash: e[5] });
+    indexedUpTo = i;
   }
+}
+
+/** The legitimate (first) edition for a CID, or undefined if unregistered. */
+async function editionForCid(cid: string): Promise<{ editionId: string; buildHash: string } | undefined> {
+  if (!cidIndex.has(cid)) await indexEditions();
+  return cidIndex.get(cid);
+}
+
+async function contentKeyFor(tokenId: string): Promise<Uint8Array> {
+  if (!licenseAddress) {
+    // selftest / no chain: deterministic dev key only (never in prod)
+    if (!DEV_MODE) throw new Error("ticketd mal configuré : aucune licence on-chain");
+    return devContentKeyFor("2");
+  }
+  const editionId = (
+    await client.readContract({ address: licenseAddress, abi: LICENSE_ABI, functionName: "editionOf", args: [BigInt(tokenId)] })
+  ).toString();
+  if (DEPLOYMENTS.gameRegistry) {
+    const edition = await client.readContract({
+      address: DEPLOYMENTS.gameRegistry as `0x${string}`,
+      abi: REGISTRY_ABI,
+      functionName: "editions",
+      args: [BigInt(editionId)],
+    });
+    const cid = edition[4];
+    const owner = await editionForCid(cid);
+    if (owner && owner.editionId !== editionId) {
+      throw new Error(`édition #${editionId} réutilise le build de l'édition #${owner.editionId} — refusé`);
+    }
+    const stored = keyStore()[cid];
+    if (stored) return unhex(stored);
+  }
+  if (!DEV_MODE) throw new Error(`aucune clé de contenu pour l'édition #${editionId}`);
   return devContentKeyFor(editionId);
 }
 
@@ -478,6 +504,13 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
   // 1. Parse fields FROM the signed message (canonical-format enforced)
   const p = parsePairingMessage(message);
 
+  // 1b. Bind to THIS deployment — the ticket copies chainId/contract, so a
+  //     message for another chain or contract must never be sealed.
+  if (p.chainId !== CHAIN.id) throw new Error(`mauvaise chaîne (${p.chainId}, attendu ${CHAIN.id})`);
+  if (licenseAddress && p.contract.toLowerCase() !== licenseAddress.toLowerCase()) {
+    throw new Error("contrat de licence inattendu");
+  }
+
   // 2. Freshness + replay protection
   const age = Date.now() - Date.parse(p.issuedAt);
   if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) {
@@ -498,7 +531,7 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
     try {
       owner = await client.readContract({
         address: licenseAddress,
-        abi: ERC721_OWNER_OF,
+        abi: LICENSE_ABI,
         functionName: "ownerOf",
         args: [BigInt(p.tokenId)],
       });
@@ -512,7 +545,7 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
     try {
       borrower = await client.readContract({
         address: licenseAddress,
-        abi: ERC721_OWNER_OF,
+        abi: LICENSE_ABI,
         functionName: "userOf",
         args: [BigInt(p.tokenId)],
       });
@@ -524,7 +557,7 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
     if (loanActive && signer === borrower.toLowerCase()) {
       const exp = await client.readContract({
         address: licenseAddress,
-        abi: ERC721_OWNER_OF,
+        abi: LICENSE_ABI,
         functionName: "userExpires",
         args: [BigInt(p.tokenId)],
       });

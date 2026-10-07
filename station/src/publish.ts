@@ -41,6 +41,6 @@ const stored = await putBuild(enc, `gamevault-${game}-ed${editionId}-build.enc`,
 console.log(`\n✔ Épinglé.`);
 console.log(`  CID    : ${stored.cid}`);
 console.log(`  sha256 : ${stored.sha256}`);
-console.log(`\nÀ enregistrer :`);
-console.log(`  - shared/src/catalog.ts (buildCid/buildSha256 de l'édition ${editionId})`);
-console.log(`  - on-chain : GameRegistry.createEdition(..., "${stored.cid}", ${stored.sha256})`);
+console.log(`\nÀ enregistrer on-chain (le catalogue est lu depuis le registre) :`);
+console.log(`  GameRegistry.createEdition(..., "${stored.cid}", ${stored.sha256})`);
+console.log(`  (ou utilisez /studio, qui fait publish + createEdition d'un coup)`);

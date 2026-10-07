@@ -53,17 +53,28 @@ export async function putBuild(bytes: Uint8Array, name: string, jwt: string): Pr
  * happen right after pinning), then the public fallbacks. A wrong-bytes
  * response fails the sha256 check and the next gateway is tried.
  */
+const FETCH_TIMEOUT_MS = 60_000;
+const MAX_BUILD_BYTES = 512 * 1024 * 1024;
+
 export async function fetchBuild(cid: string, expectedSha256?: string, gateway?: string | string[]): Promise<Uint8Array> {
   const order = Array.isArray(gateway) ? gateway : gateway ? [gateway] : [GATEWAYS[0], ...GATEWAYS];
   let lastErr = "";
   for (const gw of order) {
     try {
-      const res = await fetch(`${gw}${cid}`);
+      const res = await fetch(`${gw}${cid}`, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
       if (!res.ok) {
         lastErr = `IPFS gateway ${res.status} for ${cid} (${gw})`;
         continue;
       }
+      if (Number(res.headers.get("content-length") ?? 0) > MAX_BUILD_BYTES) {
+        lastErr = `build too large on ${gw}`;
+        continue;
+      }
       const bytes = new Uint8Array(await res.arrayBuffer());
+      if (bytes.length > MAX_BUILD_BYTES) {
+        lastErr = `build too large on ${gw}`;
+        continue;
+      }
       if (expectedSha256 && digest(bytes) !== expectedSha256.toLowerCase()) {
         lastErr = `integrity check FAILED for ${cid} — ${gw} served tampered or wrong bytes`;
         continue;

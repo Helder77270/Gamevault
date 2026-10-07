@@ -64,6 +64,23 @@ disparue) ; tokens #1 (runner) et #2 (native) mintés au wallet dev. RESTE :
 - [ ] Réécrire la carte SD physique via le launcher (install + pair)
 - [ ] BLURBS/GENRES de registryCatalog à reclaver sur les nouvelles éditions
 
+## P2bis — Sécurité : chantiers structurels de l'audit (docs/audit-2026-10-07.md)
+Les correctifs rapides sont faits ; restent les décisions/chantiers :
+- [ ] `/publish` signé par le wallet du studio + liaison éditeur ↔ clé de
+      contenu (ferme définitivement T1)
+- [ ] Séparer les clés (tickets / attestations / frais) + signataire
+      d'attestations rotatable on-chain ; ROTATION de la clé et du JWT
+      Pinata déjà exposés (redéploiement)
+- [ ] Registre d'appareils par licence (1-2 actifs) + TTL ticket réduit
+- [ ] Vérification du ticket EN RUST avant déchiffrement / spawn
+- [ ] Persistance sérieuse (SQLite) : nonces, écritures atomiques, clés de
+      contenu chiffrées au repos + sauvegarde
+- [ ] Runtime natif : Authenticode + studios vérifiés
+- [ ] Dépendances : monter `next`, `npm audit fix`, lockfile sur le registre
+      officiel ; `tsc` strict + CI pour ticketd/shared/station
+- [ ] Contrats (prochain redéploiement) : annonces ressuscitées, pull
+      payments, EIP-712, retirer l'annonce ERC-4907
+
 ## P3 — Subgraph : déployer pour de vrai
 - [ ] Subgraph Studio base-sepolia : adresses + startBlock → deploy
 - [ ] NEXT_PUBLIC_SUBGRAPH_URL → /provenance/[tokenId] passe au réel

@@ -28,3 +28,4 @@ ticketd/data/
 # misc
 .DS_Store
 *.log
+!ticketd/.env.dev
