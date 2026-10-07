@@ -1113,7 +1113,11 @@ function previewPane(e: OnchainEdition): string {
                 ? `<button class="gm-item violet" data-gosell="${esc(g.ticket.tokenId)}" data-goedition="${esc(e.editionId)}">Revendre</button>`
                 : ""
             }
-            <button class="gm-item" disabled title="Prêt entre amis — arrive avec ERC-4907">Prêter à un ami · bientôt</button>
+            ${
+              (g?.ticket && isOurs(g)) || ownedTok.length
+                ? `<button class="gm-item" data-lendfriend="1" title="Le wallet signe dans le navigateur — comme l'achat">Prêter à un ami ↗</button>`
+                : `<button class="gm-item" disabled title="Possédez la licence pour la prêter">Prêter à un ami</button>`
+            }
           </div>
           <div class="pv-hint">${esc(hint)}</div>
         </div>
@@ -1723,6 +1727,9 @@ function wire(root: HTMLElement): void {
       state.sel = b.dataset.selrow ?? null;
       render();
     }),
+  );
+  root.querySelectorAll<HTMLButtonElement>("[data-lendfriend]").forEach((b) =>
+    b.addEventListener("click", () => void openUrl(`${MARKETPLACE_URL}/friends`)),
   );
   root.querySelectorAll<HTMLButtonElement>("[data-gosell]").forEach((b) =>
     b.addEventListener("click", () => {
