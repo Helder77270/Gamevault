@@ -1,5 +1,6 @@
 mod crypto;
 mod media;
+mod ticket;
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -56,10 +57,12 @@ fn scan_cartridges() -> Vec<media::Cartridge> {
     media::scan()
 }
 
-/// Full launch: read ticket -> unwrap content key with the device key ->
-/// decrypt build.enc in memory. The TS side has already verified the
-/// platform signature; the crypto below fails closed regardless (a forged
-/// ticket cannot contain an envelope our device key opens).
+/// Full launch: VERIFY the ticket here, in the trusted core (signature,
+/// expiry, chain, sealed for this machine) -> unwrap the content key with
+/// the device key -> decrypt build.enc in memory. The webview's own checks
+/// are UX only: an envelope copied from a genuine ticket would still open
+/// with our device key, so the crypto alone does NOT prove the ticket is
+/// authentic or unexpired — this check does.
 #[tauri::command]
 fn play_game(
     app: AppHandle,
@@ -75,15 +78,14 @@ fn play_game(
     )
     .map_err(|e| format!("ticket.json invalide: {e}"))?;
 
-    let wrapped_hex = ticket["wrappedContentKey"]
-        .as_str()
-        .ok_or("wrappedContentKey manquant")?
-        .trim_start_matches("0x")
-        .to_string();
-    let envelope = hex::decode(wrapped_hex).map_err(|e| e.to_string())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(u64::MAX); // broken clock = treat as expired, fail closed
+    let verified = ticket::verify_for_launch(&ticket, &crypto::device_pubkey_hex()?, now)?;
 
     let device_priv = crypto::device_priv()?; // OS keystore (Credential Manager)
-    let content_key = crypto::ecies_unwrap(&envelope, &device_priv)
+    let content_key = crypto::ecies_unwrap(&verified.wrapped_content_key, &device_priv)
         .map_err(|e| format!("clé d'appareil refusée: {e}"))?;
 
     let enc = std::fs::read(gv.join("build.enc")).map_err(|e| format!("build.enc: {e}"))?;
@@ -93,7 +95,7 @@ fn play_game(
     // The bytes describe their own runtime: PE executable ("MZ") -> native
     // process beside the launcher; anything else -> HTML in the webview.
     if plain.starts_with(b"MZ") {
-        return launch_native(app, native, &ticket, plain).map_err(|e| format!("runtime natif: {e}"));
+        return launch_native(app, native, &verified.token_id, plain).map_err(|e| format!("runtime natif: {e}"));
     }
 
     *state.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(plain);
@@ -106,7 +108,7 @@ fn play_game(
 fn launch_native(
     app: AppHandle,
     native: tauri::State<NativeSession>,
-    ticket: &Value,
+    token: &str, // from a VERIFIED ticket: digits only (ticket::verify_for_launch)
     plain: Vec<u8>,
 ) -> Result<Value, String> {
     use sha2::{Digest, Sha256};
@@ -114,12 +116,6 @@ fn launch_native(
     if native.0.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
         return Err("un jeu natif tourne déjà".into());
     }
-
-    // Used in a path: digits only (an absolute path here would replace the run root)
-    let token = ticket["tokenId"]
-        .as_str()
-        .filter(|s| !s.is_empty() && s.len() <= 12 && s.bytes().all(|b| b.is_ascii_digit()))
-        .ok_or("tokenId invalide")?;
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
@@ -264,8 +260,9 @@ fn write_build(mount_point: String, data_b64: String) -> Result<(), String> {
 #[tauri::command]
 fn write_ticket(mount_point: String, ticket_json: String) -> Result<(), String> {
     known_mount(&mount_point)?;
-    // sanity: refuse to write something that isn't a JSON object
-    serde_json::from_str::<Value>(&ticket_json).map_err(|e| format!("ticket invalide: {e}"))?;
+    // Only a genuine ticket sealed for THIS machine ever reaches a card
+    let parsed = serde_json::from_str::<Value>(&ticket_json).map_err(|e| format!("ticket invalide: {e}"))?;
+    ticket::verify_for_write(&parsed, &crypto::device_pubkey_hex()?)?;
     let path = Path::new(&mount_point).join("gamevault").join("ticket.json");
     std::fs::write(&path, ticket_json).map_err(|e| format!("écriture ticket: {e}"))
 }

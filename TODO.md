@@ -74,7 +74,7 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
 - [x] Registre d'appareils : 2 actifs max par compte (2026-10-07)
 - [ ] Décider : raccourcir la fenêtre hors ligne (30 j) ? limite le temps de jeu
       d'un appareil déconnecté qui reste hors ligne
-- [ ] Vérification du ticket EN RUST avant déchiffrement / spawn
+- [x] Vérification du ticket EN RUST avant déchiffrement / spawn (2026-10-07)
 - [ ] Persistance sérieuse (SQLite) : nonces, écritures atomiques, clés de
       contenu chiffrées au repos + sauvegarde
 - [ ] Runtime natif : Authenticode + studios vérifiés
