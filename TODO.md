@@ -81,8 +81,9 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
       supprimer les copies EN CLAIR des clés (data/content-keys.migrated.json,
       data/content-keys.backup-2026-10-07.json)
 - [ ] Runtime natif : Authenticode + studios vérifiés
-- [ ] Dépendances : monter `next`, `npm audit fix`, lockfile sur le registre
-      officiel ; `tsc` strict + CI pour ticketd/shared/station
+- [x] Dépendances : Next 15.5 + React 19, lockfile registre officiel (2026-10-08)
+- [ ] wagmi 3 (solde les 22 modérées uuid/decode-uri-component) ;
+      `tsc` strict + CI pour ticketd/shared/station
 - [ ] Contrats (prochain redéploiement) : pull payments (K4) — K3, K5, K6 faits
 
 ## P3 — Subgraph : déployer pour de vrai

@@ -15,5 +15,15 @@
   ],
   "devDependencies": {
     "@openzeppelin/contracts": "^5.6.1"
+  },
+  "overrides": {
+    "postcss": "^8.5.23",
+    "axios": "^1.20.0",
+    "viem": {
+      "ws": "^8.21.0"
+    },
+    "valtio": {
+      "use-sync-external-store": "^1.4.0"
+    }
   }
 }
