@@ -24,6 +24,20 @@ const ERC721_OWNER_OF = [
     inputs: [{ name: "tokenId", type: "uint256" }],
     outputs: [{ type: "address" }],
   },
+  {
+    name: "userOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ type: "address" }],
+  },
+  {
+    name: "userExpires",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ type: "uint256" }],
+  },
 ] as const;
 
 // --- Config (env) -----------------------------------------------------------
@@ -170,7 +184,10 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
   const sigOk = await verifyMessage({ address: p.address as `0x${string}`, message, signature });
   if (!sigOk) throw new Error("signature does not match the address in the message");
 
-  // 4. The signer really owns the license (live on-chain check)
+  // 4. The signer holds the PLAY RIGHT: the owner — or, during a loan, the
+  //    BORROWER (ERC-4907 userOf). The cartridge rule: while a loan runs,
+  //    the owner is refused — a lent game is handed over, not duplicated.
+  let loanExpires = 0; // unix seconds; 0 = signer is the owner
   if (licenseAddress) {
     let owner: string;
     try {
@@ -186,14 +203,43 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
         `licence #${p.tokenId} introuvable on-chain — elle n'a pas encore été mintée (achat primaire requis)`,
       );
     }
-    if (owner.toLowerCase() !== p.address.toLowerCase()) {
-      throw new Error(`ownerOf(${p.tokenId}) is ${owner}, not the signer`);
+    let borrower = "0x0000000000000000000000000000000000000000";
+    try {
+      borrower = await client.readContract({
+        address: licenseAddress,
+        abi: ERC721_OWNER_OF,
+        functionName: "userOf",
+        args: [BigInt(p.tokenId)],
+      });
+    } catch {
+      /* pre-lending contract: no userOf — owner-only */
+    }
+    const signer = p.address.toLowerCase();
+    const loanActive = borrower.toLowerCase() !== "0x0000000000000000000000000000000000000000";
+    if (loanActive && signer === borrower.toLowerCase()) {
+      const exp = await client.readContract({
+        address: licenseAddress,
+        abi: ERC721_OWNER_OF,
+        functionName: "userExpires",
+        args: [BigInt(p.tokenId)],
+      });
+      loanExpires = Number(exp);
+      console.log(`  prêt actif: emprunteur ${borrower} jusqu'à ${new Date(loanExpires * 1000).toISOString()}`);
+    } else if (signer === owner.toLowerCase()) {
+      if (loanActive) {
+        throw new Error(
+          `licence #${p.tokenId} prêtée à ${borrower} — le prêteur perd l'accès pendant le prêt (règle cartouche)`,
+        );
+      }
+    } else {
+      throw new Error(`ownerOf(${p.tokenId}) is ${owner}, not the signer (ni emprunteur actif)`);
     }
   }
 
   usedNonces.add(p.nonce);
 
-  // 5. Seal the content key to the DEVICE and sign the ticket
+  // 5. Seal the content key to the DEVICE and sign the ticket. A borrower's
+  //    ticket dies with the loan: expiresAt = min(TTL, fin du prêt).
   const now = Math.floor(Date.now() / 1000);
   const ticket: Ticket = {
     tokenId: p.tokenId,
@@ -203,7 +249,7 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
     devicePubKey: p.devicePubKey,
     wrappedContentKey: hex(wrapKey(await contentKeyFor(p.tokenId), unhex(p.devicePubKey))),
     issuedAt: now,
-    expiresAt: now + TICKET_TTL_SEC,
+    expiresAt: loanExpires > 0 ? Math.min(now + TICKET_TTL_SEC, loanExpires) : now + TICKET_TTL_SEC,
   };
   const signed = signTicket(ticket, platformPriv());
   pendingTickets.set(p.nonce, { ticket: signed, at: Date.now() });

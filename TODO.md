@@ -5,7 +5,17 @@ publish studio → IPFS → on-chain, re-download vérifié, revente + révocati
 live, catalogue on-chain, runtime natif .exe (spawn/track/kill-on-resale),
 nouvelle UI home/shelf/store. Ci-dessous : ce qui reste, par priorité.
 
-## P1 — Amis & prêt de jeux (le prochain gros morceau)
+## P1 — Amis & prêt de jeux — ✅ LIVRÉ 2026-10-07 (reste : UX de fête)
+
+FAIT : FriendRegistry + GameLicense ERC-4907 (lend/endLoan gardés : amitié
+mutuelle ≥ 3 j, ≤ 14 j, cooldown 24 h, 16 amis max, revente tue le prêt),
+28 tests forge verts, déployés (full reset, bloc 47799215). ticketd sert
+l'EMPRUNTEUR et refuse le propriétaire pendant le prêt ; le launcher
+accepte userOf au check hybride + écran AMIS (navbar) ; web /friends
+(demandes, prêts, retours). RESTE :
+- [ ] L'animation « au revoir Pokéball » + son du prêt (moment signature)
+- [ ] Bannière « PRÊTÉE À 0x… · J-x » sur la fiche d'une licence prêtée
+- [ ] Événements FriendRegistry/UpdateUser dans le subgraph (P3)
 
 Le pitch : « prête ta cartouche » mais en numérique — un ami emprunte ta
 licence, TU perds l'accès pendant le prêt (comme une vraie cartouche, comme
@@ -45,17 +55,14 @@ l'usage réel entre amis.
 - [ ] web : page /friends (demandes, compteur J-3, bouton PRÊTER depuis la
       fiche d'une licence possédée).
 
-## P2 — Full reset (voulu : état propre de bout en bout)
-- [ ] Redéployer GameRegistry/GameLicense/Marketplace (+ ERC-4907 +
-      FriendRegistry si P1 prêt) → nouvelles adresses dans
-      shared/src/deployments.ts
-- [ ] Purger ticketd/data, régénérer les clés (la Pinata JWT et la clé dev
-      ont transité en clair pendant le dev — à régénérer de toute façon)
-- [ ] Republier les éditions saines (runner, snake, native-test) — l'édition
-      « The Witcheur » #3 cassée (0 octet) disparaît avec le reset
-- [ ] Réécrire dev-media + la carte SD physique (son ticket est expiré
-      depuis le 2026-08-23)
-- [ ] Redéployer le subgraph sur les nouvelles adresses
+## P2 — Full reset — ✅ FAIT 2026-10-07 (avec P1)
+Nouvelles adresses dans deployments.ts (+friendRegistry) ; éditions
+republiées : 1 Snake, 2 Runner, 3 Native Runtime Test (Witcheur cassée
+disparue) ; tokens #1 (runner) et #2 (native) mintés au wallet dev. RESTE :
+- [ ] Régénérer la Pinata JWT et la clé dev (ont transité en clair) —
+      avant toute démo publique
+- [ ] Réécrire la carte SD physique via le launcher (install + pair)
+- [ ] BLURBS/GENRES de registryCatalog à reclaver sur les nouvelles éditions
 
 ## P3 — Subgraph : déployer pour de vrai
 - [ ] Subgraph Studio base-sepolia : adresses + startBlock → deploy

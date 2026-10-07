@@ -7,19 +7,108 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IGameVaultEvents} from "./interfaces/IGameVaultEvents.sol";
 import {GameRegistry} from "./GameRegistry.sol";
+import {FriendRegistry} from "./FriendRegistry.sol";
 
 /// @title GameLicense — one token = one game copy.
 /// @notice ownerOf() is what ticketd checks before sealing a ticket and what
 ///         the launcher checks live for instant revocation. EIP-2981 royalty
 ///         is set per-token at mint from the edition's royaltyBps — the
 ///         Marketplace READS it (load-bearing, not decorative).
+///
+///         LENDING (ERC-4907 views + guarded writes): lend() hands the play
+///         right to a MUTUAL FRIEND of >= 3 days — like handing over the
+///         cartridge: while the loan runs, ticketd refuses the OWNER and
+///         serves the borrower (userOf). Guards against commercial abuse:
+///         friendship age + per-token cooldown + bounded duration + friend
+///         cap (FriendRegistry). A transfer (resale) kills the loan — the
+///         standard UpdateUser event makes that indexable.
 contract GameLicense is ERC721, ERC2981, ReentrancyGuard, IGameVaultEvents {
     GameRegistry public immutable registry;
+    FriendRegistry public immutable friends;
     uint256 public nextTokenId;
     mapping(uint256 tokenId => uint256) public editionOf;
 
-    constructor(GameRegistry registryContract) ERC721("GameVault License", "GVL") {
+    // ── Lending (ERC-4907 data model) ────────────────────────────
+    struct UserInfo {
+        address user;
+        uint64 expires;
+    }
+
+    mapping(uint256 tokenId => UserInfo) private _users;
+    /// When the last loan ENDED EARLY (endLoan/transfer). Natural expiry is
+    /// read from the stale _users record — see _loanEndedAt().
+    mapping(uint256 tokenId => uint64) public lastLoanEnd;
+
+    uint64 public constant MIN_FRIEND_AGE = 3 days;
+    uint64 public constant MAX_LOAN_DURATION = 14 days;
+    uint64 public constant LOAN_COOLDOWN = 1 days;
+
+    /// ERC-4907 standard event — subgraphs and wallets understand it.
+    event UpdateUser(uint256 indexed tokenId, address indexed user, uint64 expires);
+
+    constructor(GameRegistry registryContract, FriendRegistry friendRegistry) ERC721("GameVault License", "GVL") {
         registry = registryContract;
+        friends = friendRegistry;
+    }
+
+    // ── ERC-4907 views ───────────────────────────────────────────
+
+    /// @notice Current borrower, or address(0) when no live loan.
+    function userOf(uint256 tokenId) public view returns (address) {
+        UserInfo memory u = _users[tokenId];
+        return (u.expires >= block.timestamp) ? u.user : address(0);
+    }
+
+    function userExpires(uint256 tokenId) external view returns (uint256) {
+        return _users[tokenId].expires;
+    }
+
+    function _loanEndedAt(uint256 tokenId) private view returns (uint64) {
+        uint64 ended = lastLoanEnd[tokenId];
+        uint64 prev = _users[tokenId].expires; // stale after natural expiry
+        return prev > ended ? prev : ended;
+    }
+
+    // ── Lending writes (guarded — this is NOT bare setUser) ─────
+
+    /// @notice Lend the play right to a mutual friend of >= 3 days, for at
+    ///         most 14 days. One borrower per token; 24 h cooldown between
+    ///         loans of the same token (anti rental-rotation).
+    function lend(uint256 tokenId, address to, uint64 expires) external {
+        require(ownerOf(tokenId) == msg.sender, "GameLicense: not owner");
+        require(to != msg.sender && to != address(0), "GameLicense: bad borrower");
+        require(userOf(tokenId) == address(0), "GameLicense: loan active");
+        uint64 nowTs = uint64(block.timestamp);
+        require(nowTs >= _loanEndedAt(tokenId) + LOAN_COOLDOWN || _loanEndedAt(tokenId) == 0, "GameLicense: cooldown");
+        uint64 since = friends.friendsSince(msg.sender, to);
+        require(since != 0, "GameLicense: not friends");
+        require(nowTs >= since + MIN_FRIEND_AGE, "GameLicense: friends < 3 days");
+        require(expires > nowTs && expires <= nowTs + MAX_LOAN_DURATION, "GameLicense: bad duration");
+
+        _users[tokenId] = UserInfo(to, expires);
+        emit UpdateUser(tokenId, to, expires);
+    }
+
+    /// @notice End a loan early — the owner reclaims, or the borrower
+    ///         returns the game. Starts the cooldown.
+    function endLoan(uint256 tokenId) external {
+        UserInfo memory u = _users[tokenId];
+        require(u.user != address(0) && u.expires >= block.timestamp, "GameLicense: no active loan");
+        require(msg.sender == ownerOf(tokenId) || msg.sender == u.user, "GameLicense: not a party");
+        lastLoanEnd[tokenId] = uint64(block.timestamp);
+        delete _users[tokenId];
+        emit UpdateUser(tokenId, address(0), 0);
+    }
+
+    /// A transfer is a resale: the loan dies with it (the new owner never
+    /// inherits a borrower). Mint (from == 0) is untouched.
+    function _update(address to, uint256 tokenId, address auth) internal override returns (address from) {
+        from = super._update(to, tokenId, auth);
+        if (from != address(0) && _users[tokenId].user != address(0)) {
+            lastLoanEnd[tokenId] = uint64(block.timestamp);
+            delete _users[tokenId];
+            emit UpdateUser(tokenId, address(0), 0);
+        }
     }
 
     /// @notice Primary sale: pay the edition price, receive the license.
@@ -38,6 +127,7 @@ contract GameLicense is ERC721, ERC2981, ReentrancyGuard, IGameVaultEvents {
     }
 
     function supportsInterface(bytes4 interfaceId) public view override(ERC721, ERC2981) returns (bool) {
-        return super.supportsInterface(interfaceId);
+        // 0xad092b5c = ERC-4907
+        return interfaceId == 0xad092b5c || super.supportsInterface(interfaceId);
     }
 }

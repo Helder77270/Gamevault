@@ -47,6 +47,46 @@ export const LICENSE_ABI = [
     inputs: [],
     outputs: [{ type: "uint256" }],
   },
+  // ── Lending (ERC-4907 + guarded writes) ────────────────────
+  {
+    name: "userOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ type: "address" }],
+  },
+  {
+    name: "userExpires",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "lend",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenId", type: "uint256" },
+      { name: "to", type: "address" },
+      { name: "expires", type: "uint64" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "endLoan",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    name: "lastLoanEnd",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ type: "uint64" }],
+  },
   {
     name: "LicenseMinted",
     type: "event",
@@ -54,6 +94,91 @@ export const LICENSE_ABI = [
       { name: "tokenId", type: "uint256", indexed: true },
       { name: "editionId", type: "uint256", indexed: true },
       { name: "to", type: "address", indexed: true },
+    ],
+  },
+  {
+    name: "UpdateUser",
+    type: "event",
+    inputs: [
+      { name: "tokenId", type: "uint256", indexed: true },
+      { name: "user", type: "address", indexed: true },
+      { name: "expires", type: "uint64", indexed: false },
+    ],
+  },
+] as const;
+
+export const FRIEND_ABI = [
+  {
+    name: "request",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "to", type: "address" }],
+    outputs: [],
+  },
+  {
+    name: "accept",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "from", type: "address" }],
+    outputs: [],
+  },
+  {
+    name: "remove",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "friend_", type: "address" }],
+    outputs: [],
+  },
+  {
+    name: "friendsSince",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "x", type: "address" },
+      { name: "y", type: "address" },
+    ],
+    outputs: [{ type: "uint64" }],
+  },
+  {
+    name: "friendsOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "who", type: "address" }],
+    outputs: [{ type: "address[]" }],
+  },
+  {
+    name: "requestedAt",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "from", type: "address" },
+      { name: "to", type: "address" },
+    ],
+    outputs: [{ type: "uint64" }],
+  },
+  {
+    name: "FriendRequested",
+    type: "event",
+    inputs: [
+      { name: "from", type: "address", indexed: true },
+      { name: "to", type: "address", indexed: true },
+    ],
+  },
+  {
+    name: "FriendsSince",
+    type: "event",
+    inputs: [
+      { name: "a", type: "address", indexed: true },
+      { name: "b", type: "address", indexed: true },
+      { name: "since", type: "uint64", indexed: false },
+    ],
+  },
+  {
+    name: "Unfriended",
+    type: "event",
+    inputs: [
+      { name: "a", type: "address", indexed: true },
+      { name: "b", type: "address", indexed: true },
     ],
   },
 ] as const;

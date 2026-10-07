@@ -11,7 +11,7 @@ import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/sh
 import { fetchOnchainCatalog, BLURBS, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
 import { fetchBuild, GATEWAYS } from "@gamevault/shared/storage";
-import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
+import { FRIEND_ABI, LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
 
 const MARKETPLACE_URL = "http://localhost:3000";
 const TICKETD_URL = "http://localhost:8787";
@@ -56,7 +56,7 @@ interface Pairing {
   error?: string;
 }
 
-type Screen = "boot" | "home" | "shelf" | "detail" | "insert" | "error";
+type Screen = "boot" | "home" | "shelf" | "detail" | "insert" | "friends" | "error";
 
 interface BootLine {
   label: string;
@@ -84,6 +84,10 @@ const state = {
   installing: null as { edition: OnchainEdition; volumes: Volume[]; status: string; tokenId: string; stage: number } | null,
   catalog: [] as OnchainEdition[],
   owned: [] as { tokenId: string; editionId: string }[],
+  /** mutual friendships of the library wallet (FriendRegistry) */
+  friends: [] as { addr: string; since: number }[],
+  /** live loans touching the library wallet, lent or borrowed */
+  loans: [] as { tokenId: string; owner: string; user: string; expires: number }[],
   ticketdOk: false,
   /** selected editionId for detail/insert screens */
   sel: null as string | null,
@@ -200,15 +204,71 @@ type OwnerCheck = "ok" | "revoked" | "offline";
 async function checkOwnerOnline(t: SignedTicket): Promise<OwnerCheck> {
   if (!chainClient || !DEPLOYMENTS.gameLicense) return "offline";
   try {
-    const owner = await chainClient.readContract({
-      address: DEPLOYMENTS.gameLicense,
-      abi: LICENSE_ABI,
-      functionName: "ownerOf",
-      args: [BigInt(t.tokenId)],
-    });
-    return owner.toLowerCase() === t.ownerAddress.toLowerCase() ? "ok" : "revoked";
+    const holder = t.ownerAddress.toLowerCase();
+    const [owner, borrower] = await Promise.all([
+      chainClient.readContract({
+        address: DEPLOYMENTS.gameLicense,
+        abi: LICENSE_ABI,
+        functionName: "ownerOf",
+        args: [BigInt(t.tokenId)],
+      }),
+      chainClient
+        .readContract({
+          address: DEPLOYMENTS.gameLicense,
+          abi: LICENSE_ABI,
+          functionName: "userOf",
+          args: [BigInt(t.tokenId)],
+        })
+        .catch(() => ZERO_ADDR as `0x${string}`),
+    ]);
+    const loanActive = borrower.toLowerCase() !== ZERO_ADDR;
+    // Règle cartouche : pendant un prêt, l'EMPRUNTEUR a le droit de jeu,
+    // le propriétaire est révoqué ; sinon, le propriétaire comme toujours.
+    if (loanActive) return borrower.toLowerCase() === holder ? "ok" : "revoked";
+    return owner.toLowerCase() === holder ? "ok" : "revoked";
   } catch {
     return "offline";
+  }
+}
+
+async function fetchFriends(): Promise<void> {
+  const me = libraryAddress();
+  if (!chainClient || !DEPLOYMENTS.friendRegistry || !DEPLOYMENTS.gameLicense || !me) {
+    state.friends = [];
+    state.loans = [];
+    return;
+  }
+  try {
+    const reg = DEPLOYMENTS.friendRegistry as `0x${string}`;
+    const list = await chainClient.readContract({ address: reg, abi: FRIEND_ABI, functionName: "friendsOf", args: [me as `0x${string}`] });
+    state.friends = await Promise.all(
+      list.map(async (f) => ({
+        addr: f,
+        since: Number(await chainClient!.readContract({ address: reg, abi: FRIEND_ABI, functionName: "friendsSince", args: [me as `0x${string}`, f] })),
+      })),
+    );
+    // Live loans touching me — token space is tiny, scan it.
+    const lic = DEPLOYMENTS.gameLicense as `0x${string}`;
+    const next = await chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "nextTokenId", args: [] });
+    const loans: typeof state.loans = [];
+    for (let i = 1n; i <= next; i++) {
+      try {
+        const user = await chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "userOf", args: [i] });
+        if (user.toLowerCase() === ZERO_ADDR) continue;
+        const [owner, exp] = await Promise.all([
+          chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "ownerOf", args: [i] }),
+          chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "userExpires", args: [i] }),
+        ]);
+        if (owner.toLowerCase() === me.toLowerCase() || user.toLowerCase() === me.toLowerCase()) {
+          loans.push({ tokenId: i.toString(), owner, user, expires: Number(exp) });
+        }
+      } catch {
+        /* burned / rpc hiccup */
+      }
+    }
+    state.loans = loans;
+  } catch {
+    /* offline — keep last known */
   }
 }
 
@@ -730,7 +790,9 @@ const artGrad = (hue: number): string =>
 // Key art per edition (launcher/public/art). The edition-hue gradient stays
 // ON TOP at reduced opacity: images read as AURA-64 material, not stickers —
 // and the fallback (no file) is the plain gradient as before.
-const ART_FILES: Record<string, string> = { "1": "/art/ed1.webp", "2": "/art/ed2.webp", "3": "/art/ed3.webp", "4": "/art/ed4.webp" };
+// Post-reset 2026-10-07 : 1 Snake (serpent), 2 Runner, 3 Native (carte SD à
+// l'aura). ed3.webp (chasseur) attend un prochain titre.
+const ART_FILES: Record<string, string> = { "1": "/art/ed1.webp", "2": "/art/ed2.webp", "3": "/art/ed4.webp" };
 function artFor(editionId: string): string {
   const img = ART_FILES[editionId];
   const hue = hueOf(editionId);
@@ -1158,6 +1220,88 @@ function shelfView(): string {
     </div>`;
 }
 
+const FRIEND_AGE_SEC = 3 * 86400;
+
+function friendsView(): string {
+  const me = libraryAddress();
+  const now = Math.floor(Date.now() / 1000);
+
+  const friendRows = state.friends.length
+    ? state.friends
+        .map((f) => {
+          const matured = now >= f.since + FRIEND_AGE_SEC;
+          const daysLeft = Math.max(1, Math.ceil((f.since + FRIEND_AGE_SEC - now) / 86400));
+          return `
+          <div class="listrow" style="cursor:default">
+            <div style="width:40px;height:40px;border-radius:999px;flex:none;background:linear-gradient(150deg, oklch(0.7 0.1 ${(Number.parseInt(f.addr.slice(2, 8), 16) % 360)}), oklch(0.4 0.08 265));border:1px solid rgba(255,255,255,0.2)"></div>
+            <div style="min-width:0">
+              <div class="lr-title">${esc(short(f.addr, 8))}</div>
+              <div class="lr-meta">AMIS DEPUIS LE ${new Date(f.since * 1000).toLocaleDateString()}</div>
+            </div>
+            <div class="lr-right">
+              <span class="lr-chip ${matured ? "ok" : "warn"}">${matured ? "PRÊT POSSIBLE" : `PRÊT DANS ${daysLeft} J`}</span>
+            </div>
+          </div>`;
+        })
+        .join("")
+    : `<div class="slot-dim" style="padding:14px 4px">AUCUN AMI ON-CHAIN — AJOUTEZ-EN DEPUIS LE NAVIGATEUR.</div>`;
+
+  const loanRows = state.loans.length
+    ? state.loans
+        .map((l) => {
+          const lent = me && l.owner.toLowerCase() === me.toLowerCase();
+          const days = Math.max(0, Math.ceil((l.expires - now) / 86400));
+          const owned = state.owned.find((o) => o.tokenId === l.tokenId);
+          const title = state.catalog.find((e) => e.editionId === owned?.editionId)?.title ?? `Licence #${l.tokenId}`;
+          return `
+          <div class="listrow" style="cursor:default">
+            <div class="lr-art" style="${artFor(owned?.editionId ?? "0")}"></div>
+            <div style="min-width:0">
+              <div class="lr-title">${esc(title)} · #${esc(l.tokenId)}</div>
+              <div class="lr-meta">${lent ? `PRÊTÉE À ${esc(short(l.user, 6).toUpperCase())}` : `EMPRUNTÉE À ${esc(short(l.owner, 6).toUpperCase())}`}</div>
+            </div>
+            <div class="lr-right">
+              <span class="lr-chip ${lent ? "warn" : "ok"}">${lent ? "CHEZ UN AMI" : "À VOUS DE JOUER"} · J-${days}</span>
+            </div>
+          </div>`;
+        })
+        .join("")
+    : `<div class="slot-dim" style="padding:14px 4px">AUCUN PRÊT EN COURS.</div>`;
+
+  return `
+    <div class="shelf">
+      <div class="shelf-head">
+        <div style="display:flex;align-items:center;gap:18px">
+          <button class="backbtn" data-go="home">&#8592;</button>
+          <div>
+            <div class="shelf-title">Amis &amp; Prêts</div>
+            <div class="shelf-meta">${state.friends.length} AMI${state.friends.length > 1 ? "S" : ""} · ${state.loans.length} PRÊT${state.loans.length > 1 ? "S" : ""} EN COURS${me ? "" : " · CONNECTEZ UNE ADRESSE (SHELF → FOLLOW)"}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="pillbtn violet" id="friends-manage">+ AJOUTER / GÉRER ↗</button>
+          <button class="pillbtn" id="refresh-btn">🔄</button>
+        </div>
+      </div>
+      <div class="shelf-split" style="padding-top:20px">
+        <div class="shelf-listcol" style="width:46%">
+          <div class="mono-label" style="margin:2px 0 8px">MES AMIS</div>
+          ${friendRows}
+        </div>
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
+          <div class="mono-label" style="margin:2px 0 -4px">PRÊTS EN COURS</div>
+          ${loanRows}
+          <div class="pv-hint" style="border-left:2px solid oklch(0.8 0.1 200 / 0.5);padding-left:12px;line-height:1.8;margin-top:auto">
+            La règle cartouche : prêter un jeu, c'est le donner pour de vrai — le
+            prêteur perd l'accès pendant le prêt. Conditions on-chain : amis
+            mutuels depuis 3 jours, 14 jours max, 24 h de repos entre deux prêts,
+            ${""}16 amis max. Le prêt se fait depuis le navigateur (votre wallet).
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
 /** The one next step for an edition (PLAY / PAIR / RENEW / FETCH / WRITE /
  *  BUY) — shared by the detail screen and the shelf preview pane. */
 function actionFor(e: OnchainEdition, g: Game | undefined, ownedTok: { tokenId: string }[], can: boolean): { action: string; hint: string } {
@@ -1382,10 +1526,20 @@ const SCREENS: Record<Screen, () => string> = {
   shelf: shelfView,
   detail: detailView,
   insert: insertView,
+  friends: friendsView,
   error: errorView,
 };
 
 function renderChrome(): void {
+  // Topbar nav active state (static chrome — survives screen rebuilds)
+  const navMap: Record<string, Screen[]> = {
+    "nav-home": ["home"],
+    "nav-shelf": ["shelf", "detail", "insert"],
+    "nav-friends": ["friends"],
+  };
+  for (const [id, screens] of Object.entries(navMap)) {
+    document.getElementById(id)?.classList.toggle("active", screens.includes(state.screen));
+  }
   const first = state.games[0];
   const led = (id: string, on: boolean, err = false) => {
     const el = document.getElementById(id);
@@ -1478,6 +1632,8 @@ function sigOf(): string {
     nr: state.nativeRun?.pid ?? null,
     sm: state.shelfMode,
     to: state.techOpen,
+    fr: state.friends.map((f) => f.addr + f.since),
+    ln: state.loans.map((l) => l.tokenId + l.user + l.expires),
     ft: state.fatal?.code ?? null,
     r: recentPlays().map((x) => [x.e.editionId, x.log.playCount, Math.floor(x.log.totalSeconds / 60)]),
   });
@@ -1535,6 +1691,7 @@ function wire(root: HTMLElement): void {
     }
   });
   document.getElementById("home-store")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));
+  document.getElementById("friends-manage")?.addEventListener("click", () => void openUrl(`${MARKETPLACE_URL}/friends`));
   document.getElementById("home-hero")?.addEventListener("click", () => {
     const g = state.games[0];
     if (!g) return;
@@ -1695,6 +1852,7 @@ async function runBoot(): Promise<void> {
   }
   await fetchOwned();
   await fetchMarketState();
+  void fetchFriends(); // non-blocking: the AMIS screen fills in seconds
   setLine(4, `${state.owned.length} LICENCE${state.owned.length > 1 ? "S" : ""} · ${state.games.length} CARD${state.games.length > 1 ? "S" : ""}`, true);
   scanPrimed = true; // from now on, new mounts are real insertions
 
@@ -1763,6 +1921,7 @@ async function refresh(): Promise<void> {
           state.catalog = c;
         })
         .catch(() => {});
+      void fetchFriends();
     }
     if (scanCount++ % 5 === 0) {
       await fetchMarketState();
@@ -1782,6 +1941,14 @@ window.addEventListener("DOMContentLoaded", () => {
   loadSession();
   document.getElementById("restart-btn")?.addEventListener("click", () => void runBoot());
   document.getElementById("store-btn")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));
+  document.querySelectorAll<HTMLButtonElement>("[data-navgo]").forEach((b) =>
+    b.addEventListener("click", () => {
+      if (state.screen === "boot" || state.playing || state.nativeRun) return;
+      const s = b.dataset.navgo as Screen;
+      if (s === "friends") void fetchFriends().then(() => render());
+      go(s);
+    }),
+  );
   void runBoot();
   setInterval(() => void refresh(), 2000);
   setInterval(renderChrome, 1000); // bottom-bar clock ticks every second

@@ -63,6 +63,18 @@ button { font-family: inherit; }
   padding: 3px 8px; border-radius: 999px; border: 1px solid var(--cyan-soft); background: oklch(0.7 0.1 200 / 0.1);
 }
 .toprow-right { display: flex; align-items: center; gap: 9px; }
+/* Nav console au centre de la topbar */
+.topnav { position: absolute; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; }
+.navbtn {
+  cursor: pointer; padding: 7px 16px; border-radius: 999px; border: 1px solid transparent;
+  background: transparent; color: var(--dim);
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em; transition: all 0.15s;
+}
+.navbtn:hover { color: var(--ink); background: rgba(226,240,255,0.08); }
+.navbtn.active {
+  color: #0a1020; font-weight: 700; border-color: rgba(255,255,255,0.5);
+  background: linear-gradient(180deg, #f2f8ff, oklch(0.84 0.07 205));
+}
 .led { width: 11px; height: 11px; border-radius: 999px; background: rgba(220,235,255,0.22); }
 .led.on { background: oklch(0.8 0.1 200 / 0.6); box-shadow: 0 0 8px oklch(0.8 0.1 200 / 0.6); }
 .led.err { background: oklch(0.65 0.14 35 / 0.7); box-shadow: 0 0 8px oklch(0.65 0.14 35 / 0.7); }
