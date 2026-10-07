@@ -114,7 +114,7 @@ export default function FriendsPage() {
   };
 
   /** Action amis = message signé envoyé à ticketd. Gratuit, instantané. */
-  const friendAction = async (action: "request" | "accept" | "decline" | "remove", other: string) => {
+  const friendAction = async (action: "request" | "accept" | "decline" | "cancel" | "remove", other: string) => {
     if (!address) return;
     setError("");
     setBusy(`${action}-${other}`);
@@ -241,7 +241,20 @@ export default function FriendsPage() {
             <p className="addr">Aucun profil trouvé — demandez-lui son adresse, ou qu&apos;il crée son profil.</p>
           )}
           {outgoing.length > 0 && (
-            <p className="addr">En attente de leur acceptation : {outgoing.map(label).join(" · ")}</p>
+            <>
+              <h2 className="section">Demandes envoyées — en attente</h2>
+              {outgoing.map((c) => (
+                <p key={c.addr} style={{ margin: "0.3rem 0" }}>
+                  <b>{label(c)}</b>{" "}
+                  <span className="notice" style={{ display: "inline-block", padding: "0.1rem 0.6rem", margin: 0, fontSize: "0.72rem" }}>
+                    EN ATTENTE DE SON ACCEPTATION
+                  </span>{" "}
+                  <button className="btn ghost" disabled={!!busy} onClick={() => void friendAction("cancel", c.addr)}>
+                    {busy === `cancel-${c.addr}` ? "Signature…" : "Annuler"}
+                  </button>
+                </p>
+              ))}
+            </>
           )}
 
           {incoming.length > 0 && (

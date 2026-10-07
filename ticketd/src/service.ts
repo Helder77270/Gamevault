@@ -170,7 +170,7 @@ export async function applyFriendAction(message: string, signature: `0x${string}
   const at = get("at");
   const nonce = get("nonce");
   if (!message.startsWith("GameVault Amis")) throw new Error("message inattendu");
-  if (!["request", "accept", "decline", "remove"].includes(action)) throw new Error("action inconnue");
+  if (!["request", "accept", "decline", "cancel", "remove"].includes(action)) throw new Error("action inconnue");
   if (!ADDR_RE.test(me) || !ADDR_RE.test(other)) throw new Error("adresse invalide");
   if (me.toLowerCase() === other.toLowerCase()) throw new Error("pas d'amitié avec soi-même");
   const age = Date.now() - Date.parse(at);
@@ -194,6 +194,8 @@ export async function applyFriendAction(message: string, signature: `0x${string}
     db.friendships[pk2] = Math.floor(Date.now() / 1000);
   } else if (action === "decline") {
     delete db.requests[`${otherL}|${meL}`];
+  } else if (action === "cancel") {
+    delete db.requests[`${meL}|${otherL}`];
   } else {
     delete db.friendships[pk2];
   }
