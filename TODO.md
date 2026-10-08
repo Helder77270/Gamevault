@@ -87,6 +87,11 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
       sur URI WalletConnect forgée, modérée) → à revoir quand RainbowKit suit
 - [x] Pull payments Marketplace (K4) — Marketplace seul redéployé (2026-10-08)
 - [ ] Prochain full reset : même repli pull pour la vente primaire (GameLicense.buy)
+- [ ] Prochain full reset : PRÊT STUDIO — le propriétaire d'un studio prête les
+      licences de SES éditions sans l'âge d'amitié de 3 jours (GameLicense.lend :
+      exemption si msg.sender == owner du studio de l'édition). Durée max et
+      repos conservés. Plafond d'amis studio déjà à 500 (ticketd, 2026-10-08).
+      Alternative sans contrat : édition gratuite (prix 0) pour démos/presse.
 - [x] Subgraph sur les adresses actuelles (2026-10-08)
 
 ## P2ter — Ménage 2026-10-08 ✅ (inventaire complet → docs/reference.html)

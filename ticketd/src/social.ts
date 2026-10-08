@@ -41,7 +41,8 @@ const UUID_RE = /^[0-9a-fA-F-]{36}$/;
 const MESSAGE_MAX_AGE_MS = 10 * 60 * 1000;
 const NONCE_TTL_MS = MESSAGE_MAX_AGE_MS * 2;
 const SESSION_TTL_MS = 24 * 3600 * 1000;
-const MAX_FRIENDS = 16;
+const MAX_FRIENDS = 16; // players (anti-farm: a lending ring needs many "friends")
+const MAX_FRIENDS_STUDIO = 500; // studios: they invite, players can't spam them
 
 const lc = (a: string): string => a.toLowerCase();
 const tokenHash = (token: string): string => createHash("sha256").update(token).digest("hex");
@@ -185,14 +186,17 @@ export async function friendAction(me: string, action: string, other: string): P
   if (!ADDR_RE.test(other)) throw new Error("adresse invalide");
   if (lc(me) === lc(other)) throw new Error("pas d'amitié avec soi-même");
   if (action === "request") await assertMayRequest(me, other);
+  const capOf = async (a: string) => ((await studiosOwnedBy(a)).length > 0 ? MAX_FRIENDS_STUDIO : MAX_FRIENDS);
+  const [capMe, capOther] = action === "accept" ? await Promise.all([capOf(me), capOf(other)]) : [MAX_FRIENDS, MAX_FRIENDS];
   tx(() => {
     if (action === "request") {
       if (friends.since(me, other)) throw new Error("déjà amis");
       friends.request(me, other);
     } else if (action === "accept") {
       if (!friends.hasRequest(other, me)) throw new Error("aucune demande de cette adresse");
-      // Anti-farm cap (audit T10): a lending ring needs many "friends".
-      if (friends.count(me) >= MAX_FRIENDS || friends.count(other) >= MAX_FRIENDS) throw new Error(`limite de ${MAX_FRIENDS} amis atteinte`);
+      // Anti-farm cap (audit T10), raised for studio accounts
+      if (friends.count(me) >= capMe) throw new Error(`limite de ${capMe} amis atteinte`);
+      if (friends.count(other) >= capOther) throw new Error(`cet ami a atteint sa limite de ${capOther} amis`);
       friends.deleteRequest(other, me);
       friends.deleteRequest(me, other);
       friends.set(me, other, Math.floor(Date.now() / 1000));
