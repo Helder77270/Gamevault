@@ -175,7 +175,7 @@ html { scroll-behavior: smooth; }
 
 <main>
 <header class="hero">
-  <div class="eyebrow">Dossier technique et fonctionnel · état au 8 octobre 2026 (couche sociale v1) · Base Sepolia</div>
+  <div class="eyebrow">Dossier technique et fonctionnel · état au 8 octobre 2026 (contrats v1.1) · Base Sepolia</div>
   <h1>Référence GameVault</h1>
   <p class="lede">Ce que fait chaque pièce du projet, qui a le droit de faire quoi, et dans quel ordre tout s'enchaîne, de l'installation du launcher jusqu'à la revente d'une cartouche.</p>
 </header>
@@ -199,7 +199,7 @@ html { scroll-behavior: smooth; }
   <ul>
     <li><b>Le support physique transporte, la blockchain verrouille.</b> Le jeu sur la carte est chiffré. Il ne s'ouvre que sur une machine que le propriétaire de la licence a autorisée en signant avec son wallet.</li>
     <li><b>Jouable hors ligne.</b> Une fois la machine appairée, le jeu se lance sans connexion pendant 30 jours. En ligne, le launcher vérifie en plus, en direct, que la licence appartient toujours au joueur.</li>
-    <li><b>Revendable, avec royalties automatiques.</b> Le joueur revend sa licence sur la marketplace. Le studio touche ses royalties (10 % sur les éditions actuelles), la plateforme 5 %, le vendeur le reste. Dès que le jeton change de main, l'ancien propriétaire perd l'accès au jeu.</li>
+    <li><b>Revendable, avec royalties automatiques, si le studio le veut.</b> Le joueur revend sa licence sur la marketplace. Le studio touche la redevance qu'il a choisie (10 % sur les éditions actuelles, de 0 à 20 % possible), la plateforme 5 %, le vendeur le reste. Dès que le jeton change de main, l'ancien propriétaire perd l'accès au jeu. Un studio peut aussi publier une édition sans revente : la copie reste alors chez son premier acheteur (le prêt reste possible). Sur la vente neuve, la plateforme prend 8 % et le studio garde 92 %.</li>
   </ul>
   <p>Le positionnement assumé : <b>vérification de propriété, pas DRM</b>. Un utilisateur technique qui extrait la clé avant de revendre peut garder une copie ; aucun système sans puce sécurisée ne l'empêche (voir <a href="#securite">section 8</a>).</p>
   <p>À côté de ce cœur, le projet ajoute une couche sociale inspirée de Steam : profils publics, pages studio, amis et chat (sur le site comme dans le launcher), présence (« en jeu »), marché d'occasion où l'on voit qui vend, prêt d'un jeu à un ami (le prêteur perd l'accès pendant le prêt, comme une vraie cartouche prêtée), et un registre qui limite un compte à deux machines actives. Tout le social vit hors chaîne, sans frais.</p>
@@ -316,8 +316,8 @@ flowchart LR
       <tr><td>Emprunteur</td><td>Wallet désigné par <code>userOf</code> pendant un prêt</td><td>Appairer sa machine et jouer jusqu'à la fin du prêt, rendre le jeu plus tôt.</td></tr>
       <tr><td>Acheteur</td><td>Tout wallet avec des ETH</td><td>Acheter une licence neuve (<code>GameLicense.buy</code>) ou d'occasion (<code>Marketplace.buy</code>).</td></tr>
       <tr><td>Ami</td><td>Deux wallets liés dans ticketd</td><td>Envoyer, accepter, refuser, annuler, retirer une amitié (signature, sans frais). Débloque le prêt après 3 jours.</td></tr>
-      <tr><td>Studio</td><td>Wallet qui a enregistré un studio</td><td>Créer des jeux et des éditions, publier un build chiffré, toucher 100 % des ventes neuves et les royalties des reventes.</td></tr>
-      <tr><td>Admin plateforme</td><td><code>ADMIN_ADDRESS</code>, propriétaire de <code>GameLicense</code></td><td>Changer la clé d'attestation, transférer la propriété du contrat (en deux étapes). Reçoit les 5 % de frais de revente. Ne peut ni bouger les licences ni changer les prix.</td></tr>
+      <tr><td>Studio</td><td>Wallet qui a enregistré un studio</td><td>Créer des jeux et des éditions, publier un build chiffré, toucher 92 % des ventes neuves (8 % de commission plateforme) et, s'il autorise la revente, la redevance choisie sur chaque revente.</td></tr>
+      <tr><td>Admin plateforme</td><td><code>ADMIN_ADDRESS</code>, propriétaire de <code>GameLicense</code></td><td>Changer la clé d'attestation, transférer la propriété du contrat (en deux étapes). Reçoit les 8 % de la vente neuve et les 5 % de la revente. Ne peut ni bouger les licences ni changer les prix.</td></tr>
       <tr><td>Opérateur ticketd</td><td>Qui fait tourner ticketd et détient ses clés</td><td>Émettre des tickets, signer des attestations, détenir les clés de contenu. C'est le tiers de confiance du système.</td></tr>
     </tbody>
   </table></div>
@@ -390,7 +390,7 @@ flowchart LR
       <li><div><span class="who w-web">site</span>Le studio choisit le fichier : <code>.html</code> (jeu web) ou <code>.exe</code> (jeu natif, reconnu par l'en-tête « MZ »). Le navigateur calcule son SHA-256.<span class="where">publishEdition</span></div></li>
       <li><div><span class="who w-studio">studio</span>Signe le message de publication (gratuit) : wallet, studio, sha256, nom du fichier, date, nonce.<span class="where">message « GameVault Publish » (7 lignes)</span></div></li>
       <li><div><span class="who w-ticketd">ticketd</span>Reçoit le fichier en clair. Vérifie la signature, l'âge (10 min max), le nonce, que le fichier correspond au hash signé, et que le wallet possède bien le studio on-chain. Génère une clé de contenu aléatoire, chiffre le build, l'épingle sur IPFS, garde la clé chiffrée et une copie du build en cache.<span class="where">POST /publish · ticketd/src/service.ts · publishBuild</span></div></li>
-      <li><div><span class="who w-studio">studio</span>Crée l'édition (transaction) avec prix, stock, royalties (20 % max) et le couple CID + hash renvoyé par ticketd.<span class="where">GameRegistry.createEdition(gameId, supply, price, royaltyBps, cid, hash)</span></div></li>
+      <li><div><span class="who w-studio">studio</span>Crée l'édition (transaction) avec prix, stock, revente autorisée ou non, redevance (0 à 20 %, 0 imposé sans revente) et le couple CID + hash renvoyé par ticketd. Ces termes sont définitifs.<span class="where">GameRegistry.createEdition(gameId, supply, price, royaltyBps, resellable, cid, hash)</span></div></li>
     </ol>
     <div class="note">La clé de contenu ne quitte jamais ticketd. Elle est liée au studio qui l'a publiée et à la <b>première</b> édition qui référence ce CID : une autre édition qui réutiliserait le même CID ne peut pas obtenir de ticket (audit T1).</div>
     <figure class="diagram">
@@ -424,7 +424,7 @@ sequenceDiagram
     <ol class="steps">
       <li><div><span class="who w-player">joueur</span>Depuis le launcher : BUY sur la fiche d'un jeu ouvre directement sa page <code>/game/&lt;édition&gt;</code> ; STORE ouvre l'accueil du site. Le catalogue est lu sur la blockchain, sans serveur intermédiaire.<span class="where">web/app/page.tsx · fetchOnchainCatalog</span></div></li>
       <li><div><span class="who w-player">joueur</span>Ouvre la fiche du jeu et clique sur Acheter. Une transaction envoie exactement le prix.<span class="where">web/app/game/[editionId]/page.tsx → GameLicense.buy(editionId)</span></div></li>
-      <li><div><span class="who w-chain">contrat</span><code>GameRegistry.recordMint</code> vérifie l'édition et le stock. <code>GameLicense</code> crée le jeton, enregistre les royalties ERC-2981 (destinataire : le propriétaire du studio), émet <code>LicenseMinted</code>, puis envoie 100 % du prix au studio.<span class="where">contracts/src/GameLicense.sol · buy</span></div></li>
+      <li><div><span class="who w-chain">contrat</span><code>GameRegistry.recordMint</code> vérifie l'édition et le stock. <code>GameLicense</code> crée le jeton, enregistre les royalties ERC-2981 (destinataire : le propriétaire du studio), émet <code>LicenseMinted</code>, puis envoie 8 % du prix à la plateforme et 92 % au studio.<span class="where">contracts/src/GameLicense.sol · buy</span></div></li>
       <li><div><span class="who w-web">site</span>Lit le numéro de licence dans l'événement et explique la suite : écrire la cartouche dans le launcher.</div></li>
     </ol>
   </div>
@@ -547,7 +547,7 @@ sequenceDiagram
   <!-- S8 -->
   <div class="scenario" id="s-resale">
     <h3>S8 · Revendre sa licence (la démo de référence)</h3>
-    <div class="meta"><span><b>Acteurs</b> vendeur, acheteur</span><span><b>Pages</b> <code>/trade?action=list|unlist|buy</code></span><span><b>Partage</b> 85 % vendeur · 10 % studio · 5 % plateforme (édition à 10 %)</span></div>
+    <div class="meta"><span><b>Acteurs</b> vendeur, acheteur</span><span><b>Pages</b> <code>/trade?action=list|unlist|buy</code></span><span><b>Partage</b> 85 % vendeur · 10 % studio · 5 % plateforme (édition à 10 %) ; impossible si le studio a désactivé la revente</span></div>
     <ol class="steps">
       <li><div><span class="who w-player">vendeur</span>Dans le launcher : SELL, saisit un prix, LIST ↗. Le launcher ouvre <code>/trade?action=list&amp;token=N&amp;price=X</code>.<span class="where">launcher main.ts · tradeUrl</span></div></li>
       <li><div><span class="who w-player">vendeur</span>Signe deux transactions : autoriser la Marketplace sur ce jeton (<code>approve</code>), puis, une fois l'autorisation confirmée on-chain, la mise en vente. La page n'affiche « confirmée » qu'après le reçu de la transaction. L'annonce mémorise le compteur de transferts du jeton.<span class="where">web/app/trade/page.tsx → GameLicense.approve → Marketplace.list</span></div></li>
@@ -686,7 +686,7 @@ sequenceDiagram
       <li><div><span class="who w-chain">The Graph</span>Le subgraph lit les événements des trois contrats et construit Studio, Game, Edition, License, Transfer, RoyaltyPayment, Loan, PendingPayout.<span class="where">subgraph/subgraph.yaml · src/mapping.ts</span></div></li>
       <li><div><span class="who w-web">site</span>La page interroge l'URL du subgraph (<code>SUBGRAPH_URL</code> dans <code>shared/src/deployments.ts</code>, remplaçable par <code>NEXT_PUBLIC_SUBGRAPH_URL</code>) : propriétaire, date de création, annonce en cours, historique des transferts, ventes et royalties.</div></li>
     </ol>
-    <div class="note">Hébergement : <b>Goldsky</b>, projet <code>gamevault</code>, version 0.2.0, étiquette <code>prod</code>. L'URL publique passe par l'étiquette et ne change pas d'une version à l'autre. Le subgraph est au format The Graph standard : il peut être redéployé sur Subgraph Studio sans modification. La commande de déploiement est dans <code>subgraph/README.md</code>.</div><div class="note">On y accède depuis la fiche du jeu dans le launcher (bouton <code>PROVENANCE #N ↗</code>), depuis la page d'achat d'occasion <code>/trade</code> (pour vérifier l'historique avant de signer), depuis les licences listées sur <code>/friends</code> et depuis la confirmation d'un achat neuf.</div>
+    <div class="note">Hébergement : <b>Goldsky</b>, projet <code>gamevault</code>, version 0.3.0, étiquette <code>prod</code>. L'URL publique passe par l'étiquette et ne change pas d'une version à l'autre. Le subgraph est au format The Graph standard : il peut être redéployé sur Subgraph Studio sans modification. La commande de déploiement est dans <code>subgraph/README.md</code>.</div><div class="note">On y accède depuis la fiche du jeu dans le launcher (bouton <code>PROVENANCE #N ↗</code>), depuis la page d'achat d'occasion <code>/trade</code> (pour vérifier l'historique avant de signer), depuis les licences listées sur <code>/friends</code> et depuis la confirmation d'un achat neuf.</div>
   </div>
 
   <!-- S16 -->
@@ -762,9 +762,9 @@ sequenceDiagram
   <div class="tbl"><table>
     <thead><tr><th>Contrat</th><th>Adresse</th><th>Bloc</th></tr></thead>
     <tbody>
-      <tr><td>GameRegistry</td><td><code>0x7546b4D2f62052468957FD9381cf4Ac433776aba</code></td><td>47811332</td></tr>
-      <tr><td>GameLicense</td><td><code>0xcB73916fA8AF03894B85e6e05aa8a8169f046Bd9</code></td><td>47811332</td></tr>
-      <tr><td>Marketplace</td><td><code>0x3Ff123D804Ca5FE65B282f94c2a85cDBD7664B99</code></td><td>47829208</td></tr>
+      <tr><td>GameRegistry</td><td><code>0x713072aB1826f4608B0a26a441F2FF954F9243E6</code></td><td>47862131</td></tr>
+      <tr><td>GameLicense</td><td><code>0x844cb5292c7Fe7a186F1dF0914f2463c7fFC3fE8</code></td><td>47862132</td></tr>
+      <tr><td>Marketplace</td><td><code>0x0E16549E5282a91C5bA189da67D9E7eC57BE0632</code></td><td>47862134</td></tr>
     </tbody>
   </table></div>
 
@@ -774,7 +774,8 @@ sequenceDiagram
     <tbody>
       <tr><td><code>registerStudio(name)</code></td><td>tout le monde</td><td>Crée un studio dont l'appelant est propriétaire. Événement <code>StudioRegistered</code>.</td></tr>
       <tr><td><code>createGame(studioId, title)</code></td><td>propriétaire du studio</td><td><code>GameCreated</code>.</td></tr>
-      <tr><td><code>createEdition(gameId, supply, price, royaltyBps, buildCid, buildHash)</code></td><td>propriétaire du studio du jeu</td><td>Stock &gt; 0, royalties ≤ 2000 (20 %). Les termes ne sont plus modifiables ensuite. <code>EditionCreated</code>.</td></tr>
+      <tr><td><code>createEdition(gameId, supply, price, royaltyBps, resellable, buildCid, buildHash)</code></td><td>propriétaire du studio du jeu</td><td>Stock &gt; 0, royalties ≤ 2000 (20 %), royalties à 0 si <code>resellable</code> est faux. Les termes ne sont plus modifiables ensuite. <code>EditionCreated</code>.</td></tr>
+      <tr><td><code>isResellable(editionId)</code></td><td>tous</td><td>Choix du studio : faux = les copies ne changent jamais de main (le prêt reste possible).</td></tr>
       <tr><td><code>recordMint(editionId)</code></td><td>GameLicense uniquement</td><td>Édition connue, stock restant ; incrémente <code>minted</code>.</td></tr>
       <tr><td><code>setLicense(address)</code></td><td>déployeur, une seule fois</td><td>Relie le registre au contrat de licences.</td></tr>
       <tr><td>Lectures</td><td>tous</td><td><code>studios</code>, <code>games</code>, <code>editions</code>, <code>studioCount</code>, <code>gameCount</code>, <code>editionCount</code>.</td></tr>
@@ -785,14 +786,14 @@ sequenceDiagram
   <div class="tbl"><table>
     <thead><tr><th>Fonction</th><th>Qui</th><th>Contrôles et effets</th></tr></thead>
     <tbody>
-      <tr><td><code>buy(editionId)</code> payable</td><td>tout le monde</td><td>Prix exact ; crée le jeton, royalties ERC-2981 vers le studio ; 100 % du prix envoyé au studio. <code>LicenseMinted</code> + <code>Transfer</code>.</td></tr>
+      <tr><td><code>buy(editionId)</code> payable</td><td>tout le monde</td><td>Prix exact ; crée le jeton, royalties ERC-2981 vers le studio ; 8 % du prix à la plateforme (<code>PRIMARY_FEE_BPS</code>), 92 % au studio. <code>LicenseMinted</code> + <code>Transfer</code>.</td></tr>
       <tr><td><code>lend(tokenId, to, expires, since, deadline, sig)</code></td><td>propriétaire</td><td>9 contrôles (voir S11). <code>UpdateUser</code>.</td></tr>
       <tr><td><code>endLoan(tokenId)</code></td><td>propriétaire ou emprunteur</td><td>Prêt actif ; démarre le repos de 24 h. <code>UpdateUser(token, 0, 0)</code>.</td></tr>
       <tr><td><code>userOf</code>, <code>userExpires</code>, <code>lastLoanEnd</code></td><td>tous</td><td>État du prêt (modèle ERC-4907, interface volontairement non annoncée).</td></tr>
       <tr><td><code>attestationDigest(...)</code></td><td>tous</td><td>Empreinte EIP-712 d'une attestation (domaine « GameVault License » v1).</td></tr>
       <tr><td><code>setAttestationSigner(next)</code></td><td>admin</td><td>Rotation de la clé d'attestation. <code>AttestationSignerUpdated</code>.</td></tr>
       <tr><td><code>transferOwnership</code> / <code>acceptOwnership</code></td><td>admin / futur admin</td><td>Passation en deux étapes (Ownable2Step).</td></tr>
-      <tr><td>ERC-721 standard</td><td>selon ERC-721</td><td><code>ownerOf</code>, <code>approve</code>, <code>transferFrom</code>… Chaque transfert incrémente <code>transferCount</code> et tue un prêt en cours.</td></tr>
+      <tr><td>ERC-721 standard</td><td>selon ERC-721</td><td><code>ownerOf</code>, <code>approve</code>, <code>transferFrom</code>… Chaque transfert incrémente <code>transferCount</code> et tue un prêt en cours. Refusé si l'édition est sans revente (<code>isResellable(tokenId)</code>).</td></tr>
       <tr><td><code>royaltyInfo(tokenId, price)</code></td><td>tous</td><td>ERC-2981, lu par la Marketplace.</td></tr>
     </tbody>
   </table></div>
@@ -801,7 +802,7 @@ sequenceDiagram
   <div class="tbl"><table>
     <thead><tr><th>Fonction</th><th>Qui</th><th>Contrôles et effets</th></tr></thead>
     <tbody>
-      <tr><td><code>list(tokenId, price)</code></td><td>propriétaire</td><td>Prix &gt; 0, Marketplace autorisée ; mémorise <code>transferCount</code>. <code>Listed</code>.</td></tr>
+      <tr><td><code>list(tokenId, price)</code></td><td>propriétaire</td><td>Prix &gt; 0, Marketplace autorisée, édition revendable ; mémorise <code>transferCount</code>. <code>Listed</code>.</td></tr>
       <tr><td><code>unlist(tokenId)</code></td><td>vendeur enregistré</td><td><code>Unlisted</code>.</td></tr>
       <tr><td><code>buy(tokenId)</code> payable</td><td>tout le monde</td><td>Annonce valide, prix exact, vendeur toujours propriétaire, jeton pas bougé ; transfert puis paiements avec repli en crédit. <code>Sale</code>, éventuellement <code>PaymentCredited</code>.</td></tr>
       <tr><td><code>withdraw()</code></td><td>toute adresse créditée</td><td>Remet le crédit à zéro puis envoie. <code>Withdrawn</code>.</td></tr>

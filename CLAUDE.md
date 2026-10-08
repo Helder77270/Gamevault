@@ -46,8 +46,11 @@ vehicle, the blockchain is the lock."
 
 ## Monorepo layout
 - `contracts/` — Solidity + Foundry
-  - `GameRegistry.sol` — studios, games, editions (supply, price, royalty %)
-  - `GameLicense.sol` — ERC-721 + EIP-2981. Stretch: ERC-4907 lending
+  - `GameRegistry.sol` — studios, games, editions (supply, price, royalty %,
+    `resellable`: resale is the studio's choice, fixed at creation — v1.1)
+  - `GameLicense.sol` — ERC-721 + EIP-2981 + guarded ERC-4907 lending.
+    Primary sale: 92 % studio / 8 % platform (v1.1, under Steam 30 %).
+    Copies of a non-resellable edition cannot be transferred (lending OK).
   - `Marketplace.sol` — list/buy. Reads `royaltyInfo()` from EIP-2981 for the
     studio cut (10%) and adds a 5% platform fee on top → 85% to seller.
     EIP-2981 is load-bearing, not decorative.

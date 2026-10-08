@@ -1,7 +1,7 @@
 # Addresses + startBlock mirror shared/src/deployments.ts — update both
 # together, then `npm run build -w @gamevault/subgraph` and deploy.
-# Registry + License: key-separation set (block 47811332).
-# Marketplace: redeployed alone for pull payments (block 47829208).
+# v1.1 full reset (2026-10-08, block 47862131): 8 % primary fee,
+# resale optional per edition (Edition.resellable).
 specVersion: 1.0.0
 schema:
   file: ./schema.graphql
@@ -10,9 +10,9 @@ dataSources:
     name: GameRegistry
     network: base-sepolia
     source:
-      address: "0x7546b4D2f62052468957FD9381cf4Ac433776aba"
+      address: "0x713072aB1826f4608B0a26a441F2FF954F9243E6"
       abi: GameRegistry
-      startBlock: 47811332
+      startBlock: 47862131
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -33,9 +33,9 @@ dataSources:
     name: GameLicense
     network: base-sepolia
     source:
-      address: "0xcB73916fA8AF03894B85e6e05aa8a8169f046Bd9"
+      address: "0x844cb5292c7Fe7a186F1dF0914f2463c7fFC3fE8"
       abi: GameLicense
-      startBlock: 47811332
+      startBlock: 47862131
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -56,9 +56,9 @@ dataSources:
     name: Marketplace
     network: base-sepolia
     source:
-      address: "0x3Ff123D804Ca5FE65B282f94c2a85cDBD7664B99"
+      address: "0x0E16549E5282a91C5bA189da67D9E7eC57BE0632"
       abi: Marketplace
-      startBlock: 47829208
+      startBlock: 47862131
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7

@@ -23,14 +23,19 @@ export const CHAIN = {
 // payments with a pull fallback — a receiver refusing ETH no longer blocks
 // resales). Previous Marketplace 0x89dF…8a40 retired with no listing, no
 // approval and no balance; registry + licences untouched.
+// v1.1 FULL RESET 2026-10-08, block 47862131: 8 % platform fee on primary
+// sales (studio 92 %), resale optional per edition (studio's choice at
+// creation). Same key roles as above. Editions republished with the SAME
+// build CIDs (ticketd keys unchanged); licences re-minted. v1.0 set
+// (0x7546… / 0xcB73… / 0x3Ff1…) abandoned.
 export const DEPLOYMENTS: {
   gameRegistry: `0x${string}` | "";
   gameLicense: `0x${string}` | "";
   marketplace: `0x${string}` | "";
 } = {
-  gameRegistry: "0x7546b4D2f62052468957FD9381cf4Ac433776aba",
-  gameLicense: "0xcB73916fA8AF03894B85e6e05aa8a8169f046Bd9",
-  marketplace: "0x3Ff123D804Ca5FE65B282f94c2a85cDBD7664B99",
+  gameRegistry: "0x713072aB1826f4608B0a26a441F2FF954F9243E6",
+  gameLicense: "0x844cb5292c7Fe7a186F1dF0914f2463c7fFC3fE8",
+  marketplace: "0x0E16549E5282a91C5bA189da67D9E7eC57BE0632",
 };
 
 

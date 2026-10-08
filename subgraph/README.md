@@ -25,6 +25,6 @@ set -a && . ./.env && set +a
 npx -y @goldskycom/cli@13.17.0 subgraph deploy gamevault/<version> --path build --tag prod --token "$GOLDSKY_DEPLOY_KEY"
 ```
 
-Bump `<version>` on every deploy (0.2.0 = 2026-10-08). When contract addresses
+Bump `<version>` on every deploy (0.2.0 = 2026-10-08, 0.3.0 = v1.1 contracts, 2026-10-08). When contract addresses
 change, update `subgraph.yaml` (address + startBlock) and regenerate the ABIs
 from `contracts/out/*.sol/*.json` first.
