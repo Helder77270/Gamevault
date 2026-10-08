@@ -33,7 +33,7 @@ const digest = (bytes: Uint8Array): string => `0x${bytesToHex(sha256(bytes))}`;
 /** Pin an encrypted build to IPFS via Pinata. jwt: Pinata API JWT. */
 export async function putBuild(bytes: Uint8Array, name: string, jwt: string): Promise<StoredBuild> {
   const form = new FormData();
-  form.append("file", new Blob([bytes as BlobPart]), name);
+  form.append("file", new Blob([new Uint8Array(bytes)]), name); // copy: an ArrayBuffer-backed view is a valid BlobPart in every lib
   form.append("pinataMetadata", JSON.stringify({ name }));
   const res = await fetch(PINATA_PIN_URL, {
     method: "POST",

@@ -2,7 +2,8 @@
   "name": "gamevault",
   "private": true,
   "scripts": {
-    "dev": "dev.cmd"
+    "dev": "dev.cmd",
+    "typecheck": "tsc -p shared && tsc -p ticketd && tsc -p station && tsc -p launcher && tsc -p web"
   },
   "workspaces": [
     "shared",
@@ -14,7 +15,9 @@
     "subgraph"
   ],
   "devDependencies": {
-    "@openzeppelin/contracts": "^5.6.1"
+    "@openzeppelin/contracts": "^5.6.1",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.3"
   },
   "overrides": {
     "postcss": "^8.5.23",
@@ -24,6 +27,7 @@
     },
     "valtio": {
       "use-sync-external-store": "^1.4.0"
-    }
+    },
+    "uuid": "^11.1.1"
   }
 }

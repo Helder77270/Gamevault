@@ -113,7 +113,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       "X-Content-Type-Options": "nosniff",
       ...cors,
     });
-    return res.end(Buffer.from(av.bytes));
+    res.end(Buffer.from(av.bytes));
+    return;
   }
   if (req.method === "GET" && req.url?.startsWith("/profile/search?")) {
     const q = new URL(req.url, "http://localhost").searchParams.get("q") ?? "";
@@ -204,7 +205,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     try {
       const bytes = await getBuild(buildMatch[1]);
       res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": bytes.length, ...cors });
-      return res.end(Buffer.from(bytes));
+      res.end(Buffer.from(bytes));
+      return;
     } catch (e) {
       return fail(404, `build ${buildMatch[1]}`, e);
     }

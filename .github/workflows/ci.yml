@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # TypeScript (strict typecheck + selftests), web build, Solidity tests.
+  # Foundry rides along because the contracts import OpenZeppelin from the
+  # root node_modules (see contracts/foundry.toml remappings).
+  node-and-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Typecheck (shared, ticketd, station, launcher, web)
+        run: npm run typecheck
+
+      - name: Selftests
+        run: |
+          npm run selftest -w @gamevault/shared
+          npm run selftest -w @gamevault/ticketd
+
+      - name: Web build
+        run: npm run build -w @gamevault/web
+
+      - name: Audit runtime dependencies (critical/high fail the build)
+        run: npm audit --omit=dev --audit-level=high
+
+      - uses: foundry-rs/foundry-toolchain@v1
+
+      - name: forge-std (not vendored in the repo)
+        run: git clone --depth 1 --branch v1.16.2 https://github.com/foundry-rs/forge-std contracts/lib/forge-std
+
+      - name: Forge tests
+        working-directory: contracts
+        run: forge test
+
+  # Rust core of the launcher: ticket verification, ECIES, native runtime.
+  # Windows runner: the launcher ships for Windows and uses the Credential
+  # Manager keystore. tauri::generate_context! embeds the frontend, so the
+  # Vite bundle is built first.
+  launcher-rust:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Launcher frontend bundle
+        working-directory: launcher
+        run: npx vite build
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: launcher/src-tauri
+
+      - name: cargo test
+        working-directory: launcher/src-tauri
+        run: cargo test --locked

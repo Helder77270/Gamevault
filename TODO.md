@@ -82,8 +82,10 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
       data/content-keys.backup-2026-10-07.json)
 - [ ] Runtime natif : Authenticode + studios vérifiés
 - [x] Dépendances : Next 15.5 + React 19, lockfile registre officiel (2026-10-08)
-- [ ] wagmi 3 (solde les 22 modérées uuid/decode-uri-component) ;
-      `tsc` strict + CI pour ticketd/shared/station
+- [x] `tsc` strict (shared/ticketd/station) + CI GitHub Actions (2026-10-08)
+- [ ] wagmi 3 : NON nécessaire pour l'instant (RainbowKit 2.2.11 ne le supporte
+      pas) ; uuid réglé par override. Reste decode-uri-component (DoS client
+      sur URI WalletConnect forgée, modérée) → à revoir quand RainbowKit suit
 - [ ] Contrats (prochain redéploiement) : pull payments (K4) — K3, K5, K6 faits
 
 ## P3 — Subgraph : déployer pour de vrai

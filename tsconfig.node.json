@@ -1,0 +1,25 @@
+{
+  // Shared base for the Node workspaces (shared, ticketd, station).
+  // They run as-is through `node --experimental-strip-types`, so tsc only
+  // type-checks (noEmit) and enforces what type stripping requires:
+  // `.ts` import specifiers and explicit `import type`.
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true
+  }
+}
