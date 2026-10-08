@@ -149,6 +149,10 @@ html { scroll-behavior: smooth; }
         <li><a href="#s-payout">S14 Gains en attente</a></li>
         <li><a href="#s-provenance">S15 Provenance</a></li>
         <li><a href="#s-ops">S16 Exploitation</a></li>
+        <li><a href="#s-session">S17 Session sociale</a></li>
+        <li><a href="#s-chat">S18 Discuter</a></li>
+        <li><a href="#s-studiopage">S19 Page studio</a></li>
+        <li><a href="#s-sellers">S20 Occasions et vendeurs</a></li>
       </ol>
     </li>
     <li><a href="#ref">7. Référence technique</a>
@@ -171,7 +175,7 @@ html { scroll-behavior: smooth; }
 
 <main>
 <header class="hero">
-  <div class="eyebrow">Dossier technique et fonctionnel · état au 8 octobre 2026 · Base Sepolia</div>
+  <div class="eyebrow">Dossier technique et fonctionnel · état au 8 octobre 2026 (couche sociale v1) · Base Sepolia</div>
   <h1>Référence GameVault</h1>
   <p class="lede">Ce que fait chaque pièce du projet, qui a le droit de faire quoi, et dans quel ordre tout s'enchaîne, de l'installation du launcher jusqu'à la revente d'une cartouche.</p>
 </header>
@@ -198,7 +202,7 @@ html { scroll-behavior: smooth; }
     <li><b>Revendable, avec royalties automatiques.</b> Le joueur revend sa licence sur la marketplace. Le studio touche ses royalties (10 % sur les éditions actuelles), la plateforme 5 %, le vendeur le reste. Dès que le jeton change de main, l'ancien propriétaire perd l'accès au jeu.</li>
   </ul>
   <p>Le positionnement assumé : <b>vérification de propriété, pas DRM</b>. Un utilisateur technique qui extrait la clé avant de revendre peut garder une copie ; aucun système sans puce sécurisée ne l'empêche (voir <a href="#securite">section 8</a>).</p>
-  <p>À côté de ce cœur, le projet ajoute une couche sociale : amis, prêt d'un jeu à un ami (le prêteur perd l'accès pendant le prêt, comme une vraie cartouche prêtée), profils, et un registre qui limite un compte à deux machines actives.</p>
+  <p>À côté de ce cœur, le projet ajoute une couche sociale inspirée de Steam : profils publics, pages studio, amis et chat (sur le site comme dans le launcher), présence (« en jeu »), marché d'occasion où l'on voit qui vend, prêt d'un jeu à un ami (le prêteur perd l'accès pendant le prêt, comme une vraie cartouche prêtée), et un registre qui limite un compte à deux machines actives. Tout le social vit hors chaîne, sans frais.</p>
 </section>
 
 <section id="glossaire">
@@ -216,6 +220,8 @@ html { scroll-behavior: smooth; }
     <dt>ticketd</dt><dd>Le service de la plateforme (Node.js, port 8787). Il émet les tickets, garde les clés de contenu, gère amis, profils et appareils.</dd>
     <dt>Prêt</dt><dd>Droit de jouer confié temporairement à un ami (<code>userOf</code>, modèle ERC-4907). Le propriétaire reste propriétaire mais perd l'accès pendant le prêt.</dd>
     <dt>Attestation d'amitié</dt><dd>Signature EIP-712 de ticketd qui atteste « A et B sont amis depuis telle date, pour la licence N ». Le contrat l'exige pour accepter un prêt.</dd>
+    <dt>Session</dt><dd>Jeton de 24 h qui authentifie les actions sociales (amis, profil, chat, présence) sans signature à chaque action. Sur le site, une signature du wallet l'ouvre ; dans le launcher, c'est la clé d'appareil qui signe (le launcher n'a pas de wallet).</dd>
+    <dt>Présence</dt><dd>« En ligne » ou « en jeu · titre », signalée par le launcher toutes les 60 secondes et visible des amis.</dd>
     <dt>Fenêtre hors ligne</dt><dd>Durée de validité d'un ticket : 30 jours (ou moins si un prêt finit avant). Hors ligne, c'est le seul garde-fou.</dd>
     <dt>Révocation</dt><dd>Perte d'accès quand la licence change de main (revente, prêt) ou quand l'appareil est déconnecté du compte.</dd>
   </dl>
@@ -281,6 +287,8 @@ flowchart LR
       <tr><td>Ticket</td><td>Carte SD, <code>/gamevault/ticket.json</code></td><td>Launcher (après appairage)</td><td>Launcher</td></tr>
       <tr><td>Clé privée d'appareil</td><td>Coffre Windows : service <code>gamevault-launcher</code>, compte <code>device-key</code></td><td>Launcher (premier lancement)</td><td>Cœur Rust du launcher uniquement</td></tr>
       <tr><td>Amis, demandes, profils, temps de jeu, appareils, nonces</td><td><code>ticketd.db</code></td><td>ticketd</td><td>ticketd, puis site et launcher via l'API</td></tr>
+      <tr><td>Sessions, messages, activité, pages studio</td><td><code>ticketd.db</code> (tables <code>sessions</code>, <code>messages</code>, <code>activity</code>, <code>studio_pages</code>)</td><td>ticketd</td><td>Site et launcher via l'API (sessions : seule l'empreinte du jeton est stockée)</td></tr>
+      <tr><td>Présence</td><td>Mémoire de ticketd (90 s)</td><td>Launcher (battement 60 s)</td><td>Amis, profils publics</td></tr>
       <tr><td>Avatars</td><td><code>ticketd/data/avatars/&lt;adresse&gt;</code></td><td>ticketd</td><td>Site</td></tr>
       <tr><td>Réglages, langue, historique local, session</td><td><code>localStorage</code> du launcher (<code>gv-settings</code>, <code>gv-lang</code>, <code>gv-playlog</code>, <code>gv-session</code>, <code>gv-watch</code>, <code>gv-shelfmode</code>)</td><td>Launcher</td><td>Launcher</td></tr>
       <tr><td>Historique indexé</td><td>Subgraph</td><td>The Graph (depuis les événements)</td><td>Page provenance</td></tr>
@@ -329,6 +337,8 @@ flowchart LR
       <tr><td>Finir un prêt</td><td><code>GameLicense.endLoan</code></td><td class="no">non</td><td class="yes">oui</td><td class="yes">oui</td><td class="no">non</td><td class="no">non</td></tr>
       <tr><td>Retirer des gains en attente</td><td><code>Marketplace.withdraw</code></td><td colspan="5">Toute adresse qui a un crédit (<code>pendingWithdrawals &gt; 0</code>)</td></tr>
       <tr><td>Changer la clé d'attestation</td><td><code>GameLicense.setAttestationSigner</code></td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="yes">oui</td></tr>
+      <tr><td>Écrire à quelqu'un</td><td>ticketd <code>POST /chat/:addr</code></td><td class="no">non</td><td colspan="4">Tout compte connecté, uniquement vers ses amis</td></tr>
+      <tr><td>Modifier une page studio</td><td>ticketd <code>POST /studio/:id/page</code></td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="yes">son studio</td><td class="no">non</td></tr>
       <tr><td>Révoquer un appareil</td><td>ticketd <code>POST /devices/revoke</code></td><td class="no">non</td><td class="yes">ses appareils</td><td class="yes">ses appareils</td><td class="no">non</td><td class="no">non</td></tr>
     </tbody>
   </table></div>
@@ -341,7 +351,7 @@ flowchart LR
     <thead><tr><th>Clé</th><th>Où elle vit</th><th>Ce qu'elle signe ou protège</th><th>Si elle fuit</th></tr></thead>
     <tbody>
       <tr><td>Wallet du joueur</td><td>Wallet du joueur (navigateur, téléphone)</td><td>Achats, ventes, prêts ; message d'appairage ; messages amis, profil, appareils</td><td>Vol des licences : c'est le compte.</td></tr>
-      <tr><td>Clé d'appareil</td><td>Coffre Windows, lue seulement par le cœur Rust</td><td>Déballe la clé de contenu d'un ticket</td><td>Permet de déchiffrer les tickets scellés pour cette machine.</td></tr>
+      <tr><td>Clé d'appareil</td><td>Coffre Windows, lue seulement par le cœur Rust</td><td>Déballe la clé de contenu d'un ticket ; signe la preuve qui ouvre la session sociale du launcher (message au format fixe construit par Rust)</td><td>Permet de déchiffrer les tickets scellés pour cette machine et d'agir socialement au nom du compte jusqu'à la révocation de l'appareil.</td></tr>
       <tr><td><code>TICKET_SIGNER_PRIVKEY</code></td><td><code>ticketd/.env</code></td><td>Signe les tickets. Sa clé publique est intégrée au launcher (<code>02f99334…292c</code>).</td><td>Fabrication de tickets valides hors ligne. Remède : nouvelle clé + nouvelle version du launcher.</td></tr>
       <tr><td><code>ATTEST_SIGNER_PRIVKEY</code></td><td><code>ticketd/.env</code></td><td>Signe les attestations d'amitié EIP-712 lues par <code>lend()</code></td><td>Contourner la règle des 3 jours. Remède : <code>setAttestationSigner</code> par l'admin.</td></tr>
       <tr><td>Clé admin (<code>ADMIN_ADDRESS</code>)</td><td><code>contracts/.env</code> (à déplacer vers un wallet matériel)</td><td>Propriétaire de <code>GameLicense</code> ; reçoit les frais</td><td>Changer la clé d'attestation, détourner les futurs frais.</td></tr>
@@ -586,12 +596,12 @@ sequenceDiagram
   <!-- S10 -->
   <div class="scenario" id="s-friends">
     <h3>S10 · Ajouter un ami</h3>
-    <div class="meta"><span><b>Page</b> <code>/friends</code> (le launcher affiche la liste et renvoie vers le site)</span><span><b>Coût</b> une signature par action, aucune transaction</span></div>
+    <div class="meta"><span><b>Page</b> <code>/friends</code> ou un profil public <code>/u/&lt;adresse&gt;</code></span><span><b>Coût</b> aucune transaction ; la session (S17) évite une signature par action</span></div>
     <ol class="steps">
       <li><div><span class="who w-player">joueur A</span>Cherche B par pseudo ou par adresse. Les homonymes s'affichent avec leur adresse : « Picsou (0x12…ab) ».<span class="where">GET /profile/search?q=</span></div></li>
-      <li><div><span class="who w-player">joueur A</span>Envoie une demande : signe le message « GameVault Amis » (action, moi, l'autre, date, nonce).<span class="where">POST /friends/action (action: request)</span></div></li>
+      <li><div><span class="who w-player">joueur A</span>Envoie une demande (depuis la recherche ou le bouton « Ajouter en ami » d'un profil). Authentifiée par sa session, sans signature supplémentaire.<span class="where">POST /friends/action { action: request, other } · Authorization: Bearer</span></div></li>
       <li><div><span class="who w-player">joueur B</span>Voit la demande reçue et l'accepte (ou la refuse). A peut annuler sa demande en attente, qui reste visible dans « envoyées ».<span class="where">action: accept | decline | cancel</span></div></li>
-      <li><div><span class="who w-ticketd">ticketd</span>À l'acceptation, enregistre la date d'amitié. Refuse si l'un des deux a déjà 16 amis.<span class="where">service.ts · friendAction (transaction SQLite)</span></div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>À l'acceptation, enregistre la date d'amitié. Refuse si l'un des deux a déjà 16 amis.<span class="where">social.ts · friendAction (transaction SQLite, activité « nouvel ami »)</span></div></li>
       <li><div><span class="who w-player">l'un ou l'autre</span>Peut retirer l'amitié à tout moment (<code>action: remove</code>).</div></li>
     </ol>
     <div class="note">L'amitié vit dans la base de ticketd, pas sur la blockchain : elle ne coûte rien. La règle des 3 jours n'est pas appliquée par ticketd mais par le contrat au moment du prêt, à partir de la date que ticketd atteste.</div>
@@ -635,13 +645,13 @@ sequenceDiagram
 
   <!-- S12 -->
   <div class="scenario" id="s-profile">
-    <h3>S12 · Gérer son profil</h3>
-    <div class="meta"><span><b>Page</b> <code>/profile</code></span><span><b>Coût</b> une signature par enregistrement</span></div>
+    <h3>S12 · Profil public et édition</h3>
+    <div class="meta"><span><b>Pages</b> <code>/profile</code> (édition) · <code>/u/&lt;adresse&gt;</code> (public, sans wallet)</span><span><b>Coût</b> aucun (session)</span></div>
     <ol class="steps">
-      <li><div><span class="who w-player">joueur</span>Choisit un pseudo (2 à 24 caractères, pas forcément unique), un avatar (recadré dans le navigateur en 256×256, 300 Ko max), jusqu'à 12 favoris.</div></li>
-      <li><div><span class="who w-player">joueur</span>Signe le message « GameVault Profil », qui inclut le hash de l'avatar.<span class="where">POST /profile</span></div></li>
-      <li><div><span class="who w-ticketd">ticketd</span>Vérifie signature, âge, nonce, type réel de l'image (JPEG, PNG, WebP) et que l'image envoyée correspond au hash signé. Enregistre.</div></li>
-      <li><div><span class="who w-web">site</span>Affiche aussi « Les plus joués » (rempli par le launcher), les appareils (S13), les gains en attente (S14). Les succès sont préparés côté format (<code>shared/src/achievements.ts</code>) mais pas encore branchés.</div></li>
+      <li><div><span class="who w-player">joueur</span>Sur <code>/profile</code> : pseudo (2 à 24 caractères, pas forcément unique), bio (500 caractères), avatar (recadré dans le navigateur en 256×256, 300 Ko max), jusqu'à 12 favoris.<span class="where">POST /profile · session</span></div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>Vérifie la session, le type réel de l'image (JPEG, PNG, WebP), enregistre. La date d'inscription est fixée au premier enregistrement.</div></li>
+      <li><div><span class="who w-web">tout visiteur</span>Ouvre <code>/u/&lt;adresse&gt;</code> : bannière, avatar, présence, bio, vitrine (3 favoris), bibliothèque (licences possédées et empruntées, lues dans le subgraph), activité récente (parties, nouveaux amis), statistiques, emplacement « Badges &amp; succès » prêt pour les succès, licences en vente, amis.<span class="where">web/app/u/[address]/page.tsx · GET /profile/:addr + subgraph</span></div></li>
+      <li><div><span class="who w-web">visiteur connecté</span>Selon la relation : « Ajouter en ami », « Accepter la demande », « Message » (amis) ou « Modifier mon profil » (soi-même). « Inviter à jouer » est présent mais désactivé (jeux hors ligne d'abord).</div></li>
     </ol>
   </div>
 
@@ -699,6 +709,48 @@ sequenceDiagram
         <tr><td>Intégration continue</td><td>À chaque push : typecheck des 4 projets TypeScript, autotests, build du site, <code>npm audit</code> bloquant au niveau « high », 40 tests Foundry, tests Rust du launcher sous Windows.</td></tr>
       </tbody>
     </table></div>
+  </div>
+  <div class="scenario" id="s-session">
+    <h3>S17 · Ouvrir une session sociale</h3>
+    <div class="meta"><span><b>Pourquoi</b> signer chaque message de chat serait inutilisable</span><span><b>Durée</b> 24 h</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-web">site</span>À la première action sociale (ou au bouton « Ouvrir le chat »), demande une seule signature : « GameVault Session » (adresse, date, nonce).<span class="where">web/app/lib/ticketd.ts · useTicketd().ensureSession → POST /session</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>N'a pas de wallet : le cœur Rust construit lui-même le message « GameVault Device Session » (wallet appairé, clé d'appareil, horodatage, nonce aléatoire) et le signe avec la clé d'appareil. La webview ne peut pas lui faire signer autre chose.<span class="where">lib.rs · device_session_proof → POST /session/device</span></div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>Vérifie la signature (wallet, ou secp256k1 de l'appareil), la fraîcheur, le nonce, et pour le launcher que l'appareil est bien enregistré sur ce compte. Délivre un jeton aléatoire ; seule son empreinte SHA-256 est stockée.<span class="where">social.ts · openWebSession / openDeviceSession</span></div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>Les routes sociales lisent <code>Authorization: Bearer</code>. Révoquer un appareil ferme aussi ses sessions. Appairage, publication studio et révocation d'appareil restent signés à chaque fois.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="s-chat">
+    <h3>S18 · Discuter avec un ami</h3>
+    <div class="meta"><span><b>Où</b> launcher (écran AMIS) et site (<code>/chat</code>)</span><span><b>Qui</b> amis uniquement</span><span><b>Stockage</b> ticketd (pas de chiffrement de bout en bout)</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-launcher">launcher / site</span>Liste les amis par présence (en jeu, en ligne, hors ligne) avec les messages non lus.<span class="where">GET /friends/:addr · GET /chat</span></div></li>
+      <li><div><span class="who w-player">joueur</span>Ouvre une conversation et écrit (1000 caractères max, 30 messages par minute).<span class="where">POST /chat/:addr · social.ts · sendMessage</span></div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>Refuse si les deux comptes ne sont pas amis, enregistre, et pousse le message en direct au destinataire (et aux autres fenêtres de l'expéditeur) par le flux d'événements.<span class="where">GET /events?token= (Server-Sent Events)</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>Ajoute la bulle sans reconstruire l'écran (la saisie n'est jamais interrompue) ; sinon incrémente le compteur, joue un carillon doux et affiche « AMIS · N » dans la barre.</div></li>
+      <li><div><span class="who w-web">site</span>Après un prêt réussi, publie une carte « licence prêtée · À DANS N J » dans la conversation des deux amis.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="s-studiopage">
+    <h3>S19 · Page publique d'un studio</h3>
+    <div class="meta"><span><b>Pages</b> <code>/studios</code> (liste) · <code>/studio/&lt;id&gt;</code></span><span><b>Édition</b> le propriétaire on-chain du studio uniquement</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-web">tout visiteur</span>Voit les jeux et éditions (subgraph), la description, les liens, l'équipe (membres avec rôle ; un wallet facultatif relie au profil), les licences en circulation, les reventes et les royalties touchées.</div></li>
+      <li><div><span class="who w-studio">studio</span>Clique « Modifier la page » (visible pour lui seul), édite description, liens (https, 5 max) et équipe (12 max), publie.<span class="where">POST /studio/:id/page · session</span></div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>Vérifie on-chain que le compte de la session est le propriétaire du studio (<code>GameRegistry.studios(id)</code>), sinon 403.<span class="where">social.ts · saveStudioPage → service.ts · studioOwner</span></div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="s-sellers">
+    <h3>S20 · Occasions : voir qui vend, rebondir</h3>
+    <div class="meta"><span><b>Page</b> <code>/occasions</code> (et la rangée Occasions de l'accueil)</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-web">site</span>Liste les annonces que <code>Marketplace.buy</code> accepterait encore, chacune avec son vendeur (avatar, pseudo, adresse). Tri par jeu, par vendeur ou par prix.<span class="where">web/app/lib/occasions.ts · GET /profiles/names</span></div></li>
+      <li><div><span class="who w-player">acheteur</span>Sélectionne une annonce : la fiche vendeur affiche sa bio, sa date d'inscription, ses ventes conclues (subgraph), s'il est ami, ses autres annonces, « Voir le profil », « Message » (amis) et l'achat.</div></li>
+      <li><div><span class="who w-player">acheteur</span>Rebondit : d'un jeu vers le vendeur, du vendeur vers ses autres jeux, ou vers l'historique de la licence avant de signer.</div></li>
+    </ol>
   </div>
 </section>
 
@@ -770,14 +822,20 @@ sequenceDiagram
       <tr><td><code>GET /devices/:wallet/:pubkey/status</code></td><td>launcher</td><td>aucune</td><td>Appareil encore actif ? Met à jour « vu le ».</td></tr>
       <tr><td><code>POST /devices/revoke</code></td><td>site <code>/profile</code></td><td>message « Appareils » signé</td><td>Déconnecte un appareil.</td></tr>
       <tr><td><code>GET /friends/:addr</code></td><td>site, launcher</td><td>aucune</td><td>Amis, demandes reçues et envoyées.</td></tr>
-      <tr><td><code>POST /friends/action</code></td><td>site</td><td>message « Amis » signé</td><td>request, accept, decline, cancel, remove.</td></tr>
-      <tr><td><code>POST /friends/attest</code></td><td>site</td><td>aucune (utile seulement au propriétaire on-chain)</td><td>Attestation EIP-712 pour <code>lend</code>.</td></tr>
+      <tr><td><code>POST /friends/action</code></td><td>site</td><td>session</td><td>request, accept, decline, cancel, remove.</td></tr>
+      <tr><td><code>POST /friends/attest</code></td><td>site</td><td>session du propriétaire</td><td>Attestation EIP-712 pour <code>lend</code>.</td></tr>
       <tr><td><code>POST /friends/backdate</code></td><td>développeur</td><td>aucune, active seulement si <code>GAMEVAULT_DEV=1</code></td><td>Antidate une amitié.</td></tr>
-      <tr><td><code>GET /profile/:addr</code></td><td>site</td><td>aucune</td><td>Pseudo, avatar, favoris, plus joués.</td></tr>
+      <tr><td><code>POST /session</code>, <code>POST /session/device</code></td><td>site, launcher</td><td>signature du wallet · preuve de la clé d'appareil</td><td>Ouvre une session de 24 h (jeton Bearer).</td></tr>
+      <tr><td><code>GET /events?token=</code></td><td>site, launcher</td><td>jeton de session</td><td>Flux en direct : messages, lectures, présence, amis.</td></tr>
+      <tr><td><code>GET /chat</code>, <code>GET</code>/<code>POST /chat/:addr</code>, <code>POST /chat/:addr/read</code></td><td>site, launcher</td><td>session, amis uniquement</td><td>Conversations, messages, cartes de prêt, accusés de lecture.</td></tr>
+      <tr><td><code>POST /presence</code></td><td>launcher</td><td>session d'appareil</td><td>En ligne / en jeu (battement 60 s).</td></tr>
+      <tr><td><code>GET</code>/<code>POST /studio/:id/page</code></td><td>site</td><td>écriture : session du propriétaire on-chain</td><td>Page publique du studio.</td></tr>
+      <tr><td><code>GET /profiles/names?a=</code></td><td>site</td><td>aucune</td><td>Pseudos et avatars d'une liste d'adresses (64 max).</td></tr>
+      <tr><td><code>GET /profile/:addr</code></td><td>site, launcher</td><td>aucune</td><td>Profil public : pseudo, bio, présence, favoris, temps de jeu, amis, activité.</td></tr>
       <tr><td><code>GET /profile/avatar/:addr</code></td><td>site</td><td>aucune</td><td>Image de l'avatar.</td></tr>
       <tr><td><code>GET /profile/search?q=</code></td><td>site</td><td>aucune</td><td>Recherche par pseudo ou début d'adresse (10 résultats).</td></tr>
-      <tr><td><code>POST /profile</code></td><td>site</td><td>message « Profil » signé</td><td>Enregistre le profil.</td></tr>
-      <tr><td><code>POST /profile/playstat</code></td><td>launcher</td><td>aucune</td><td>Ajoute du temps de jeu (cosmétique).</td></tr>
+      <tr><td><code>POST /profile</code></td><td>site</td><td>session</td><td>Pseudo, bio, avatar, favoris.</td></tr>
+      <tr><td><code>POST /profile/playstat</code></td><td>launcher</td><td>session d'appareil</td><td>Temps de jeu + activité « a joué à ».</td></tr>
     </tbody>
   </table></div>
   <p>Tous les messages signés partagent les mêmes règles : format exact ligne par ligne, âge de 10 minutes maximum, nonce à usage unique conservé en base (un message rejoué après un redémarrage est refusé).</p>
@@ -789,9 +847,13 @@ sequenceDiagram
       <tr><td><code>content_keys</code></td><td>CID, clé chiffrée (AES-GCM, CID en donnée associée), studio et wallet de publication.</td></tr>
       <tr><td><code>nonces</code></td><td>Nonces déjà utilisés et leur expiration (20 min).</td></tr>
       <tr><td><code>friend_requests</code>, <code>friendships</code></td><td>Demandes en attente ; amitiés avec leur date de début.</td></tr>
-      <tr><td><code>profiles</code></td><td>Pseudo, type d'avatar, favoris.</td></tr>
+      <tr><td><code>profiles</code></td><td>Pseudo, bio, type d'avatar, favoris, date d'inscription.</td></tr>
       <tr><td><code>playstats</code></td><td>Secondes jouées par adresse et par édition.</td></tr>
       <tr><td><code>devices</code></td><td>Appareils par compte, date d'appairage, dernière activité.</td></tr>
+      <tr><td><code>sessions</code></td><td>Empreinte du jeton, compte, appareil (sessions launcher), expiration.</td></tr>
+      <tr><td><code>messages</code></td><td>Conversations entre amis (texte, cartes de prêt), lecture.</td></tr>
+      <tr><td><code>activity</code></td><td>Fil public : parties jouées, nouveaux amis.</td></tr>
+      <tr><td><code>studio_pages</code></td><td>Description, liens et équipe des studios.</td></tr>
     </tbody>
   </table></div>
   <p>Variables d'environnement de ticketd (noms seulement) : <code>TICKET_SIGNER_PRIVKEY</code>, <code>ATTEST_SIGNER_PRIVKEY</code>, <code>KEYSTORE_MASTER_KEY</code>, <code>PINATA_JWT</code>, <code>GAMELICENSE_ADDRESS</code>, <code>RPC_URL</code>, <code>PORT</code>, <code>HOST</code>, <code>CORS_ORIGINS</code>, <code>GAMEVAULT_DEV</code>, <code>GAMEVAULT_SKIP_OWNER_CHECK</code> (autotest).</p>
@@ -801,6 +863,7 @@ sequenceDiagram
     <thead><tr><th>Commande</th><th>Rôle</th></tr></thead>
     <tbody>
       <tr><td><code>get_device_pubkey</code></td><td>Clé publique de la machine ; la crée au premier appel.</td></tr>
+      <tr><td><code>device_session_proof</code></td><td>Construit et signe avec la clé d'appareil la preuve qui ouvre la session sociale (format fixe, horodatage, nonce).</td></tr>
       <tr><td><code>scan_cartridges</code></td><td>Cartouches insérées (volumes amovibles avec <code>/gamevault/ticket.json</code>).</td></tr>
       <tr><td><code>list_removable_volumes</code></td><td>Tous les volumes amovibles, vierges compris.</td></tr>
       <tr><td><code>install_cartridge</code></td><td>Écrit build, meta et ticket vide sur une carte.</td></tr>
@@ -826,6 +889,10 @@ sequenceDiagram
       <tr><td><code>/friends</code></td><td>joueurs</td><td>Recherche, demandes, amis, prêts en cours, prêter, reprendre, rendre.</td><td>signatures (amis), transactions (prêts)</td></tr>
       <tr><td><code>/profile</code></td><td>joueurs</td><td>Pseudo, avatar, favoris, plus joués, appareils, gains en attente.</td><td>signatures, 1 transaction pour retirer</td></tr>
       <tr><td><code>/provenance/[tokenId]</code></td><td>tous</td><td>Historique d'une licence depuis le subgraph.</td><td>aucune</td></tr>
+      <tr><td><code>/u/[address]</code></td><td>tous</td><td>Profil public (S12).</td><td>session pour ajouter en ami</td></tr>
+      <tr><td><code>/chat</code></td><td>joueurs</td><td>Messages entre amis, en direct (S18).</td><td>1 signature par 24 h</td></tr>
+      <tr><td><code>/studios</code>, <code>/studio/[id]</code></td><td>tous, studio</td><td>Liste et pages publiques des studios (S19).</td><td>session du propriétaire pour éditer</td></tr>
+      <tr><td><code>/occasions</code></td><td>acheteurs</td><td>Marché d'occasion avec vendeurs (S20).</td><td>1 transaction pour acheter</td></tr>
     </tbody>
   </table></div>
   <p>Variables du site : <code>NEXT_PUBLIC_TICKETD_URL</code> (par défaut <code>http://localhost:8787</code>), <code>NEXT_PUBLIC_SUBGRAPH_URL</code>, <code>NEXT_PUBLIC_WC_PROJECT_ID</code> (nécessaire pour le QR WalletConnect mobile).</p>
@@ -893,6 +960,8 @@ sequenceDiagram
     <li><b>Fenêtre hors ligne.</b> Un vendeur qui reste déconnecté peut jouer jusqu'à 30 jours après la vente. La durée reste à arbitrer.</li>
     <li><b>ticketd est un tiers de confiance.</b> Il détient les clés de contenu et la clé de signature des tickets. Sa compromission compromet les jeux publiés.</li>
     <li><b>Exe natifs non signés.</b> La signature Authenticode des studios n'est pas encore vérifiée.</li>
+    <li><b>Chat non chiffré de bout en bout.</b> Les messages sont stockés et lisibles par l'opérateur de ticketd (choix assumé pour le POC : historique sur tous les appareils, simplicité).</li>
+    <li><b>Session = confiance de 24 h.</b> Un jeton volé permet des actions sociales (pas de transaction, pas de clé de jeu) jusqu'à son expiration ou la révocation de l'appareil.</li>
     <li><b>Vente neuve.</b> <code>GameLicense.buy</code> paie encore le studio directement : un studio qui refuse l'ETH ne bloque que ses propres ventes.</li>
   </ul>
 </section>
@@ -905,7 +974,6 @@ sequenceDiagram
     <tbody>
       <tr><td>Launcher</td><td>La session SIWE n'est pas revérifiée au lancement et il n'y a pas d'auto-signature avec la clé d'appareil, contrairement à CLAUDE.md (voir S5). La possession de la clé est prouvée implicitement par le déballage ECIES.</td><td><span class="pill warn">décision</span></td></tr>
       <tr><td>Launcher</td><td>Pas de contrôle de révocation pendant une partie de jeu web (seulement au lancement ; les jeux natifs sont recontrôlés toutes les 60 s).</td><td><span class="pill warn">décision</span></td></tr>
-      <tr><td>ticketd</td><td><code>POST /profile/playstat</code> n'est pas signé : n'importe qui peut gonfler le temps de jeu d'une adresse.</td><td><span class="pill">cosmétique</span></td></tr>
       <tr><td>Site</td><td>Les règles 3 j / 24 h et le texte 85/10/5 sont écrits en dur dans les pages au lieu d'être lus sur le contrat.</td><td><span class="pill">mineur</span></td></tr>
       <tr><td>Contrats</td><td>Vente neuve en paiement direct au studio (sans repli en crédit), à aligner au prochain redéploiement complet.</td><td><span class="pill">prochain reset</span></td></tr>
       <tr><td>Performance</td><td>Le site et le launcher parcourent tous les jetons un par un sur le RPC ; à basculer sur le subgraph quand le volume grandira.</td><td><span class="pill">à l'échelle</span></td></tr>
