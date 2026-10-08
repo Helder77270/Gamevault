@@ -77,9 +77,8 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
 - [x] Vérification du ticket EN RUST avant déchiffrement / spawn (2026-10-07)
 - [x] Persistance SQLite : nonces, transactions, clés de jeux chiffrées au
       repos, sauvegarde (2026-10-07)
-- [ ] Copier KEYSTORE_MASTER_KEY dans un gestionnaire de mots de passe, puis
-      supprimer les copies EN CLAIR des clés (data/content-keys.migrated.json,
-      data/content-keys.backup-2026-10-07.json)
+- [x] KEYSTORE_MASTER_KEY sauvegardée (gestionnaire de mots de passe), copies
+      EN CLAIR des clés supprimées après vérification 5/5 (2026-10-08)
 - [ ] Runtime natif : Authenticode + studios vérifiés
 - [x] Dépendances : Next 15.5 + React 19, lockfile registre officiel (2026-10-08)
 - [x] `tsc` strict (shared/ticketd/station) + CI GitHub Actions (2026-10-08)
