@@ -31,7 +31,11 @@ type License @entity(immutable: false) {
   mintedAt: BigInt!
   listed: Boolean!
   listPrice: BigInt
+  "Current borrower while a loan runs (ERC-4907 userOf), null otherwise"
+  borrower: Bytes
+  loanExpires: BigInt
   transfers: [Transfer!]! @derivedFrom(field: "license")
+  loans: [Loan!]! @derivedFrom(field: "license")
   royaltyPayments: [RoyaltyPayment!]! @derivedFrom(field: "license")
 }
 
@@ -54,4 +58,25 @@ type RoyaltyPayment @entity(immutable: true) {
   platformFee: BigInt!
   timestamp: BigInt!
   txHash: Bytes!
+}
+
+"One UpdateUser event: a loan starts (user set) or ends (user = 0x0, expires = 0)"
+type Loan @entity(immutable: true) {
+  id: ID!
+  license: License!
+  owner: Bytes!
+  borrower: Bytes!
+  expires: BigInt!
+  ended: Boolean!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+"Marketplace shares a receiver could not take directly (audit K4) — claimable with withdraw()"
+type PendingPayout @entity(immutable: false) {
+  id: ID!
+  payee: Bytes!
+  pending: BigInt!
+  totalCredited: BigInt!
+  totalWithdrawn: BigInt!
 }

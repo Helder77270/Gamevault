@@ -1,5 +1,7 @@
-# Addresses + startBlock: paste after P1 deployment (same moment as
-# shared/src/deployments.ts), then `npm run build -w subgraph` and deploy.
+# Addresses + startBlock mirror shared/src/deployments.ts — update both
+# together, then `npm run build -w @gamevault/subgraph` and deploy.
+# Registry + License: key-separation set (block 47811332).
+# Marketplace: redeployed alone for pull payments (block 47829208).
 specVersion: 1.0.0
 schema:
   file: ./schema.graphql
@@ -8,9 +10,9 @@ dataSources:
     name: GameRegistry
     network: base-sepolia
     source:
-      address: "0xa1401b1bbf85202F88E59F54701F541f41656665"
+      address: "0x7546b4D2f62052468957FD9381cf4Ac433776aba"
       abi: GameRegistry
-      startBlock: 44563428
+      startBlock: 47811332
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -31,14 +33,14 @@ dataSources:
     name: GameLicense
     network: base-sepolia
     source:
-      address: "0x202cF87C36B29469F8A1fe383aBA9C72C0465Aba"
+      address: "0xcB73916fA8AF03894B85e6e05aa8a8169f046Bd9"
       abi: GameLicense
-      startBlock: 44563428
+      startBlock: 47811332
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
       language: wasm/assemblyscript
-      entities: [License, Transfer, Edition]
+      entities: [License, Transfer, Edition, Loan]
       abis:
         - name: GameLicense
           file: ./abis/GameLicense.json
@@ -47,19 +49,21 @@ dataSources:
           handler: handleTransfer
         - event: LicenseMinted(indexed uint256,indexed uint256,indexed address)
           handler: handleLicenseMinted
+        - event: UpdateUser(indexed uint256,indexed address,uint64)
+          handler: handleUpdateUser
       file: ./src/mapping.ts
   - kind: ethereum
     name: Marketplace
     network: base-sepolia
     source:
-      address: "0x7a0BE706772186eE84fB69f630b23E5af2e515f2"
+      address: "0x3Ff123D804Ca5FE65B282f94c2a85cDBD7664B99"
       abi: Marketplace
-      startBlock: 44563428
+      startBlock: 47829208
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
       language: wasm/assemblyscript
-      entities: [License, RoyaltyPayment]
+      entities: [License, RoyaltyPayment, PendingPayout]
       abis:
         - name: Marketplace
           file: ./abis/Marketplace.json
@@ -70,4 +74,8 @@ dataSources:
           handler: handleUnlisted
         - event: Sale(indexed uint256,indexed address,indexed address,uint256,uint256,uint256)
           handler: handleSale
+        - event: PaymentCredited(indexed address,uint256)
+          handler: handlePaymentCredited
+        - event: Withdrawn(indexed address,uint256)
+          handler: handleWithdrawn
       file: ./src/mapping.ts

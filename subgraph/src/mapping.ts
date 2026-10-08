@@ -1,8 +1,8 @@
-import { BigInt } from "@graphprotocol/graph-ts";
+import { Address, BigInt } from "@graphprotocol/graph-ts";
 import { StudioRegistered, GameCreated, EditionCreated } from "../generated/GameRegistry/GameRegistry";
-import { Transfer as TransferEvent, LicenseMinted } from "../generated/GameLicense/GameLicense";
-import { Listed, Unlisted, Sale } from "../generated/Marketplace/Marketplace";
-import { Studio, Game, Edition, License, Transfer, RoyaltyPayment } from "../generated/schema";
+import { Transfer as TransferEvent, LicenseMinted, UpdateUser } from "../generated/GameLicense/GameLicense";
+import { Listed, Unlisted, Sale, PaymentCredited, Withdrawn } from "../generated/Marketplace/Marketplace";
+import { Studio, Game, Edition, License, Transfer, RoyaltyPayment, Loan, PendingPayout } from "../generated/schema";
 
 // ── GameRegistry ─────────────────────────────────────────────
 
@@ -46,6 +46,10 @@ export function handleTransfer(e: TransferEvent): void {
     license.listed = false;
   }
   license.owner = e.params.to;
+  // Any transfer kills an open listing: the Marketplace rejects listings
+  // made before the token moved (transferNonce, audit K3).
+  license.listed = false;
+  license.listPrice = null;
   license.save();
 
   const transfer = new Transfer(e.transaction.hash.toHexString() + "-" + e.logIndex.toString());
@@ -69,6 +73,29 @@ export function handleLicenseMinted(e: LicenseMinted): void {
     edition.minted = edition.minted.plus(BigInt.fromI32(1));
     edition.save();
   }
+}
+
+// Lending (ERC-4907 UpdateUser): user = borrower, or 0x0 when the loan ends
+// early or dies with a resale. Natural expiry emits nothing — readers
+// compare loanExpires with the current time.
+export function handleUpdateUser(e: UpdateUser): void {
+  const id = e.params.tokenId.toString();
+  const license = License.load(id);
+  if (license == null) return;
+  const ended = e.params.user.equals(Address.zero());
+  license.borrower = ended ? null : e.params.user;
+  license.loanExpires = ended ? null : e.params.expires;
+  license.save();
+
+  const loan = new Loan(e.transaction.hash.toHexString() + "-" + e.logIndex.toString());
+  loan.license = id;
+  loan.owner = license.owner;
+  loan.borrower = e.params.user;
+  loan.expires = e.params.expires;
+  loan.ended = ended;
+  loan.timestamp = e.block.timestamp;
+  loan.txHash = e.transaction.hash;
+  loan.save();
 }
 
 // ── Marketplace ──────────────────────────────────────────────
@@ -108,4 +135,31 @@ export function handleSale(e: Sale): void {
   payment.timestamp = e.block.timestamp;
   payment.txHash = e.transaction.hash;
   payment.save();
+}
+
+// Pull-payment fallback (audit K4)
+function payout(payee: Address): PendingPayout {
+  let p = PendingPayout.load(payee.toHexString());
+  if (p == null) {
+    p = new PendingPayout(payee.toHexString());
+    p.payee = payee;
+    p.pending = BigInt.zero();
+    p.totalCredited = BigInt.zero();
+    p.totalWithdrawn = BigInt.zero();
+  }
+  return p;
+}
+
+export function handlePaymentCredited(e: PaymentCredited): void {
+  const p = payout(e.params.payee);
+  p.pending = p.pending.plus(e.params.amount);
+  p.totalCredited = p.totalCredited.plus(e.params.amount);
+  p.save();
+}
+
+export function handleWithdrawn(e: Withdrawn): void {
+  const p = payout(e.params.payee);
+  p.pending = p.pending.minus(e.params.amount);
+  p.totalWithdrawn = p.totalWithdrawn.plus(e.params.amount);
+  p.save();
 }
