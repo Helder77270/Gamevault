@@ -704,6 +704,7 @@ sequenceDiagram
       <thead><tr><th>Geste</th><th>Commande ou action</th></tr></thead>
       <tbody>
         <tr><td>Changer la clé d'attestation</td><td>L'admin appelle <code>GameLicense.setAttestationSigner(nouvelle)</code>, puis met à jour <code>ATTEST_SIGNER_PRIVKEY</code> dans ticketd. Les anciennes attestations cessent immédiatement d'être valides.</td></tr>
+        <tr><td>Préparer la démo</td><td><code>npm run demo -w @gamevault/ticketd</code> affiche l'état et le plan ; avec <code>-- --apply --buyer 0x…</code> il prépare tout (licence prête chez le vendeur A, une annonce sur le marché, amitié A ↔ B depuis 4 jours, profil et page du studio de démo) puis imprime le déroulé. Idempotent : à lancer avant chaque démo.</td></tr>
         <tr><td>Sauvegarder ticketd</td><td><code>npm run backup -w @gamevault/ticketd</code> écrit <code>ticketd/data/backups/ticketd-&lt;date&gt;.db</code> à chaud. La clé maître n'y est pas.</td></tr>
         <tr><td>Vérifier ticketd</td><td><code>npm run selftest -w @gamevault/ticketd</code> (base en mémoire, sans chaîne).</td></tr>
         <tr><td>Intégration continue</td><td>À chaque push : typecheck des 4 projets TypeScript, autotests, build du site, <code>npm audit</code> bloquant au niveau « high », 40 tests Foundry, tests Rust du launcher sous Windows.</td></tr>

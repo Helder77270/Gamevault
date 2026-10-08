@@ -51,5 +51,13 @@ are files under `data/`. Backup: `npm run backup -w @gamevault/ticketd`
 ```
 npm run dev -w @gamevault/ticketd        # http://localhost:8787, --watch, loads .env + .env.dev
 npm run selftest -w @gamevault/ticketd   # issuance proof: in-memory DB, no chain
+npm run demo -w @gamevault/ticketd       # demo state: read-only report + plan
+npm run demo -w @gamevault/ticketd -- --apply --buyer 0x…   # prepare it (testnet, dev only)
 ```
+`demo` puts the reference demo back in a known state (a blockchain can't be
+rewound, so it PREPARES instead): wallet A (`--seller`, default the project
+owner) gets an unlent, unlisted licence of the demo edition (`--edition`,
+default 2 = Runner, bought and transferred by `DEV_WALLET_PRIVKEY`), the
+market keeps one listing, A and B (`--buyer`) become friends since 4 days,
+and it prints the step-by-step demo. Idempotent: run it before every demo.
 Configuration: see `.env.example` (variable names and roles).

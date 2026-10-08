@@ -102,6 +102,9 @@ HANDOFF.md). Restent des DÉCISIONS de conception :
       20 s (v1 #1, 2026-10-08)
 - [x] Session SIWE non revérifiée au lancement : ACCEPTÉE comme limite v1
       (preuve de propriété à l'appairage, clé d'appareil ensuite)
+- [x] Script de remise à zéro de la démo : npm run demo -w @gamevault/ticketd
+      (v1 #2, 2026-10-08)
+- [ ] v1 #3 : vidéo de démo · v1 #4 : tag v1.0
 - [ ] Signer /profile/playstat (cosmétique)
 - [ ] Lire 3 j / 24 h / 85-10-5 sur le contrat au lieu du texte en dur
 
