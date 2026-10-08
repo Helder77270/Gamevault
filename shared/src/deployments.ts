@@ -33,7 +33,6 @@ export const DEPLOYMENTS: {
   marketplace: "0x3Ff123D804Ca5FE65B282f94c2a85cDBD7664B99",
 };
 
-export const DEPLOY_BLOCK = 47811332;
 
 // Subgraph (Goldsky, project gamevault, tag "prod" — the URL stays stable
 // across versions: redeploy as gamevault/<version> --tag prod). Public,

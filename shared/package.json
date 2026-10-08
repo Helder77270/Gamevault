@@ -15,9 +15,7 @@
     "./registryCatalog": "./src/registryCatalog.ts"
   },
   "scripts": {
-    "selftest": "node --experimental-strip-types src/selftest.ts",
-    "make-dev-ticket": "node --experimental-strip-types src/makeDevTicket.ts",
-    "make-native-dev-build": "node --experimental-strip-types src/makeNativeDevBuild.ts"
+    "selftest": "node --experimental-strip-types src/selftest.ts"
   },
   "dependencies": {
     "@noble/ciphers": "^1.0.0",

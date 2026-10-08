@@ -28,7 +28,7 @@ jobs:
 
       - run: npm ci --no-audit --no-fund
 
-      - name: Typecheck (shared, ticketd, station, launcher, web)
+      - name: Typecheck (shared, ticketd, launcher, web)
         run: npm run typecheck
 
       - name: Selftests

@@ -22,7 +22,7 @@ export interface StoredBuild {
 }
 
 const PINATA_PIN_URL = "https://api.pinata.cloud/pinning/pinFileToIPFS";
-export const DEFAULT_GATEWAY = "https://gateway.pinata.cloud/ipfs/";
+const DEFAULT_GATEWAY = "https://gateway.pinata.cloud/ipfs/";
 // Public gateways are flaky (transient 404s while a pin propagates, 429
 // rate limits) — a fetch walks this list, retrying the pinning gateway
 // first. Integrity never depends on the gateway: sha256 is checked after.

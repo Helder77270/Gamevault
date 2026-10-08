@@ -17,10 +17,11 @@ contracts/broadcast/
 contracts/cache/
 contracts/lib/
 
-# regenerable artifacts (npm run build -w game && npm run make-dev-ticket -w shared)
+# regenerable artifacts
 game/dist/
-launcher/dev-media/gamevault/build.enc
-launcher/dev-media/gamevault/build.enc.bak
+# local fake cartridges (GAMEVAULT_DEV_MEDIA_DIR); dev-media = retired fixture
+launcher/dev-card/
+launcher/dev-media/
 subgraph/generated/
 subgraph/build/
 ticketd/data/

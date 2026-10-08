@@ -13,9 +13,8 @@ export const DEV_PLATFORM_PUB = secp256k1.getPublicKey(DEV_PLATFORM_PRIV, true);
 export const DEV_DEVICE_PRIV = sha256(utf8ToBytes("gamevault dev device key v1"));
 export const DEV_DEVICE_PUB = secp256k1.getPublicKey(DEV_DEVICE_PRIV, true);
 
-// Dev content keys: deterministic so publish (encrypts builds) and ticketd
-// (wraps keys into tickets) agree without passing files around.
-// Production: random per-edition keys in ticketd's store.
+// Dev content keys: deterministic, used only by the selftests (no chain, no
+// stored key). Real builds always get a random key in ticketd's store.
 export const DEV_CONTENT_KEY = sha256(utf8ToBytes("gamevault dev content key v1"));
 
 /** Per-edition dev content key. Edition 2 = the original runner key

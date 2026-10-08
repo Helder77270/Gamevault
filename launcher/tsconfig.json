@@ -15,7 +15,6 @@
       "@gamevault/shared/deployments": ["../shared/src/deployments.ts"],
       "@gamevault/shared/storage": ["../shared/src/storage.ts"],
       "@gamevault/shared/abi": ["../shared/src/abi.ts"],
-      "@gamevault/shared/siwe": ["../shared/src/siwe.ts"],
       "@gamevault/shared": ["../shared/src/index.ts"]
     },
     "resolveJsonModule": true,

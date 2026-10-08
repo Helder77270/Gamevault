@@ -6,6 +6,8 @@ import { secp256k1 } from "@noble/curves/secp256k1";
 import { randomBytes } from "@noble/hashes/utils";
 import { wrapKey, unwrapKey } from "./ecies.ts";
 import { signTicket, verifyTicket, isExpired, hex, unhex, type Ticket } from "./ticket.ts";
+import { CHAIN } from "./deployments.ts";
+import { encryptBuild, decryptBuild } from "./buildcrypto.ts";
 
 let failures = 0;
 function check(label: string, ok: boolean): void {
@@ -28,7 +30,7 @@ const now = Math.floor(Date.now() / 1000);
 const ticket: Ticket = {
   tokenId: "1",
   contract: "0x1111111111111111111111111111111111111111",
-  chainId: 4801,
+  chainId: CHAIN.id,
   ownerAddress: "0x2222222222222222222222222222222222222222",
   devicePubKey: hex(devicePub),
   wrappedContentKey: hex(envelope),
@@ -59,6 +61,18 @@ check("tampered ticket (owner swapped) fails verification", !verifyTicket(forged
 
 const expired = signTicket({ ...ticket, expiresAt: now - 1 }, platformPriv);
 check("expired ticket detected", isExpired(expired));
+
+// --- Build encryption (the launcher's Rust core mirrors decryptBuild)
+const build = new TextEncoder().encode("<!doctype html><title>game</title>");
+const sealed = encryptBuild(build, contentKey);
+check("build round-trips with its content key", hex(decryptBuild(sealed, contentKey)) === hex(build));
+let wrongKeyFailed = false;
+try {
+  decryptBuild(sealed, randomBytes(32));
+} catch {
+  wrongKeyFailed = true;
+}
+check("build does NOT open with another key", wrongKeyFailed);
 
 console.log(failures === 0 ? "\nAll checks passed — crypto core is sound." : `\n${failures} check(s) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

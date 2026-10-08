@@ -7,6 +7,7 @@ set "PATH=%PATH%;%USERPROFILE%\.cargo\bin"
 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 rem Dev fixture card (opt-in): uncomment to always have a fake cartridge
 rem inserted. Masks real SD insert/eject UX (home never shows attract mode).
-rem set "GAMEVAULT_DEV_MEDIA_DIR=%~dp0dev-media"
+rem set "GAMEVAULT_DEV_MEDIA_DIR=%~dp0dev-card"
+rem (any folder works: the launcher can install a game into it like on an SD card)
 cd /d "%~dp0"
 npm run tauri dev

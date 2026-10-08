@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "dev.cmd",
-    "typecheck": "tsc -p shared && tsc -p ticketd && tsc -p station && tsc -p launcher && tsc -p web"
+    "typecheck": "tsc -p shared && tsc -p ticketd && tsc -p launcher && tsc -p web"
   },
   "workspaces": [
     "shared",
@@ -11,7 +11,6 @@
     "launcher",
     "ticketd",
     "web",
-    "station",
     "subgraph"
   ],
   "devDependencies": {

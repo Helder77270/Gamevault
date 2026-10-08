@@ -1,5 +1,5 @@
 {
-  // Shared base for the Node workspaces (shared, ticketd, station).
+  // Shared base for the Node workspaces (shared, ticketd).
   // They run as-is through `node --experimental-strip-types`, so tsc only
   // type-checks (noEmit) and enforces what type stripping requires:
   // `.ts` import specifiers and explicit `import type`.
