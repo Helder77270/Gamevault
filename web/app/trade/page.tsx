@@ -39,6 +39,13 @@ function TradeInner() {
     args: [tokenId],
     query: { enabled: action === "list" && token !== "" },
   });
+  const { data: resellable } = useReadContract({
+    address: LICENSE,
+    abi: LICENSE_ABI,
+    functionName: "isResellable",
+    args: [tokenId],
+    query: { enabled: action === "list" && token !== "" },
+  });
   const { data: listing } = useReadContract({
     address: MARKET,
     abi: MARKETPLACE_ABI,
@@ -133,8 +140,8 @@ function TradeInner() {
       <h1>{LABELS[action]}</h1>
       {action === "list" && (
         <p>
-          À la revente : 85 % pour vous, 10 % pour le studio (EIP-2981), 5 % pour la plateforme. Deux
-          signatures la première fois (autorisation puis mise en vente).
+          À la revente : 5 % pour la plateforme, la redevance choisie par le studio (EIP-2981, 0 à 20 %),
+          le reste pour vous. Deux signatures la première fois (autorisation puis mise en vente).
         </p>
       )}
       {action === "buy" && (
@@ -150,8 +157,14 @@ function TradeInner() {
         </p>
       )}
 
+      {action === "list" && resellable === false && (
+        <p className="error-box">
+          Le studio a publié ce jeu sans revente : cette licence reste à vous et ne peut pas être mise en vente.
+          Vous pouvez toujours la prêter à un ami.
+        </p>
+      )}
       {!isConnected && <ConnectButton />}
-      {isConnected && status !== "done" && (
+      {isConnected && status !== "done" && !(action === "list" && resellable === false) && (
         <>
           <button className="btn" disabled={status === "working"} onClick={() => void run()}>
             {status === "working" ? (detail || "Transaction…") : "Signer la transaction"}

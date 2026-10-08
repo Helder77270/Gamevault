@@ -36,7 +36,7 @@ contract LendingTest is Test {
         vm.startPrank(studio);
         uint256 studioId = registry.registerStudio("GameVault Dev");
         uint256 gameId = registry.createGame(studioId, "Runner");
-        editionId = registry.createEdition(gameId, 100, 0.01 ether, 1000, "cid", bytes32(uint256(1)));
+        editionId = registry.createEdition(gameId, 100, 0.01 ether, 1000, true, "cid", bytes32(uint256(1)));
         vm.stopPrank();
 
         vm.deal(alice, 1 ether);
@@ -62,6 +62,20 @@ contract LendingTest is Test {
     /// Friendship born 3 days ago — eligible now.
     function _maturedSince() internal view returns (uint64) {
         return uint64(block.timestamp - 3 days);
+    }
+
+    /// A copy the studio made non-resellable can still be lent: a loan is
+    /// not a transfer.
+    function test_LockedCopyCanStillBeLent() public {
+        vm.prank(studio);
+        uint256 locked = registry.createEdition(1, 100, 0.01 ether, 0, false, "cid", bytes32(uint256(3)));
+        vm.prank(alice);
+        tokenId = license.buy{value: 0.01 ether}(locked);
+        assertFalse(license.isResellable(tokenId));
+
+        _lend(alice, bob, _maturedSince(), uint64(block.timestamp + 7 days));
+        assertEq(license.userOf(tokenId), bob);
+        assertEq(license.ownerOf(tokenId), alice);
     }
 
     // ── Attestation gating ───────────────────────────────────────

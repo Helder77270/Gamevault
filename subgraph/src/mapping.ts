@@ -26,6 +26,7 @@ export function handleEditionCreated(e: EditionCreated): void {
   edition.supply = e.params.supply;
   edition.price = e.params.price;
   edition.royaltyBps = BigInt.fromI32(e.params.royaltyBps.toI32());
+  edition.resellable = e.params.resellable;
   edition.buildCid = e.params.buildCid;
   edition.buildHash = e.params.buildHash;
   edition.minted = BigInt.zero();

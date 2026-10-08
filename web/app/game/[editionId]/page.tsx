@@ -96,7 +96,7 @@ export default function GamePage() {
             <div className="artnote">box art — éd. #{e.editionId}</div>
           </div>
           <div className="kicker" style={{ marginTop: "1.2rem" }}>
-            {e.studio.toUpperCase()} · {GENRES[e.editionId] ?? "INDIE"} · ROYALTIES {e.royaltyBps / 100}%
+            {e.studio.toUpperCase()} · {GENRES[e.editionId] ?? "INDIE"} · {e.resellable ? `ROYALTIES ${e.royaltyBps / 100}%` : "SANS REVENTE"}
           </div>
           <h1>{e.title}</h1>
           <div style={{ display: "flex", gap: "0.5rem", margin: "0.4rem 0 0.8rem" }}>
@@ -154,8 +154,8 @@ export default function GamePage() {
           </div>
 
           <div className="statgrid">
-            <div className="stat"><div className="k">PRIX PRIMAIRE</div><div className="v">{formatEther(e.priceWei)} ETH → 100% studio</div></div>
-            <div className="stat"><div className="k">ROYALTIES REVENTE</div><div className="v">{e.royaltyBps / 100}% studio · 5% plateforme</div></div>
+            <div className="stat"><div className="k">PRIX PRIMAIRE</div><div className="v">{formatEther(e.priceWei)} ETH → 92 % studio · 8 % plateforme</div></div>
+            <div className="stat"><div className="k">REVENTE</div><div className="v">{e.resellable ? `autorisée · ${e.royaltyBps / 100} % studio · 5 % plateforme` : "désactivée par le studio"}</div></div>
             <div className="stat"><div className="k">BUILD CID (IPFS)</div><div className="v">{e.buildCid.slice(0, 14)}…{e.buildCid.slice(-6)}</div></div>
             <div className="stat"><div className="k">BUILD HASH</div><div className="v">{e.buildSha256.slice(0, 14)}…{e.buildSha256.slice(-6)}</div></div>
             <div className="stat">

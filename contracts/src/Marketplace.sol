@@ -49,6 +49,7 @@ contract Marketplace is ReentrancyGuard, IGameVaultEvents {
     function list(uint256 tokenId, uint256 price) external {
         require(license.ownerOf(tokenId) == msg.sender, "Marketplace: not owner");
         require(price > 0, "Marketplace: zero price");
+        require(license.isResellable(tokenId), "Marketplace: resale disabled by the studio");
         require(
             license.getApproved(tokenId) == address(this) || license.isApprovedForAll(msg.sender, address(this)),
             "Marketplace: not approved"

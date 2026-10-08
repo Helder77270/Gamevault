@@ -201,6 +201,12 @@
         "internalType": "uint96"
       },
       {
+        "name": "resellable",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
         "name": "buildCid",
         "type": "string",
         "indexed": false,

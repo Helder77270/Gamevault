@@ -1407,7 +1407,7 @@ function previewPane(e: OnchainEdition): string {
         <div class="pv-note">${t("pv.ed", { id: esc(e.editionId) })} · ${esc(e.studio.toUpperCase())}</div>
         <div class="pv-foot">
           <div class="pv-title">${esc(e.title)}</div>
-          <div class="pv-kick">${g?.ticket ? `LICENCE #${esc(g.ticket.tokenId)} · ` : ownedTok.length ? `LICENCE #${esc(ownedTok[0].tokenId)} · ` : ""}${t("pv.minted", { m: e.minted, s: e.supply })} · ROYALTIES ${e.royaltyBps / 100}%</div>
+          <div class="pv-kick">${g?.ticket ? `LICENCE #${esc(g.ticket.tokenId)} · ` : ownedTok.length ? `LICENCE #${esc(ownedTok[0].tokenId)} · ` : ""}${t("pv.minted", { m: e.minted, s: e.supply })} · ${e.resellable ? `ROYALTIES ${e.royaltyBps / 100}%` : "NO RESALE"}</div>
         </div>
       </div>
       <div class="pv-body">
@@ -1782,7 +1782,7 @@ function detailView(): string {
     .join("");
 
   let marketRow = "";
-  if (g?.ticket && isOurs(g) && g.verdict === "authentic" && !resold) {
+  if (g?.ticket && isOurs(g) && g.verdict === "authentic" && !resold && e.resellable) {
     if (listed && m) {
       marketRow = `<button class="pillbtn" data-unlist="${esc(g.ticket.tokenId)}">🏷 LISTED ${formatEth(m.price)} ETH — UNLIST ↗</button>`;
     } else if (state.selling === g.ticket.tokenId) {
@@ -1805,7 +1805,7 @@ function detailView(): string {
         </div>
       </div>
       <div class="detail-right">
-        <div class="detail-kicker">${esc(e.studio.toUpperCase())} &nbsp;&#183;&nbsp; ROYALTIES ${e.royaltyBps / 100}% &nbsp;&#183;&nbsp; ${e.minted}/${e.supply} MINTED</div>
+        <div class="detail-kicker">${esc(e.studio.toUpperCase())} &nbsp;&#183;&nbsp; ${e.resellable ? `ROYALTIES ${e.royaltyBps / 100}%` : "NO RESALE"} &nbsp;&#183;&nbsp; ${e.minted}/${e.supply} MINTED</div>
         <div class="detail-title">${esc(e.title)}</div>
         <div class="detail-blurb">${esc(BLURBS[e.editionId] ?? t("det.blurb"))}</div>
         <div class="stat-row">

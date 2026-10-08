@@ -87,12 +87,20 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
       sur URI WalletConnect forgée, modérée) → à revoir quand RainbowKit suit
 - [x] Pull payments Marketplace (K4) — Marketplace seul redéployé (2026-10-08)
 - [ ] Prochain full reset : même repli pull pour la vente primaire (GameLicense.buy)
-- [ ] Prochain full reset : COMMISSION 8 % sur la vente neuve — code + tests
-      prêts sur la branche feat/v1.1-primary-fee (GameLicense.PRIMARY_FEE_BPS,
-      studio 92 %). Au déploiement : texte « → 100% studio » de
-      web/app/game/[editionId] à passer en 92 %, docs/reference (rôle studio,
-      S-achat, table buy), shared/deployments.ts. Repères : Steam 30 %,
-      Epic 12 %, itch.io 10 % par défaut.
+- [ ] Prochain full reset : branche feat/v1.1-primary-fee (worktree
+      .claude/worktrees/v11), code + tests prêts, rien de déployé :
+      - COMMISSION 8 % sur la vente neuve (GameLicense.PRIMARY_FEE_BPS,
+        studio 92 %). Repères : Steam 30 %, Epic 12 % (0 % sous 1 M$/an),
+        itch.io 10 % par défaut.
+      - REVENTE FACULTATIVE par édition (choix du studio, gravé à la
+        création) : createEdition(..., royaltyBps, resellable, ...). Sans
+        revente : transferts refusés, Marketplace.list refusé, prêt OK,
+        royalty forcée à 0. Avec revente : royalty libre de 0 à 20 %.
+        Formulaire /studio, /trade, fiche jeu, launcher (SELL masqué) et
+        subgraph (Edition.resellable) suivent.
+      Au déploiement : Deploy.s.sol, shared/deployments.ts, redéployer le
+      subgraph, docs/reference (rôle studio, S-achat, tables buy/createEdition),
+      republier les éditions de démo (revente activée).
 - [ ] Prochain full reset : PRÊT STUDIO — le propriétaire d'un studio prête les
       licences de SES éditions sans l'âge d'amitié de 3 jours (GameLicense.lend :
       exemption si msg.sender == owner du studio de l'édition). Durée max et

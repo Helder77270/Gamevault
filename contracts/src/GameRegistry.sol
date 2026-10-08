@@ -26,6 +26,10 @@ contract GameRegistry is IGameVaultEvents {
         string buildCid;
         bytes32 buildHash;
         uint256 minted;
+        /// The studio's choice, fixed at creation so buyers know before they
+        /// pay: false = copies can never change hands (no resale, no
+        /// royalty). Lending still works: a loan is not a transfer.
+        bool resellable;
     }
 
     uint96 public constant MAX_ROYALTY_BPS = 2000; // 20% hard cap
@@ -69,15 +73,21 @@ contract GameRegistry is IGameVaultEvents {
         uint256 supply,
         uint256 price,
         uint96 royaltyBps,
+        bool resellable,
         string calldata buildCid,
         bytes32 buildHash
     ) external returns (uint256 editionId) {
         require(studios[games[gameId].studioId].owner == msg.sender, "GameRegistry: not studio owner");
         require(supply > 0, "GameRegistry: zero supply");
         require(royaltyBps <= MAX_ROYALTY_BPS, "GameRegistry: royalty too high");
+        require(resellable || royaltyBps == 0, "GameRegistry: royalty needs resale");
         editionId = ++editionCount;
-        editions[editionId] = Edition(gameId, supply, price, royaltyBps, buildCid, buildHash, 0);
-        emit EditionCreated(editionId, gameId, supply, price, royaltyBps, buildCid, buildHash);
+        editions[editionId] = Edition(gameId, supply, price, royaltyBps, buildCid, buildHash, 0, resellable);
+        emit EditionCreated(editionId, gameId, supply, price, royaltyBps, resellable, buildCid, buildHash);
+    }
+
+    function isResellable(uint256 editionId) external view returns (bool) {
+        return editions[editionId].resellable;
     }
 
     /// @notice Called by GameLicense on primary purchase. Enforces supply.

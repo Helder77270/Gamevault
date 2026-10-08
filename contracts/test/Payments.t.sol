@@ -16,7 +16,7 @@ contract SwitchableStudio {
     function setup(GameRegistry registry, uint256 price, uint96 royaltyBps) external returns (uint256 editionId) {
         uint256 studioId = registry.registerStudio("Hostile Studio");
         uint256 gameId = registry.createGame(studioId, "Hostile Game");
-        editionId = registry.createEdition(gameId, 100, price, royaltyBps, "QmHostile", bytes32(uint256(1)));
+        editionId = registry.createEdition(gameId, 100, price, royaltyBps, true, "QmHostile", bytes32(uint256(1)));
     }
 
     function setAccepting(bool on) external {
@@ -100,7 +100,7 @@ contract PaymentsTest is Test, IGameVaultEvents {
         vm.startPrank(studio);
         uint256 studioId = registry.registerStudio("GameVault Dev");
         uint256 gameId = registry.createGame(studioId, "GameVault Runner");
-        editionId = registry.createEdition(gameId, 100, 0.01 ether, 1000, "QmRunner", bytes32(uint256(2)));
+        editionId = registry.createEdition(gameId, 100, 0.01 ether, 1000, true, "QmRunner", bytes32(uint256(2)));
         vm.stopPrank();
 
         vm.deal(alice, 100 ether);
@@ -108,7 +108,7 @@ contract PaymentsTest is Test, IGameVaultEvents {
     }
 
     function _aliceLists(uint256 edition, uint256 price) internal returns (uint256 tokenId) {
-        (,, uint256 primary,,,,) = registry.editions(edition);
+        (,, uint256 primary,,,,,) = registry.editions(edition);
         vm.startPrank(alice);
         tokenId = license.buy{value: primary}(edition);
         license.approve(address(market), tokenId);

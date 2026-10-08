@@ -44,6 +44,8 @@ export default function StudioPage() {
   const [price, setPrice] = useState("0.00001");
   const [supply, setSupply] = useState("100");
   const [royalty, setRoyalty] = useState("10");
+  // Resale is the studio's choice, fixed for the edition's lifetime.
+  const [resellable, setResellable] = useState(true);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [result, setResult] = useState<{ editionId: string; cid: string; hash: string } | null>(null);
@@ -167,7 +169,8 @@ export default function StudioPage() {
           BigInt(gameId),
           BigInt(supply),
           parseEther(price),
-          BigInt(Math.round(Number(royalty) * 100)) as unknown as bigint,
+          BigInt(resellable ? Math.round(Number(royalty) * 100) : 0) as unknown as bigint,
+          resellable,
           stored.cid,
           stored.sha256 as `0x${string}`,
         ],
@@ -243,8 +246,25 @@ export default function StudioPage() {
                 Prix <input style={{ width: "7rem" }} value={price} onChange={(e) => setPrice(e.target.value)} /> ETH
                 {"  ·  "}Exemplaires{" "}
                 <input style={{ width: "5rem" }} value={supply} onChange={(e) => setSupply(e.target.value)} />
-                {"  ·  "}Royalties{" "}
-                <input style={{ width: "3.5rem" }} value={royalty} onChange={(e) => setRoyalty(e.target.value)} /> %
+              </p>
+              <p>
+                <label>
+                  <input type="checkbox" checked={resellable} onChange={(e) => setResellable(e.target.checked)} />{" "}
+                  Autoriser la revente des copies
+                </label>
+                {resellable && (
+                  <>
+                    {"  ·  "}Redevance studio sur chaque revente{" "}
+                    <input style={{ width: "3.5rem" }} value={royalty} onChange={(e) => setRoyalty(e.target.value)} /> %
+                    {" "}(0 à 20, 0 = aucune)
+                  </>
+                )}
+              </p>
+              <p style={{ fontSize: "0.8rem", color: "var(--dim)" }}>
+                {resellable
+                  ? "Les joueurs pourront revendre leur copie sur le marché d'occasion ; vous touchez la redevance à chaque revente."
+                  : "Les copies resteront chez leur premier acheteur : ni revente ni cadeau. Le prêt entre amis reste possible."}
+                {" "}Ce choix est gravé avec l'édition et ne pourra plus changer.
               </p>
               <button className="btn" disabled={!file || !!status} onClick={() => void publishEdition()}>
                 {status || "Publier l'édition"}

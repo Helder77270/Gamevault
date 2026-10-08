@@ -18,6 +18,11 @@
         "internalType": "address"
       },
       {
+        "name": "platformAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
         "name": "minFriendAge",
         "type": "uint64",
         "internalType": "uint64"
@@ -83,6 +88,19 @@
         "name": "",
         "type": "uint64",
         "internalType": "uint64"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "PRIMARY_FEE_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -322,6 +340,25 @@
   },
   {
     "type": "function",
+    "name": "isResellable",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "lastLoanEnd",
     "inputs": [
       {
@@ -438,6 +475,19 @@
   {
     "type": "function",
     "name": "pendingOwner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "platform",
     "inputs": [],
     "outputs": [
       {
@@ -831,6 +881,12 @@
         "type": "uint96",
         "indexed": false,
         "internalType": "uint96"
+      },
+      {
+        "name": "resellable",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       },
       {
         "name": "buildCid",

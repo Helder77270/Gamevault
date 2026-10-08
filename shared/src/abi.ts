@@ -3,6 +3,13 @@
 
 export const LICENSE_ABI = [
   {
+    name: "isResellable",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
     name: "ownerOf",
     type: "function",
     stateMutability: "view",
@@ -155,10 +162,18 @@ export const REGISTRY_ABI = [
       { name: "supply", type: "uint256" },
       { name: "price", type: "uint256" },
       { name: "royaltyBps", type: "uint96" },
+      { name: "resellable", type: "bool" },
       { name: "buildCid", type: "string" },
       { name: "buildHash", type: "bytes32" },
     ],
     outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "isResellable",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "editionId", type: "uint256" }],
+    outputs: [{ name: "", type: "bool" }],
   },
   {
     name: "editions",
@@ -173,6 +188,7 @@ export const REGISTRY_ABI = [
       { name: "buildCid", type: "string" },
       { name: "buildHash", type: "bytes32" },
       { name: "minted", type: "uint256" },
+      { name: "resellable", type: "bool" },
     ],
   },
   {
@@ -236,6 +252,7 @@ export const REGISTRY_ABI = [
       { name: "supply", type: "uint256", indexed: false },
       { name: "price", type: "uint256", indexed: false },
       { name: "royaltyBps", type: "uint96", indexed: false },
+      { name: "resellable", type: "bool", indexed: false },
       { name: "buildCid", type: "string", indexed: false },
       { name: "buildHash", type: "bytes32", indexed: false },
     ],

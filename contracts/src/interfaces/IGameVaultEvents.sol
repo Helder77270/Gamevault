@@ -16,6 +16,7 @@ interface IGameVaultEvents {
         uint256 supply,
         uint256 price,
         uint96 royaltyBps,
+        bool resellable,
         string buildCid,
         bytes32 buildHash
     );

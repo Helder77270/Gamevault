@@ -166,8 +166,18 @@ contract GameLicense is ERC721, ERC2981, EIP712, Ownable2Step, ReentrancyGuard, 
 
     /// A transfer is a resale: the loan dies with it (the new owner never
     /// inherits a borrower). Mint (from == 0) is untouched.
+    /// @notice False when the studio published the edition without resale:
+    ///         the copy stays with its first owner (the Marketplace refuses
+    ///         to list it, transfers revert).
+    function isResellable(uint256 tokenId) public view returns (bool) {
+        return registry.isResellable(editionOf[tokenId]);
+    }
+
     function _update(address to, uint256 tokenId, address auth) internal override returns (address from) {
         from = super._update(to, tokenId, auth);
+        if (from != address(0) && to != address(0)) {
+            require(isResellable(tokenId), "GameLicense: resale disabled by the studio");
+        }
         unchecked {
             ++transferCount[tokenId];
         }

@@ -30,7 +30,7 @@ contract GameVaultTest is Test {
         vm.startPrank(studio);
         uint256 studioId = registry.registerStudio("GameVault Dev");
         uint256 gameId = registry.createGame(studioId, "GameVault Runner");
-        editionId = registry.createEdition(gameId, 100, 0.01 ether, 1000, CID, HASH); // 10% royalty
+        editionId = registry.createEdition(gameId, 100, 0.01 ether, 1000, true, CID, HASH); // 10% royalty
         vm.stopPrank();
 
         vm.deal(alice, 10 ether);
@@ -48,7 +48,7 @@ contract GameVaultTest is Test {
         // primary: 92 % to the studio, 8 % to the platform
         assertEq(studio.balance, 0.0092 ether);
         assertEq(platform.balance, 0.0008 ether);
-        (,,,,,, uint256 minted) = registry.editions(editionId);
+        (,,,,,, uint256 minted,) = registry.editions(editionId);
         assertEq(minted, 1);
 
         (address receiver, uint256 amount) = license.royaltyInfo(tokenId, 1 ether);
@@ -69,7 +69,7 @@ contract GameVaultTest is Test {
 
     function test_RevertSoldOut() public {
         vm.prank(studio);
-        uint256 tiny = registry.createEdition(1, 1, 0.01 ether, 1000, CID, HASH);
+        uint256 tiny = registry.createEdition(1, 1, 0.01 ether, 1000, true, CID, HASH);
         vm.prank(alice);
         license.buy{value: 0.01 ether}(tiny);
         vm.prank(bob);
@@ -80,7 +80,7 @@ contract GameVaultTest is Test {
     function test_RevertRoyaltyTooHigh() public {
         vm.prank(studio);
         vm.expectRevert("GameRegistry: royalty too high");
-        registry.createEdition(1, 10, 0.01 ether, 2001, CID, HASH);
+        registry.createEdition(1, 10, 0.01 ether, 2001, true, CID, HASH);
     }
 
     // ── Resale: the demo flow ────────────────────────────────────

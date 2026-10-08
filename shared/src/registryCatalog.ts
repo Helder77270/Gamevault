@@ -14,6 +14,8 @@ export interface OnchainEdition {
   studio: string;
   priceWei: bigint;
   royaltyBps: number;
+  /** Studio's choice at creation: false = copies can never be resold. */
+  resellable: boolean;
   supply: number;
   minted: number;
   buildCid: string;
@@ -50,7 +52,7 @@ export async function fetchOnchainCatalog(existingClient?: PublicClient): Promis
   const out: OnchainEdition[] = [];
 
   for (let i = 1; i <= count; i++) {
-    const ed = await read<[bigint, bigint, bigint, bigint, string, string, bigint]>("editions", [BigInt(i)]);
+    const ed = await read<[bigint, bigint, bigint, bigint, string, string, bigint, boolean]>("editions", [BigInt(i)]);
     const gameId = ed[0].toString();
     if (!games.has(gameId)) {
       const g = await read<[bigint, string]>("games", [BigInt(gameId)]);
@@ -69,6 +71,7 @@ export async function fetchOnchainCatalog(existingClient?: PublicClient): Promis
       studio: studios.get(game.studioId)!,
       priceWei: ed[2],
       royaltyBps: Number(ed[3]),
+      resellable: ed[7],
       supply: Number(ed[1]),
       minted: Number(ed[6]),
       buildCid: ed[4],

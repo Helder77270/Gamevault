@@ -42,6 +42,11 @@
         "internalType": "uint96"
       },
       {
+        "name": "resellable",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
         "name": "buildCid",
         "type": "string",
         "internalType": "string"
@@ -156,6 +161,11 @@
         "name": "minted",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "resellable",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -193,6 +203,25 @@
         "name": "title",
         "type": "string",
         "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isResellable",
+    "inputs": [
+      {
+        "name": "editionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -341,6 +370,12 @@
         "type": "uint96",
         "indexed": false,
         "internalType": "uint96"
+      },
+      {
+        "name": "resellable",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
       },
       {
         "name": "buildCid",

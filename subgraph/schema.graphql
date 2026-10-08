@@ -18,6 +18,8 @@ type Edition @entity(immutable: false) {
   supply: BigInt!
   price: BigInt!
   royaltyBps: BigInt!
+  # studio choice at creation: false = copies can never change hands
+  resellable: Boolean!
   buildCid: String!
   buildHash: Bytes!
   minted: BigInt!
