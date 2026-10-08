@@ -34,7 +34,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <Link href="/">Marketplace</Link>
               <Link href="/friends">Amis &amp; Prêts</Link>
               <Link href="/profile">Profil</Link>
-              <Link href="/studio">Studio</Link>
+              <Link href="/studios">Studios</Link>
+              <Link href="/studio">Espace studio</Link>
               <Link href="/pair">Appairage</Link>
             </nav>
             <ConnectButton />

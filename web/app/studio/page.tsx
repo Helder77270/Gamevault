@@ -5,6 +5,7 @@
 // on-chain with THEIR wallet. The platform never signs studio txs.
 
 import { useState } from "react";
+import Link from "next/link";
 import { decodeEventLog, parseEther } from "viem";
 import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import { REGISTRY_ABI } from "@gamevault/shared/abi";
@@ -192,7 +193,15 @@ export default function StudioPage() {
 
       {isConnected && (
         <>
-          <h2 className="section">1 · Studio {studioId && `— #${studioId} ✔`}</h2>
+          <h2 className="section">
+            1 · Studio {studioId && `— #${studioId} ✔`}
+            {/^\d+$/.test(studioId) && (
+              <>
+                {" "}
+                <Link href={`/studio/${studioId}`} style={{ fontSize: "0.8rem", color: "var(--cyan)" }}>page publique →</Link>
+              </>
+            )}
+          </h2>
           {!studioId && (
             <p>
               <input placeholder="Nom du studio" value={studioName} onChange={(e) => setStudioName(e.target.value)} />
