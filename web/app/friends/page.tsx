@@ -21,7 +21,7 @@ const DAY = 86400;
 const FRIEND_AGE = 3 * DAY;
 
 type Friend = { addr: string; since: number; name: string | null };
-type Contact = { addr: string; name: string | null };
+type Contact = { addr: string; name: string | null; isStudio?: boolean };
 type Owned = { tokenId: string; editionId: string; user: string; expires: number; lastEnd: number };
 
 const short = (a: string): string => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -223,14 +223,23 @@ export default function FriendsPage() {
           )}
           {results.map((r) => (
             <p key={r.addr} style={{ margin: "0.3rem 0" }}>
-              <b>{r.name}</b> <span className="addr">({short(r.addr)})</span>{" "}
-              <button
-                className="btn"
-                disabled={!!busy || r.addr.toLowerCase() === address.toLowerCase() || friends.some((f) => f.addr.toLowerCase() === r.addr.toLowerCase())}
-                onClick={() => void friendAction("request", r.addr)}
-              >
-                {busy === `request-${r.addr}` ? "Envoi…" : "Demander"}
-              </button>
+              <Link href={`/u/${r.addr}`}>
+                <b>{r.name}</b>
+              </Link>{" "}
+              <span className="addr">({short(r.addr)})</span>{" "}
+              {r.isStudio ? (
+                <span className="addr" title="Les studios ne reçoivent pas de demandes d'amis : c'est le studio qui invite">
+                  · STUDIO — c&apos;est le studio qui invite
+                </span>
+              ) : (
+                <button
+                  className="btn"
+                  disabled={!!busy || r.addr.toLowerCase() === address.toLowerCase() || friends.some((f) => f.addr.toLowerCase() === r.addr.toLowerCase())}
+                  onClick={() => void friendAction("request", r.addr)}
+                >
+                  {busy === `request-${r.addr}` ? "Envoi…" : "Demander"}
+                </button>
+              )}
             </p>
           ))}
           {searched && results.length === 0 && !/^0x[0-9a-fA-F]{40}$/.test(target) && (

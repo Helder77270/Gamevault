@@ -37,6 +37,7 @@ import {
   searchProfiles,
   sendMessage,
   setPresence,
+  studioAccount,
   subscribe,
 } from "./social.ts";
 
@@ -181,7 +182,21 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     res.end(Buffer.from(av.bytes));
     return;
   }
-  if (GET && path === "/profile/search") return send(200, searchProfiles(query.get("q") ?? ""));
+  if (GET && path === "/profile/search") {
+    try {
+      return send(200, await searchProfiles(query.get("q") ?? ""));
+    } catch (e) {
+      return fail(400, "recherche", e);
+    }
+  }
+  const studioOf = GET && match(`/studios/of/${ADDR}`);
+  if (studioOf) {
+    try {
+      return send(200, await studioAccount(studioOf[1]));
+    } catch (e) {
+      return fail(400, "studios", e);
+    }
+  }
   if (GET && path === "/profiles/names") return send(200, namesOf((query.get("a") ?? "").split(",")));
   const profileMatch = GET && match(`/profile/${ADDR}`);
   if (profileMatch) {
@@ -270,7 +285,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   if (POST && path.startsWith("/friends/")) {
     try {
       const body = await readJson(req);
-      if (path === "/friends/action") return send(200, friendAction(session().wallet, String(body.action), String(body.other)));
+      if (path === "/friends/action") return send(200, await friendAction(session().wallet, String(body.action), String(body.other)));
       if (path === "/friends/attest") {
         const me = session().wallet;
         if (me !== String(body.owner).toLowerCase()) throw new Error("seul le propriétaire peut demander l'attestation de prêt");

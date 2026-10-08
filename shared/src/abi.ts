@@ -193,6 +193,13 @@ export const REGISTRY_ABI = [
     ],
   },
   {
+    name: "studioCount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
     name: "studios",
     type: "function",
     stateMutability: "view",

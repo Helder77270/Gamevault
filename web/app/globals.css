@@ -328,3 +328,4 @@ input, input[type="file"] {
 .chat-loan-sub { display: block; font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.14em; color: oklch(0.87 0.08 310); margin-top: 0.15rem; }
 .chat-compose { display: flex; gap: 0.6rem; padding: 0.7rem 0.9rem; border-top: 1px solid rgba(200,225,255,0.1); background: rgba(5,6,13,0.35); }
 .chat-compose input { flex: 1; min-width: 0; padding: 0.7rem 1rem; border-radius: 999px; border: 1px solid rgba(200,225,255,0.22); background: rgba(5,6,13,0.55); color: var(--ink); font: inherit; }
+.pill.studio { color: #f6efff; border-color: oklch(0.8 0.11 310 / 0.55); background: oklch(0.6 0.12 310 / 0.3); }

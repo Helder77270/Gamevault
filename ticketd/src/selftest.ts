@@ -110,8 +110,8 @@ check(
 
 // Friends + chat
 check("chat refused between non-friends", await refused(() => social.sendMessage(owner.address, friend.address, { text: "salut" })));
-social.friendAction(owner.address, "request", friend.address);
-social.friendAction(friend.address, "accept", owner.address);
+await social.friendAction(owner.address, "request", friend.address);
+await social.friendAction(friend.address, "accept", owner.address);
 const msg = social.sendMessage(owner.address, friend.address, { text: "Tu me prêtes Runner ?" });
 const thread = social.chatThread(friend.address, owner.address, 0);
 check("message delivered in the friend's thread", thread.length === 1 && thread[0].id === msg.id);

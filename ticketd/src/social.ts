@@ -33,7 +33,7 @@ import {
   type ChatMessage,
   type StudioPage,
 } from "./db.ts";
-import { studioOwner } from "./service.ts";
+import { studioOwner, studiosOwnedBy } from "./service.ts";
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 const DEVICE_RE = /^0x0[23][0-9a-fA-F]{64}$/;
@@ -170,10 +170,21 @@ function notifyFriends(wallet: string, event: string, data: unknown): void {
 
 const FRIEND_ACTIONS = ["request", "accept", "decline", "cancel", "remove"] as const;
 
-export function friendAction(me: string, action: string, other: string): { ok: true } {
+/** Studios are protected from unsolicited requests: between a studio account
+ *  and a player, only the STUDIO can send the friend request. Two studios
+ *  stay free to add each other. Existing friendships are untouched. */
+async function assertMayRequest(me: string, other: string): Promise<void> {
+  const [mine, theirs] = await Promise.all([studiosOwnedBy(me), studiosOwnedBy(other)]);
+  if (theirs.length > 0 && mine.length === 0) {
+    throw new Error("les studios ne reçoivent pas de demandes d'amis : c'est le studio qui envoie l'invitation");
+  }
+}
+
+export async function friendAction(me: string, action: string, other: string): Promise<{ ok: true }> {
   if (!(FRIEND_ACTIONS as readonly string[]).includes(action)) throw new Error("action inconnue");
   if (!ADDR_RE.test(other)) throw new Error("adresse invalide");
   if (lc(me) === lc(other)) throw new Error("pas d'amitié avec soi-même");
+  if (action === "request") await assertMayRequest(me, other);
   tx(() => {
     if (action === "request") {
       if (friends.since(me, other)) throw new Error("déjà amis");
@@ -201,6 +212,12 @@ export function friendAction(me: string, action: string, other: string): { ok: t
 }
 
 type Person = { addr: string; name: string | null; hasAvatar: boolean };
+
+/** Studios owned by an address, for badges and the request rule in the UI. */
+export async function studioAccount(addr: string): Promise<{ id: string; name: string }[]> {
+  if (!ADDR_RE.test(addr)) throw new Error("adresse invalide");
+  return studiosOwnedBy(addr);
+}
 
 function people(addrs: string[]): Person[] {
   const names = profiles.names(addrs);
@@ -312,15 +329,17 @@ export function namesOf(addrs: string[]): Record<string, { name: string | null; 
 
 const fold = (s: string): string => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-/** Search by pseudo (substring, accents ignored) OR address prefix. */
-export function searchProfiles(q: string): { addr: string; name: string; hasAvatar: boolean }[] {
+/** Search by pseudo (substring, accents ignored) OR address prefix. Each
+ *  result says whether it is a studio account (requests: studio side only). */
+export async function searchProfiles(q: string): Promise<{ addr: string; name: string; hasAvatar: boolean; isStudio: boolean }[]> {
   const query = q.trim();
   if (query.length < 2) return [];
   const byAddr = query.toLowerCase().startsWith("0x");
-  return profiles
+  const hits = profiles
     .all()
     .filter((p) => (byAddr ? p.addr.startsWith(query.toLowerCase()) : fold(p.name).includes(fold(query))))
     .slice(0, 10);
+  return Promise.all(hits.map(async (p) => ({ ...p, isStudio: (await studiosOwnedBy(p.addr)).length > 0 })));
 }
 
 /** Play time pushed by the launcher at the end of a session (device session). */

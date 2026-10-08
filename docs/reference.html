@@ -604,6 +604,7 @@ sequenceDiagram
       <li><div><span class="who w-ticketd">ticketd</span>À l'acceptation, enregistre la date d'amitié. Refuse si l'un des deux a déjà 16 amis.<span class="where">social.ts · friendAction (transaction SQLite, activité « nouvel ami »)</span></div></li>
       <li><div><span class="who w-player">l'un ou l'autre</span>Peut retirer l'amitié à tout moment (<code>action: remove</code>).</div></li>
     </ol>
+    <div class="note"><b>Studios protégés :</b> entre un compte studio (wallet propriétaire d'au moins un studio on-chain) et un joueur, seul le studio peut envoyer la demande. ticketd refuse le sens joueur → studio (403) ; le profil du studio affiche un badge STUDIO et « C'est le studio qui invite ». Deux studios peuvent s'ajouter librement ; les amitiés existantes ne changent pas.</div>
     <div class="note">L'amitié vit dans la base de ticketd, pas sur la blockchain : elle ne coûte rien. La règle des 3 jours n'est pas appliquée par ticketd mais par le contrat au moment du prêt, à partir de la date que ticketd atteste.</div>
   </div>
 

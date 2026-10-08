@@ -154,6 +154,28 @@ export async function publishBuild(plain: Uint8Array, message: string, signature
 // Integrity remains CLIENT-side (sha256 vs the on-chain hash), so this
 // server is as untrusted as a gateway.
 
+// Studio accounts = wallets that own at least one studio on-chain. Studios
+// are few and permanent (no transfer in GameRegistry): a 5-minute cache is
+// enough, refreshed on demand.
+const STUDIO_CACHE_MS = 5 * 60 * 1000;
+let studioIndex: { at: number; byOwner: Map<string, { id: string; name: string }[]> } | null = null;
+
+export async function studiosOwnedBy(addr: string): Promise<{ id: string; name: string }[]> {
+  if (!DEPLOYMENTS.gameRegistry || skipOwnerCheck) return [];
+  if (!studioIndex || Date.now() - studioIndex.at > STUDIO_CACHE_MS) {
+    const registry = DEPLOYMENTS.gameRegistry as `0x${string}`;
+    const count = Number(await client.readContract({ address: registry, abi: REGISTRY_ABI, functionName: "studioCount" }));
+    const byOwner = new Map<string, { id: string; name: string }[]>();
+    for (let i = 1; i <= count; i++) {
+      const [owner, name] = await client.readContract({ address: registry, abi: REGISTRY_ABI, functionName: "studios", args: [BigInt(i)] });
+      const k = owner.toLowerCase();
+      byOwner.set(k, [...(byOwner.get(k) ?? []), { id: String(i), name }]);
+    }
+    studioIndex = { at: Date.now(), byOwner };
+  }
+  return studioIndex.byOwner.get(addr.toLowerCase()) ?? [];
+}
+
 /** On-chain owner of a studio (GameRegistry.studios). */
 export async function studioOwner(studioId: string): Promise<string> {
   if (!DEPLOYMENTS.gameRegistry) throw new Error("GameRegistry non déployé");

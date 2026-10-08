@@ -68,6 +68,9 @@ export default function PublicProfilePage() {
   const [chain, setChain] = useState<Chain | null>(null);
   const [catalog, setCatalog] = useState<OnchainEdition[]>([]);
   const [relation, setRelation] = useState<"self" | "friend" | "pending" | "incoming" | "none">("none");
+  // Studio accounts only receive invitations they send themselves
+  const [studios, setStudios] = useState<{ id: string; name: string }[]>([]);
+  const [viewerIsStudio, setViewerIsStudio] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const nowSec = Math.floor(Date.now() / 1000);
@@ -81,6 +84,8 @@ export default function PublicProfilePage() {
       setError(`profil : ${e instanceof Error ? e.message : e}`);
     }
     subgraph<Chain>(CHAIN_QUERY, { a: addr }).then(setChain, () => setChain({ owned: [], borrowed: [], lent: [] }));
+    ticketdGet<{ id: string; name: string }[]>(`/studios/of/${addr}`).then(setStudios, () => setStudios([]));
+    if (me) ticketdGet<{ id: string }[]>(`/studios/of/${me}`).then((l) => setViewerIsStudio(l.length > 0), () => setViewerIsStudio(false));
     if (me) {
       if (me.toLowerCase() === addr) {
         setRelation("self");
@@ -139,12 +144,25 @@ export default function PublicProfilePage() {
             {name}
             {presence?.state === "playing" && <span className="pill playing">● En jeu · {titleOf(presence.editionId ?? "")}</span>}
             {presence?.state === "online" && <span className="pill online">● En ligne</span>}
+            {studios.length > 0 && <span className="pill studio">Studio</span>}
           </div>
           <div className="pf-meta">
             {shortAddr(addr)}
             {profile?.memberSince ? ` · membre depuis ${new Date(profile.memberSince).toLocaleDateString("fr-FR", { month: "short", year: "numeric" })}` : ""}
             {profile ? ` · ${profile.devicesCount} appareil${profile.devicesCount > 1 ? "s" : ""}` : ""}
           </div>
+          {studios.length > 0 && (
+            <div className="pf-meta">
+              {studios.map((st, i) => (
+                <span key={st.id}>
+                  {i > 0 && " · "}
+                  <Link href={`/studio/${st.id}`} style={{ color: "var(--cyan)" }}>
+                    {st.name} ↗
+                  </Link>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="pf-actions">
           {relation === "self" ? (
@@ -157,8 +175,11 @@ export default function PublicProfilePage() {
               {relation === "incoming" && (
                 <button className="btn" disabled={busy} onClick={() => void act("accept")}>Accepter la demande</button>
               )}
-              {relation === "none" && me && (
+              {relation === "none" && me && (studios.length === 0 || viewerIsStudio) && (
                 <button className="btn" disabled={busy} onClick={() => void act("request")}>Ajouter en ami</button>
+              )}
+              {relation === "none" && me && studios.length > 0 && !viewerIsStudio && (
+                <span className="btn ghost" title="Les studios ne reçoivent pas de demandes d'amis">C&apos;est le studio qui invite</span>
               )}
               <button className="btn ghost soon" disabled title="Bientôt : rejoindre une partie en ligne">Inviter à jouer · bientôt</button>
             </>
