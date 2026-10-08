@@ -15,7 +15,7 @@ accepte userOf au check hybride + écran AMIS (navbar) ; web /friends
 (demandes, prêts, retours). RESTE :
 - [ ] L'animation « au revoir Pokéball » + son du prêt (moment signature)
 - [ ] Bannière « PRÊTÉE À 0x… · J-x » sur la fiche d'une licence prêtée
-- [ ] Événements FriendRegistry/UpdateUser dans le subgraph (P3)
+- [x] UpdateUser (prêts) indexé dans le subgraph (2026-10-08) — l'amitié est off-chain
 
 Le pitch : « prête ta cartouche » mais en numérique — un ami emprunte ta
 licence, TU perds l'accès pendant le prêt (comme une vraie cartouche, comme
@@ -87,11 +87,12 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
       sur URI WalletConnect forgée, modérée) → à revoir quand RainbowKit suit
 - [x] Pull payments Marketplace (K4) — Marketplace seul redéployé (2026-10-08)
 - [ ] Prochain full reset : même repli pull pour la vente primaire (GameLicense.buy)
-- [ ] Subgraph : subgraph.yaml pointe encore les adresses de juillet (cf. P3)
+- [x] Subgraph sur les adresses actuelles (2026-10-08)
 
-## P3 — Subgraph : déployer pour de vrai
-- [ ] Subgraph Studio base-sepolia : adresses + startBlock → deploy
-- [ ] NEXT_PUBLIC_SUBGRAPH_URL → /provenance/[tokenId] passe au réel
+## P3 — Subgraph : ✅ DÉPLOYÉ 2026-10-08 (Goldsky, gamevault/0.2.0, tag prod)
+- [x] Déployé sur Goldsky (Studio : compte bloqué ; Alchemy Subgraphs fermé)
+- [x] /provenance/[tokenId] branché (SUBGRAPH_URL dans shared/deployments.ts)
+- [ ] Lien vers /provenance depuis la fiche d'une licence (aucune page n'y mène)
 - [ ] Bibliothèque complète dans le launcher via subgraph (licences
       possédées sans cartouche insérée)
 

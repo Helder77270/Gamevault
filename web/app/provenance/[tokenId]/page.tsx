@@ -6,8 +6,10 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { SUBGRAPH_URL as DEFAULT_SUBGRAPH_URL } from "@gamevault/shared/deployments";
 
-const SUBGRAPH_URL = process.env.NEXT_PUBLIC_SUBGRAPH_URL ?? "";
+// NEXT_PUBLIC_SUBGRAPH_URL overrides the deployed default (e.g. a local graph-node).
+const SUBGRAPH_URL = process.env.NEXT_PUBLIC_SUBGRAPH_URL || DEFAULT_SUBGRAPH_URL;
 
 const QUERY = `query License($id: ID!) {
   license(id: $id) {

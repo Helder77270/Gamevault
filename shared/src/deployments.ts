@@ -34,3 +34,9 @@ export const DEPLOYMENTS: {
 };
 
 export const DEPLOY_BLOCK = 47811332;
+
+// Subgraph (Goldsky, project gamevault, tag "prod" — the URL stays stable
+// across versions: redeploy as gamevault/<version> --tag prod). Public,
+// read-only GraphQL endpoint. Deployed 2026-10-08 as 0.2.0.
+export const SUBGRAPH_URL =
+  "https://api.goldsky.com/api/public/project_cmuzez7v1cucq01x6aioa96jc/subgraphs/gamevault/prod/gn";
