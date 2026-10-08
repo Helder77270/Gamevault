@@ -132,9 +132,12 @@ const state = {
   catalog: [] as OnchainEdition[],
   owned: [] as { tokenId: string; editionId: string }[],
   /** mutual friendships of the library wallet (ticketd DB, with pseudos) */
-  friends: [] as { addr: string; since: number; name: string | null }[],
+  friends: [] as Friend[],
+  incoming: 0,
   /** live loans touching the library wallet, lent or borrowed */
   loans: [] as { tokenId: string; owner: string; user: string; expires: number }[],
+  /** Chat with friends (ticketd, device session — no wallet in the launcher) */
+  chat: { active: null as string | null, thread: [] as ChatMsg[], unread: {} as Record<string, number>, ready: true },
   ticketdOk: false,
   /** selected editionId for detail/insert screens */
   sel: null as string | null,
@@ -145,6 +148,24 @@ const state = {
   techOpen: false,
   fatal: null as { title: string; msg: string; code: string; back: Screen } | null,
 };
+
+type Presence = { state: "offline" | "online" | "playing"; editionId: string | null };
+interface Friend {
+  addr: string;
+  since: number;
+  name: string | null;
+  hasAvatar?: boolean;
+  presence?: Presence;
+}
+interface ChatMsg {
+  id: number;
+  from: string;
+  to: string;
+  kind: string;
+  body: string;
+  at: number;
+  readAt: number | null;
+}
 
 function libraryAddress(): string {
   return state.session?.address ?? localStorage.getItem("gv-watch") ?? "";
@@ -206,6 +227,129 @@ async function socialFetch(path: string, body?: unknown): Promise<Response | nul
 /** Presence for friends: online / playing <edition>. Heartbeat every 60 s. */
 function pushPresence(): void {
   void socialFetch("/presence", { playing: sessionEdition || null });
+}
+
+function toast(msg: string): void {
+  const el = document.createElement("div");
+  el.className = "lc-toast";
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3200);
+}
+
+// ── Chat (friends only) — live through ticketd's event stream ──────────
+
+let events: EventSource | null = null;
+
+async function connectEvents(): Promise<void> {
+  if (events && events.readyState !== EventSource.CLOSED) return;
+  const token = await socialToken();
+  if (!token) return;
+  events = new EventSource(`${TICKETD_URL}/events?token=${encodeURIComponent(token)}`);
+  events.addEventListener("message", (ev) => onChatMessage(JSON.parse((ev as MessageEvent).data) as ChatMsg));
+  events.addEventListener("presence", (ev) => {
+    const p = JSON.parse((ev as MessageEvent).data) as Presence & { addr: string };
+    const f = state.friends.find((x) => x.addr === p.addr);
+    if (f) {
+      f.presence = { state: p.state, editionId: p.editionId };
+      rerender();
+    }
+  });
+  events.addEventListener("friends", () => void fetchFriends());
+  // EventSource reconnects by itself; an expired session closes it for good
+  events.onerror = () => {
+    if (events?.readyState === EventSource.CLOSED) events = null;
+  };
+}
+
+const myAddr = (): string => (state.session?.address ?? "").toLowerCase();
+
+function onChatMessage(m: ChatMsg): void {
+  const other = m.from === myAddr() ? m.to : m.from;
+  if (state.screen === "friends" && state.chat.active === other) {
+    if (!state.chat.thread.some((x) => x.id === m.id)) {
+      state.chat.thread.push(m);
+      appendBubble(m);
+    }
+    if (m.from !== myAddr()) void socialFetch(`/chat/${other}/read`, { upTo: m.id });
+    return;
+  }
+  if (m.from !== myAddr()) {
+    state.chat.unread[other] = (state.chat.unread[other] ?? 0) + 1;
+    beep([988, 1319], 0.07, 0.07); // soft two-note chime
+    rerender();
+  }
+}
+
+/** Rebuild only when something visible changed and nobody is typing. */
+function rerender(): void {
+  const typing = document.activeElement?.tagName === "INPUT";
+  if (!typing && sigOf() !== lastSig) render();
+  else renderChrome();
+}
+
+async function openChat(addr: string): Promise<void> {
+  state.chat.active = addr;
+  state.chat.thread = [];
+  state.chat.unread[addr] = 0;
+  render();
+  const res = await socialFetch(`/chat/${addr}`);
+  state.chat.ready = Boolean(res);
+  if (res?.ok) {
+    state.chat.thread = (await res.json()) as ChatMsg[];
+    const last = state.chat.thread[state.chat.thread.length - 1];
+    if (last) void socialFetch(`/chat/${addr}/read`, { upTo: last.id });
+  }
+  render();
+  document.getElementById("lc-thread")?.scrollTo({ top: 1e9 });
+  document.getElementById("lc-input")?.focus();
+}
+
+async function sendChat(): Promise<void> {
+  const input = document.getElementById("lc-input") as HTMLInputElement | null;
+  const text = input?.value.trim() ?? "";
+  const to = state.chat.active;
+  if (!input || !text || !to) return;
+  input.value = "";
+  const res = await socialFetch(`/chat/${to}`, { text });
+  if (!res?.ok) {
+    input.value = text;
+    toast(res ? ((await res.json()) as { error?: string }).error ?? t("chat.failed") : t("chat.noSession"));
+    return;
+  }
+  const m = (await res.json()) as ChatMsg;
+  if (!state.chat.thread.some((x) => x.id === m.id)) {
+    state.chat.thread.push(m);
+    appendBubble(m);
+  }
+  input.focus();
+}
+
+function bubbleHtml(m: ChatMsg): string {
+  const mine = m.from === myAddr();
+  const time = new Date(m.at).toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
+  if (m.kind === "loan") {
+    let loan: { tokenId: string; editionId: string; expires: number } | null = null;
+    try {
+      loan = JSON.parse(m.body);
+    } catch {
+      loan = null;
+    }
+    if (loan) {
+      const title = state.catalog.find((e) => e.editionId === loan.editionId)?.title ?? `Licence #${loan.tokenId}`;
+      const days = Math.max(0, Math.ceil((loan.expires - Date.now() / 1000) / 86400));
+      return `<div class="lc-loan"><span class="lc-loan-art" style="${artFor(loan.editionId)}"></span><span><b>${esc(title)} · #${esc(loan.tokenId)}</b> ${esc(mine ? t("chat.loanOut") : t("chat.loanIn"))}<span class="lc-loan-sub">${t("chat.loanDays", { n: days })}</span></span></div>`;
+    }
+  }
+  return `<div class="lc-bubble${mine ? " mine" : ""}">${esc(m.body)}<span class="lc-time">${time}${mine && m.readAt ? ` · ${t("chat.read")}` : ""}</span></div>`;
+}
+
+function appendBubble(m: ChatMsg): void {
+  const thread = document.getElementById("lc-thread");
+  if (!thread) return;
+  thread.querySelector(".lc-empty")?.remove();
+  thread.insertAdjacentHTML("beforeend", bubbleHtml(m));
+  thread.scrollTo({ top: 1e9, behavior: "smooth" });
 }
 
 // ── Play history (local — no on-chain playtime exists) ────────
@@ -398,9 +542,19 @@ async function fetchFriends(): Promise<void> {
     // Friendship lives in the platform DB (ticketd) — zero gas, zero chain.
     const res = await fetch(`${TICKETD_URL}/friends/${me}`, { signal: AbortSignal.timeout(3000) });
     if (res.ok) {
-      const data = (await res.json()) as { friends: { addr: string; since: number; name: string | null }[] };
+      const data = (await res.json()) as { friends: Friend[]; incoming: unknown[] };
       state.friends = data.friends;
+      state.incoming = data.incoming.length;
     }
+    // Chat: unread counters + live stream (device session; skipped when the
+    // library is only a watched address)
+    const sum = await socialFetch("/chat");
+    if (sum?.ok) {
+      const rows = (await sum.json()) as { other: string; unread: number }[];
+      state.chat.unread = Object.fromEntries(rows.map((r) => [r.other, r.unread]));
+      if (state.chat.active) state.chat.unread[state.chat.active] = 0;
+    }
+    void connectEvents();
     // Live loans touching me — ON-CHAIN truth; token space is tiny, scan it.
     const lic = DEPLOYMENTS.gameLicense as `0x${string}`;
     const next = await chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "nextTokenId", args: [] });
@@ -1389,51 +1543,87 @@ function shelfView(): string {
 
 const FRIEND_AGE_SEC = 3 * 86400;
 
+function avatarHtml(f: { addr: string; name: string | null; hasAvatar?: boolean }, size: number): string {
+  const hue = Number.parseInt(f.addr.slice(2, 8), 16) % 360;
+  const inner = f.hasAvatar
+    ? `<img src="${TICKETD_URL}/profile/avatar/${esc(f.addr)}" alt="" />`
+    : esc((f.name?.trim()[0] ?? f.addr.slice(2, 3)).toUpperCase());
+  return `<span class="lc-av" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.4)}px;background:linear-gradient(150deg, oklch(0.72 0.12 ${hue}), oklch(0.36 0.08 ${(hue + 50) % 360}))">${inner}</span>`;
+}
+
+function presenceLabel(p?: Presence): string {
+  if (p?.state === "playing") {
+    const title = state.catalog.find((e) => e.editionId === p.editionId)?.title ?? "";
+    return t("chat.playing", { g: title.toUpperCase() });
+  }
+  return p?.state === "online" ? t("chat.online") : t("chat.offline");
+}
+
 function friendsView(): string {
   const me = libraryAddress();
   const now = Math.floor(Date.now() / 1000);
-
+  const rank = (f: Friend) => (f.presence?.state === "playing" ? 0 : f.presence?.state === "online" ? 1 : 2);
+  const groups: [string, Friend[]][] = [
+    [t("chat.gPlaying"), state.friends.filter((f) => rank(f) === 0)],
+    [t("chat.gOnline"), state.friends.filter((f) => rank(f) === 1)],
+    [t("chat.gOffline"), state.friends.filter((f) => rank(f) === 2)],
+  ];
   const friendRows = state.friends.length
-    ? state.friends
-        .map((f) => {
-          const matured = now >= f.since + FRIEND_AGE_SEC;
-          const daysLeft = Math.max(1, Math.ceil((f.since + FRIEND_AGE_SEC - now) / 86400));
-          return `
-          <div class="listrow" style="cursor:default">
-            <div style="width:40px;height:40px;border-radius:999px;flex:none;background:linear-gradient(150deg, oklch(0.7 0.1 ${(Number.parseInt(f.addr.slice(2, 8), 16) % 360)}), oklch(0.4 0.08 265));border:1px solid rgba(255,255,255,0.2)"></div>
-            <div style="min-width:0">
-              <div class="lr-title">${esc(f.name ?? short(f.addr, 8))}</div>
-              <div class="lr-meta">${f.name ? `${esc(short(f.addr, 6).toUpperCase())} · ` : ""}${t("fr.since", { d: new Date(f.since * 1000).toLocaleDateString(locale()) })}</div>
-            </div>
-            <div class="lr-right">
-              <span class="lr-chip ${matured ? "ok" : "warn"}">${matured ? t("fr.canLend") : t("fr.lendIn", { n: daysLeft })}</span>
-            </div>
-          </div>`;
-        })
+    ? groups
+        .filter(([, list]) => list.length)
+        .map(
+          ([label, list]) => `
+          <div class="mono-label lc-group">${esc(label)} · ${list.length}</div>
+          ${list
+            .map((f) => {
+              const unread = state.chat.unread[f.addr] ?? 0;
+              const matured = now >= f.since + FRIEND_AGE_SEC;
+              return `
+              <button class="lc-friend${state.chat.active === f.addr ? " on" : ""}" data-chat="${esc(f.addr)}">
+                <span class="lc-dot ${f.presence?.state ?? "offline"}">${avatarHtml(f, 36)}</span>
+                <span style="flex:1;min-width:0">
+                  <span class="lc-name">${esc(f.name ?? short(f.addr, 6))}</span>
+                  <span class="lc-sub ${f.presence?.state ?? "offline"}">${esc(presenceLabel(f.presence))}${matured ? "" : ` · ${t("fr.lendIn", { n: Math.max(1, Math.ceil((f.since + FRIEND_AGE_SEC - now) / 86400)) })}`}</span>
+                </span>
+                ${unread ? `<span class="lc-unread">${unread}</span>` : ""}
+              </button>`;
+            })
+            .join("")}`,
+        )
         .join("")
     : `<div class="slot-dim" style="padding:14px 4px">${t("fr.none")}</div>`;
 
-  const loanRows = state.loans.length
-    ? state.loans
-        .map((l) => {
-          const lent = me && l.owner.toLowerCase() === me.toLowerCase();
-          const days = Math.max(0, Math.ceil((l.expires - now) / 86400));
-          const owned = state.owned.find((o) => o.tokenId === l.tokenId);
-          const title = state.catalog.find((e) => e.editionId === owned?.editionId)?.title ?? `Licence #${l.tokenId}`;
-          return `
-          <div class="listrow" style="cursor:default">
-            <div class="lr-art" style="${artFor(owned?.editionId ?? "0")}"></div>
-            <div style="min-width:0">
-              <div class="lr-title">${esc(title)} · #${esc(l.tokenId)}</div>
-              <div class="lr-meta">${lent ? t("fr.lentTo", { a: esc(short(l.user, 6).toUpperCase()) }) : t("fr.borrowedFrom", { a: esc(short(l.owner, 6).toUpperCase()) })}</div>
-            </div>
-            <div class="lr-right">
-              <span class="lr-chip ${lent ? "warn" : "ok"}">${lent ? t("fr.atFriend") : t("fr.yourTurn")} · J-${days}</span>
-            </div>
-          </div>`;
-        })
-        .join("")
-    : `<div class="slot-dim" style="padding:14px 4px">${t("fr.noLoans")}</div>`;
+  const loanRows = state.loans
+    .map((l) => {
+      const lent = me && l.owner.toLowerCase() === me.toLowerCase();
+      const days = Math.max(0, Math.ceil((l.expires - now) / 86400));
+      const owned = state.owned.find((o) => o.tokenId === l.tokenId);
+      const title = state.catalog.find((e) => e.editionId === owned?.editionId)?.title ?? `Licence #${l.tokenId}`;
+      return `<div class="lc-loanrow"><span>${esc(title)} · #${esc(l.tokenId)}</span><span class="lr-chip ${lent ? "warn" : "ok"}">${lent ? t("fr.atFriend") : t("fr.yourTurn")} · J-${days}</span></div>`;
+    })
+    .join("");
+
+  const friend = state.friends.find((f) => f.addr === state.chat.active) ?? null;
+  const panel = !friend
+    ? `<div class="lc-empty-panel">${t(state.friends.length ? "chat.pick" : "fr.none")}</div>`
+    : `
+      <div class="lc-head">
+        ${avatarHtml(friend, 42)}
+        <div style="flex:1;min-width:0">
+          <div class="lc-title">${esc(friend.name ?? short(friend.addr, 8))}</div>
+          <div class="lc-sub ${friend.presence?.state ?? "offline"}">${esc(presenceLabel(friend.presence))} · ${t("fr.since", { d: new Date(friend.since * 1000).toLocaleDateString(locale()) })}</div>
+        </div>
+        <button class="pillbtn" data-profile="${esc(friend.addr)}">${t("chat.profile")}</button>
+        <button class="pillbtn violet" id="friends-lend">${t("chat.lend")}</button>
+        <button class="pillbtn dashed" disabled title="${esc(t("chat.inviteSoon"))}">${t("chat.invite")}</button>
+      </div>
+      <div class="lc-thread" id="lc-thread">
+        ${state.chat.thread.length ? state.chat.thread.map(bubbleHtml).join("") : `<div class="lc-empty">${t(state.chat.ready ? "chat.empty" : "chat.noSession")}</div>`}
+      </div>
+      <div class="lc-compose">
+        <input id="lc-input" class="aura-input" maxlength="1000" placeholder="${esc(t("chat.write", { n: friend.name ?? short(friend.addr, 6) }))}" aria-label="${esc(t("chat.write", { n: friend.name ?? short(friend.addr, 6) }))}" />
+        <button class="cta" id="lc-send">${t("chat.send")}</button>
+      </div>`;
 
   return `
     <div class="shelf">
@@ -1446,22 +1636,17 @@ function friendsView(): string {
           </div>
         </div>
         <div style="display:flex;gap:8px">
-          <button class="pillbtn violet" id="friends-manage">${t("fr.manage")}</button>
+          ${state.incoming ? `<button class="pillbtn violet" id="friends-manage">${t("chat.requests", { n: state.incoming })}</button>` : `<button class="pillbtn violet" id="friends-manage">${t("fr.manage")}</button>`}
           <button class="pillbtn" id="refresh-btn">🔄</button>
         </div>
       </div>
-      <div class="shelf-split" style="padding-top:20px">
-        <div class="shelf-listcol" style="width:46%">
-          <div class="mono-label" style="margin:2px 0 8px">${t("fr.myFriends")}</div>
+      <div class="lc-split">
+        <div class="lc-col">
           ${friendRows}
+          ${loanRows ? `<div class="mono-label lc-group">${t("fr.loans")}</div>${loanRows}` : ""}
+          <div class="pv-hint lc-rule">${esc(t("fr.rule"))}</div>
         </div>
-        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:14px">
-          <div class="mono-label" style="margin:2px 0 -4px">${t("fr.loans")}</div>
-          ${loanRows}
-          <div class="pv-hint" style="border-left:2px solid oklch(0.8 0.1 200 / 0.5);padding-left:12px;line-height:1.8;margin-top:auto">
-            ${esc(t("fr.rule"))}
-          </div>
-        </div>
+        <div class="lc-panel">${panel}</div>
       </div>
     </div>`;
 }
@@ -1866,6 +2051,12 @@ function renderChrome(): void {
 // restarts every CSS animation (the orb looked frozen, screens re-faded).
 let lastSig = "";
 
+function renderUnreadBadge(): void {
+  const total = Object.values(state.chat.unread).reduce((a, b) => a + b, 0);
+  const btn = document.getElementById("nav-friends");
+  if (btn) btn.textContent = total ? `${t("nav.friends")} · ${total}` : t("nav.friends");
+}
+
 function sigOf(): string {
   return JSON.stringify({
     s: state.screen,
@@ -1887,7 +2078,9 @@ function sigOf(): string {
     nr: state.nativeRun?.pid ?? null,
     sm: state.shelfMode,
     to: state.techOpen,
-    fr: state.friends.map((f) => f.addr + f.since),
+    fr: state.friends.map((f) => f.addr + f.since + (f.presence?.state ?? "") + (f.presence?.editionId ?? "")),
+    inc: state.incoming,
+    ch: [state.chat.active, state.chat.thread.length, state.chat.ready, state.chat.unread],
     ln: state.loans.map((l) => l.tokenId + l.user + l.expires),
     ft: state.fatal?.code ?? null,
     r: recentPlays().map((x) => [x.e.editionId, x.log.playCount, Math.floor(x.log.totalSeconds / 60)]),
@@ -1896,6 +2089,7 @@ function sigOf(): string {
 
 function render(): void {
   renderChrome();
+  renderUnreadBadge();
   const root = document.getElementById("screen")!;
   if (state.playing) {
     root.innerHTML = playerView(state.playing);
@@ -1947,6 +2141,18 @@ function wire(root: HTMLElement): void {
   });
   document.getElementById("home-store")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));
   document.getElementById("friends-manage")?.addEventListener("click", () => void openUrl(`${MARKETPLACE_URL}/friends`));
+  document.getElementById("friends-lend")?.addEventListener("click", () => void openUrl(`${MARKETPLACE_URL}/friends`));
+  root.querySelectorAll<HTMLButtonElement>("[data-chat]").forEach((b) => b.addEventListener("click", () => void openChat(b.dataset.chat!)));
+  root.querySelectorAll<HTMLButtonElement>("[data-profile]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const a = b.dataset.profile ?? "";
+      if (/^0x[0-9a-fA-F]{40}$/.test(a)) void openUrl(`${MARKETPLACE_URL}/u/${a}`);
+    }),
+  );
+  document.getElementById("lc-send")?.addEventListener("click", () => void sendChat());
+  document.getElementById("lc-input")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") void sendChat();
+  });
   document.getElementById("home-hero")?.addEventListener("click", () => {
     const g = state.games[0];
     if (!g) return;
