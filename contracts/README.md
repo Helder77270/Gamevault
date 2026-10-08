@@ -1,20 +1,29 @@
-# contracts — Solidity + Foundry (0.8.24), Base Sepolia
+# contracts — Solidity 0.8.24 + Foundry, Base Sepolia
 
-- `GameRegistry.sol` — studios, games, editions (supply, price, royaltyBps ≤ 20%, **buildCid + buildHash** = IPFS location + integrity commitment of the encrypted build)
-- `GameLicense.sol` — ERC-721 + EIP-2981. `buy(editionId)` = primary sale, 100% to the studio, royalty set per-token from the edition. `ownerOf()` is what ticketd and the launcher check.
-- `Marketplace.sol` — list/unlist/buy. Studio cut READ from `royaltyInfo()` + flat 5% platform fee → 85/10/5 on a 10% edition. `buy()` = the revocation moment.
+- `GameRegistry.sol` — studios, games, editions (supply, price, royaltyBps ≤ 20 %, **buildCid + buildHash** = IPFS location + integrity commitment of the encrypted build).
+- `GameLicense.sol` — ERC-721 + ERC-2981. `buy(editionId)` = primary sale, 100 % to the studio, royalty set per token. Lending (ERC-4907 views, guarded `lend`/`endLoan`: EIP-712 friendship attestation, 3-day friendship, 14 days max, 24 h cooldown; a transfer kills the loan). `transferCount` per token. Owner = admin (Ownable2Step), rotatable attestation signer.
+- `Marketplace.sol` — list/unlist/buy. Studio cut READ from `royaltyInfo()` + flat 5 % platform fee (85/10/5 on a 10 % edition). Stale listings rejected (`transferCount`). Payments pushed with a 30k gas stipend, credited to `pendingWithdrawals` + `withdraw()` if a receiver refuses.
 - `interfaces/IGameVaultEvents.sol` — the event spec shared with the subgraph. Never change one without the other.
 
 ## Setup (fresh clone)
 ```
-forge install foundry-rs/forge-std --no-git   # vendored lib/ is gitignored
-forge build && forge test                      # 11 tests
+forge install foundry-rs/forge-std --no-git   # lib/ is gitignored (CI clones v1.16.2)
+forge build && forge test                      # 40 tests: GameVault, Lending, Payments
 ```
-OpenZeppelin resolves from the repo-root node_modules (see foundry.toml remappings) — run `npm install` at the root first.
+OpenZeppelin resolves from the repo-root node_modules (see foundry.toml remappings) — run `npm ci` at the root first.
 
-## Deploy (throwaway key, funded with Base Sepolia ETH)
+## Deploy (env from contracts/.env, gitignored)
+- `PRIVATE_KEY` pays gas only and must hold no role.
+- `ADMIN_ADDRESS` = GameLicense owner + platform fee receiver.
+- `ATTEST_SIGNER` = address of ticketd's `ATTEST_SIGNER_PRIVKEY`.
+
 ```
-$env:PRIVATE_KEY = "0x..."
 forge script script/Deploy.s.sol --rpc-url base_sepolia --broadcast
 ```
-Then paste the three printed addresses into `shared/src/deployments.ts` (arms ticketd ownerOf + launcher live revocation) and `subgraph/subgraph.yaml` (+ startBlock, then deploy the subgraph).
+Then paste the addresses into `shared/src/deployments.ts` (single source of
+truth for web, launcher and ticketd) and `subgraph/subgraph.yaml` (+ startBlock).
+
+To replace only the Marketplace (nothing references it on-chain):
+```
+GAME_LICENSE=0x… forge script script/DeployMarketplace.s.sol --rpc-url base_sepolia --broadcast
+```

@@ -1,0 +1,945 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Copie versionnée de la référence (artifact claude.ai). Les diagrammes sont rendus par mermaid. -->
+<title>Référence GameVault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Space+Mono:wght@400;700&display=swap">
+<style>
+/* Layout: sticky table of contents on the left (desktop), single reading column ~72ch; stacks on phones. */
+:root {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #eef0f8;
+  --fg: #171a2b;
+  --muted: #5a6078;
+  --line: #d9dcea;
+  --accent: #6a3fd1;      /* Midnight Drive violet */
+  --accent-2: #0a8fa8;    /* cyan */
+  --sunset: #c2551f;      /* Chrome Sunset, used sparingly */
+  --ok: #1d7a4a;
+  --warn: #9a6400;
+  --bad: #b3261e;
+  --code-bg: #eceef7;
+  --diagram-bg: #ffffff;
+  --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "Space Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1020; --surface: #15182c; --surface-2: #1c2038; --fg: #e6e8f5; --muted: #9aa0bd;
+    --line: #2a2f4d; --accent: #a98bff; --accent-2: #4fd3ea; --sunset: #ff9a5c;
+    --ok: #5fd39a; --warn: #f2c25b; --bad: #ff7b72; --code-bg: #1f2340; --diagram-bg: #f4f5fb;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1020; --surface: #15182c; --surface-2: #1c2038; --fg: #e6e8f5; --muted: #9aa0bd;
+  --line: #2a2f4d; --accent: #a98bff; --accent-2: #4fd3ea; --sunset: #ff9a5c;
+  --ok: #5fd39a; --warn: #f2c25b; --bad: #ff7b72; --code-bg: #1f2340; --diagram-bg: #f4f5fb;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 400 16px/1.6 var(--body); }
+.wrap { display: grid; grid-template-columns: 17rem minmax(0, 1fr); gap: 2.5rem; max-width: 84rem; margin: 0 auto; padding-inline: 24px; padding-block: 0 4rem; }
+nav.toc { position: sticky; top: env(safe-area-inset-top, 0px); align-self: start; max-height: 100vh; overflow-y: auto; padding-block: 2rem; font-size: 0.86rem; }
+nav.toc .brand { font: 700 1.05rem/1.2 var(--display); letter-spacing: 0.04em; color: var(--accent); margin-bottom: 1rem; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; }
+nav.toc ol ol { padding-left: 0.9rem; margin-block: 0.2rem 0.4rem; border-left: 1px solid var(--line); }
+nav.toc a { color: var(--muted); text-decoration: none; display: block; padding: 0.12rem 0.4rem; border-radius: 4px; }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--fg); background: var(--surface-2); outline: none; }
+main { min-width: 0; padding-block: 2rem; }
+main > section, main > header { max-width: 50rem; }
+header.hero { padding-block: 1.5rem 2rem; border-bottom: 1px solid var(--line); margin-bottom: 2rem; }
+.eyebrow { font: 600 0.75rem/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-2); }
+h1 { font: 700 clamp(2rem, 4vw, 2.8rem)/1.1 var(--display); margin: 0.6rem 0 0.8rem; text-wrap: balance; letter-spacing: 0.01em; }
+h2 { font: 700 1.6rem/1.2 var(--display); margin: 3.2rem 0 0.8rem; padding-top: 0.6rem; border-top: 2px solid var(--accent); text-wrap: balance; scroll-margin-top: 1rem; }
+h3 { font: 600 1.18rem/1.3 var(--display); margin: 2.2rem 0 0.6rem; scroll-margin-top: 1rem; text-wrap: balance; }
+h4 { font: 600 0.95rem/1.3 var(--body); margin: 1.4rem 0 0.4rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.8rem; }
+p, li { max-width: 72ch; }
+.lede { font-size: 1.1rem; color: var(--muted); }
+a { color: var(--accent); }
+code, kbd { font: 400 0.84em/1.4 var(--mono); background: var(--code-bg); padding: 0.08em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+pre.code { font: 400 0.8rem/1.5 var(--mono); background: var(--code-bg); padding: 0.9rem 1rem; border-radius: 6px; overflow-x: auto; max-width: 100%; }
+.tbl { overflow-x: auto; max-width: 100%; margin-block: 0.8rem 1.2rem; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; vertical-align: top; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--line); }
+th { font: 600 0.74rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: var(--surface-2); position: sticky; top: 0; }
+tr:last-child td { border-bottom: 0; }
+td code { white-space: nowrap; }
+td.wrap code { white-space: normal; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.8rem; margin-block: 1rem; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0.9rem 1rem; min-width: 0; }
+.card h4 { margin-top: 0; }
+.card p { margin: 0.3rem 0 0; font-size: 0.9rem; }
+figure.diagram { margin: 1.2rem 0; background: var(--diagram-bg); border: 1px solid var(--line); border-radius: 8px; padding: 1rem; overflow-x: auto; max-width: 100%; }
+figure.diagram figcaption { font-size: 0.8rem; color: #5a6078; margin-top: 0.6rem; }
+pre.mermaid { margin: 0; background: transparent; }
+.scenario { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.2rem 0.6rem; margin-block: 1.2rem; }
+.scenario > h3 { margin-top: 0.2rem; }
+.meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.6rem; }
+.meta b { color: var(--fg); font-weight: 600; }
+ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0.4rem 0 0.8rem; display: grid; gap: 0.55rem; }
+ol.steps > li { counter-increment: s; display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 0.2rem 0.6rem; max-width: none; }
+ol.steps > li::before { content: counter(s); font: 700 0.8rem/1.9rem var(--mono); text-align: center; width: 1.9rem; height: 1.9rem; border-radius: 50%; background: var(--surface-2); color: var(--accent); }
+ol.steps > li > div { min-width: 0; }
+.who { display: inline-block; font: 700 0.68rem/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 0.3em 0.5em; border-radius: 3px; margin-right: 0.4rem; vertical-align: 0.1em; border: 1px solid currentColor; }
+.w-player { color: var(--accent); } .w-studio { color: var(--sunset); } .w-web { color: var(--accent-2); }
+.w-launcher { color: var(--accent); } .w-ticketd { color: var(--ok); } .w-chain { color: var(--warn); } .w-admin { color: var(--bad); }
+.where { display: block; font: 400 0.78rem/1.4 var(--mono); color: var(--muted); margin-top: 0.15rem; overflow-wrap: anywhere; }
+.note, .gap { border-left: 3px solid var(--accent-2); background: var(--surface-2); padding: 0.6rem 0.9rem; border-radius: 0 6px 6px 0; margin-block: 0.8rem; font-size: 0.92rem; }
+.gap { border-left-color: var(--warn); }
+.gap b { color: var(--warn); }
+.pill { display: inline-block; font: 600 0.7rem/1 var(--mono); padding: 0.28em 0.55em; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); white-space: nowrap; }
+.pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); }
+.yes { color: var(--ok); font-weight: 700; } .no { color: var(--muted); }
+dl.gloss { display: grid; grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr); gap: 0.45rem 1.2rem; margin: 1rem 0; }
+dl.gloss dt { font-weight: 600; }
+dl.gloss dd { margin: 0; color: var(--fg); max-width: 62ch; }
+.tree { font: 400 0.82rem/1.6 var(--mono); background: var(--code-bg); padding: 0.8rem 1rem; border-radius: 6px; overflow-x: auto; white-space: pre; }
+footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; max-width: 50rem; }
+@media (max-width: 900px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; padding-inline: 16px; }
+  nav.toc { position: static; max-height: none; padding-block: 1.5rem 0; border-bottom: 1px solid var(--line); }
+  nav.toc > ol > li > ol { display: none; }
+  dl.gloss { grid-template-columns: minmax(0, 1fr); }
+  dl.gloss dd { margin-bottom: 0.5rem; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+html { scroll-behavior: smooth; }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+<nav class="toc" aria-label="Sommaire">
+  <div class="brand">GAMEVAULT · RÉFÉRENCE</div>
+  <ol>
+    <li><a href="#lire">Comment lire ce document</a></li>
+    <li><a href="#concept">1. Le produit en une page</a></li>
+    <li><a href="#glossaire">2. Glossaire</a></li>
+    <li><a href="#architecture">3. Architecture</a>
+      <ol>
+        <li><a href="#composants">Composants</a></li>
+        <li><a href="#donnees">Où vivent les données</a></li>
+        <li><a href="#carte">La cartouche SD</a></li>
+      </ol>
+    </li>
+    <li><a href="#roles">4. Acteurs et droits</a></li>
+    <li><a href="#cles">5. Clés et secrets</a></li>
+    <li><a href="#scenarios">6. Scénarios</a>
+      <ol>
+        <li><a href="#s-install">S1 Installer le launcher</a></li>
+        <li><a href="#s-publish">S2 Un studio publie</a></li>
+        <li><a href="#s-buy">S3 Acheter un jeu neuf</a></li>
+        <li><a href="#s-write">S4 Écrire la cartouche</a></li>
+        <li><a href="#s-pair">S5 Appairer une machine</a></li>
+        <li><a href="#s-launch">S6 Lancer un jeu</a></li>
+        <li><a href="#s-offline">S7 Hors ligne, renouvellement</a></li>
+        <li><a href="#s-resale">S8 Revendre</a></li>
+        <li><a href="#s-redownload">S9 Retélécharger le build</a></li>
+        <li><a href="#s-friends">S10 Ajouter un ami</a></li>
+        <li><a href="#s-lend">S11 Prêter un jeu</a></li>
+        <li><a href="#s-profile">S12 Profil</a></li>
+        <li><a href="#s-devices">S13 Appareils (2 max)</a></li>
+        <li><a href="#s-payout">S14 Gains en attente</a></li>
+        <li><a href="#s-provenance">S15 Provenance</a></li>
+        <li><a href="#s-ops">S16 Exploitation</a></li>
+      </ol>
+    </li>
+    <li><a href="#ref">7. Référence technique</a>
+      <ol>
+        <li><a href="#ref-contracts">Contrats</a></li>
+        <li><a href="#ref-ticketd">API ticketd</a></li>
+        <li><a href="#ref-db">Base ticketd</a></li>
+        <li><a href="#ref-tauri">Commandes du launcher</a></li>
+        <li><a href="#ref-web">Pages web</a></li>
+        <li><a href="#ref-shared">Bibliothèque shared</a></li>
+        <li><a href="#ref-subgraph">Subgraph</a></li>
+        <li><a href="#ref-errors">Codes d'erreur</a></li>
+      </ol>
+    </li>
+    <li><a href="#securite">8. Sécurité : garanties et limites</a></li>
+    <li><a href="#ecarts">9. Écarts connus</a></li>
+    <li><a href="#dev">10. Lancer le projet</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="eyebrow">Dossier technique et fonctionnel · état au 8 octobre 2026 · Base Sepolia</div>
+  <h1>Référence GameVault</h1>
+  <p class="lede">Ce que fait chaque pièce du projet, qui a le droit de faire quoi, et dans quel ordre tout s'enchaîne, de l'installation du launcher jusqu'à la revente d'une cartouche.</p>
+</header>
+
+<section id="lire">
+  <h2>Comment lire ce document</h2>
+  <p>Le document va du général au précis. Les sections 1 à 5 donnent le modèle mental : ce qu'est une licence, qui la détient, quelles clés existent et où elles vivent. La section 6 raconte chaque parcours utilisateur pas à pas, avec pour chaque étape le composant qui agit et le fichier où se trouve le code. La section 7 sert de référence à consulter (fonctions de contrats, routes HTTP, commandes du launcher). Les sections 8 et 9 disent honnêtement ce qui est garanti, ce qui ne l'est pas, et où le code s'écarte encore de la conception.</p>
+  <div class="grid2">
+    <div class="card"><h4>Vous découvrez le projet</h4><p>Lisez 1, 2, 3 puis les scénarios S3, S5, S6 et S8 : c'est la démo de référence (acheter, appairer, jouer, revendre).</p></div>
+    <div class="card"><h4>Vous allez coder</h4><p>Section 3 pour les dépendances entre composants, 5 pour les clés, puis la référence 7 et les écarts 9 avant de toucher au code.</p></div>
+    <div class="card"><h4>Vous auditez</h4><p>Sections 4, 5 et 8, puis S5, S6, S11 et S13 qui portent les contrôles de sécurité.</p></div>
+  </div>
+  <p>Conventions : les chemins sont relatifs à la racine du dépôt. Une pastille indique qui agit à chaque étape :
+    <span class="who w-player">joueur</span><span class="who w-studio">studio</span><span class="who w-launcher">launcher</span><span class="who w-web">site web</span><span class="who w-ticketd">ticketd</span><span class="who w-chain">blockchain</span><span class="who w-admin">admin</span>.</p>
+</section>
+
+<section id="concept">
+  <h2>1. Le produit en une page</h2>
+  <p>GameVault vend des jeux indépendants sous forme de <b>licences numériques</b> (des jetons ERC-721 sur la blockchain Base Sepolia). Chaque licence correspond à une copie du jeu. Le joueur écrit son jeu sur une <b>carte SD ou une clé USB</b>, la « cartouche », et le joue dans le <b>launcher</b>, une application de bureau.</p>
+  <p>Trois idées tiennent l'ensemble :</p>
+  <ul>
+    <li><b>Le support physique transporte, la blockchain verrouille.</b> Le jeu sur la carte est chiffré. Il ne s'ouvre que sur une machine que le propriétaire de la licence a autorisée en signant avec son wallet.</li>
+    <li><b>Jouable hors ligne.</b> Une fois la machine appairée, le jeu se lance sans connexion pendant 30 jours. En ligne, le launcher vérifie en plus, en direct, que la licence appartient toujours au joueur.</li>
+    <li><b>Revendable, avec royalties automatiques.</b> Le joueur revend sa licence sur la marketplace. Le studio touche ses royalties (10 % sur les éditions actuelles), la plateforme 5 %, le vendeur le reste. Dès que le jeton change de main, l'ancien propriétaire perd l'accès au jeu.</li>
+  </ul>
+  <p>Le positionnement assumé : <b>vérification de propriété, pas DRM</b>. Un utilisateur technique qui extrait la clé avant de revendre peut garder une copie ; aucun système sans puce sécurisée ne l'empêche (voir <a href="#securite">section 8</a>).</p>
+  <p>À côté de ce cœur, le projet ajoute une couche sociale : amis, prêt d'un jeu à un ami (le prêteur perd l'accès pendant le prêt, comme une vraie cartouche prêtée), profils, et un registre qui limite un compte à deux machines actives.</p>
+</section>
+
+<section id="glossaire">
+  <h2>2. Glossaire</h2>
+  <dl class="gloss">
+    <dt>Licence</dt><dd>Jeton ERC-721 du contrat <code>GameLicense</code>. Un jeton = une copie d'un jeu. Son propriétaire est donné par <code>ownerOf(tokenId)</code>.</dd>
+    <dt>Studio, jeu, édition</dt><dd>Hiérarchie du catalogue dans <code>GameRegistry</code>. Un studio possède des jeux ; un jeu a des éditions. L'édition porte le prix, le stock, le taux de royalties et l'empreinte du build (CID IPFS + hash SHA-256).</dd>
+    <dt>Build</dt><dd>Le fichier du jeu : une page HTML autonome (jeu web) ou un <code>.exe</code> Windows (jeu natif).</dd>
+    <dt>build.enc</dt><dd>Le build chiffré une seule fois en AES-256-GCM avec la clé de contenu. C'est le même fichier pour toutes les copies ; il est public (IPFS) car inutile sans ticket.</dd>
+    <dt>Clé de contenu</dt><dd>Clé AES de 32 octets qui déchiffre un build. Générée par ticketd à la publication, stockée chiffrée dans sa base. Jamais écrite en clair sur la carte.</dd>
+    <dt>Clé d'appareil</dt><dd>Paire de clés secp256k1 générée par le launcher au premier lancement et rangée dans le coffre du système (Gestionnaire d'identifiants Windows). Elle identifie une machine.</dd>
+    <dt>Ticket</dt><dd>Fichier <code>ticket.json</code> sur la carte : la clé de contenu enveloppée pour une machine précise (ECIES), le propriétaire, la date d'expiration, le tout signé par la plateforme.</dd>
+    <dt>Appairage</dt><dd>Le moment où le propriétaire signe avec son wallet un message qui autorise une clé d'appareil. ticketd émet alors un ticket pour cette machine.</dd>
+    <dt>Cartouche</dt><dd>Carte SD ou clé USB contenant le dossier <code>/gamevault/</code>.</dd>
+    <dt>ticketd</dt><dd>Le service de la plateforme (Node.js, port 8787). Il émet les tickets, garde les clés de contenu, gère amis, profils et appareils.</dd>
+    <dt>Prêt</dt><dd>Droit de jouer confié temporairement à un ami (<code>userOf</code>, modèle ERC-4907). Le propriétaire reste propriétaire mais perd l'accès pendant le prêt.</dd>
+    <dt>Attestation d'amitié</dt><dd>Signature EIP-712 de ticketd qui atteste « A et B sont amis depuis telle date, pour la licence N ». Le contrat l'exige pour accepter un prêt.</dd>
+    <dt>Fenêtre hors ligne</dt><dd>Durée de validité d'un ticket : 30 jours (ou moins si un prêt finit avant). Hors ligne, c'est le seul garde-fou.</dd>
+    <dt>Révocation</dt><dd>Perte d'accès quand la licence change de main (revente, prêt) ou quand l'appareil est déconnecté du compte.</dd>
+  </dl>
+</section>
+
+<section id="architecture">
+  <h2>3. Architecture</h2>
+  <p>Le dépôt est un monorepo npm (workspaces). Six composants vivent ensemble et se parlent par HTTP, par transactions sur la blockchain, et par fichiers sur la carte.</p>
+  <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph PC["Machine du joueur"]
+    SD[("Cartouche SD/USB<br/>/gamevault/")]
+    L["Launcher Tauri<br/>cœur Rust + interface web"]
+    KS[("Coffre du système<br/>clé d'appareil")]
+  end
+  WAL["Wallet du joueur<br/>ou du studio"]
+  W["Site web Next.js<br/>localhost:3000"]
+  T["ticketd<br/>localhost:8787<br/>SQLite"]
+  C[("Contrats Base Sepolia<br/>GameRegistry<br/>GameLicense<br/>Marketplace")]
+  G["Subgraph The Graph"]
+  I[("IPFS via Pinata")]
+
+  L -- "lit et réécrit" --> SD
+  L -- "clé privée" --> KS
+  L -- "ownerOf, userOf, catalogue" --> C
+  L -- "pending, devices, friends, build" --> T
+  L -- "ouvre /pair /trade /friends" --> W
+  L -. "secours builds" .-> I
+  W -- "demande signatures" --> WAL
+  W -- "ticket, publish, friends, profile" --> T
+  W -- "transactions" --> C
+  T -- "ownerOf, userOf, editions" --> C
+  T -- "épingle les builds" --> I
+  C -- "événements" --> G
+  W -- "provenance" --> G
+</pre>
+    <figcaption>Vue d'ensemble. Le wallet ne touche jamais la carte ni le launcher : il signe uniquement dans le navigateur.</figcaption>
+  </figure>
+
+  <h3 id="composants">Composants</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Composant</th><th>Dossier</th><th>Technologie</th><th>Rôle</th></tr></thead>
+    <tbody>
+      <tr><td>Contrats</td><td><code>contracts/</code></td><td>Solidity 0.8.24, Foundry, OpenZeppelin 5</td><td>Catalogue (<code>GameRegistry</code>), licences, royalties et prêts (<code>GameLicense</code>), revente (<code>Marketplace</code>). La source de vérité de « qui possède quoi ».</td></tr>
+      <tr><td>ticketd</td><td><code>ticketd/</code></td><td>Node 22, <code>node:http</code>, <code>node:sqlite</code>, viem</td><td>Émet les tickets après vérification on-chain ; chiffre et publie les builds ; garde les clés de contenu chiffrées ; amis, profils, appareils. Écoute uniquement en local.</td></tr>
+      <tr><td>Launcher</td><td><code>launcher/</code></td><td>Tauri 2 : cœur Rust + interface TypeScript (Vite)</td><td>Détecte les cartouches, appaire la machine, vérifie le ticket, déchiffre en mémoire, lance le jeu (dans la fenêtre ou en <code>.exe</code> à côté), coupe le jeu en cas de revente.</td></tr>
+      <tr><td>Site web</td><td><code>web/</code></td><td>Next.js 15, React 19, wagmi 2, RainbowKit</td><td>Tout ce qui demande une signature de wallet : achat, appairage, revente, studio, amis, profil. Le launcher ouvre ses pages.</td></tr>
+      <tr><td>shared</td><td><code>shared/</code></td><td>TypeScript, @noble/curves, @noble/ciphers</td><td>Code commun : format et signature des tickets, ECIES, chiffrement des builds, message d'appairage, adresses des contrats, ABI, accès IPFS, catalogue on-chain.</td></tr>
+      <tr><td>Subgraph</td><td><code>subgraph/</code></td><td>The Graph, AssemblyScript</td><td>Indexe les événements des contrats pour l'historique d'une licence (page provenance). En ligne sur Goldsky.</td></tr>
+      <tr><td>Jeux de test</td><td><code>game/</code></td><td>Phaser (HTML) et Rust (<code>native-test</code>)</td><td>Snake et Runner (jeux web), un <code>.exe</code> minimal pour tester le runtime natif.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="donnees">Où vivent les données</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Donnée</th><th>Emplacement</th><th>Qui écrit</th><th>Qui lit</th></tr></thead>
+    <tbody>
+      <tr><td>Propriété des licences, prêts, annonces</td><td>Blockchain (<code>GameLicense</code>, <code>Marketplace</code>)</td><td>Transactions des wallets</td><td>Tous</td></tr>
+      <tr><td>Catalogue (studios, jeux, éditions, CID, hash)</td><td>Blockchain (<code>GameRegistry</code>)</td><td>Studios</td><td>Tous</td></tr>
+      <tr><td>Build chiffré</td><td>Carte SD, cache <code>ticketd/data/builds/</code>, IPFS</td><td>ticketd (publication), launcher (copie)</td><td>Launcher</td></tr>
+      <tr><td>Clés de contenu</td><td><code>ticketd/data/ticketd.db</code>, table <code>content_keys</code>, chiffrées par <code>KEYSTORE_MASTER_KEY</code></td><td>ticketd à la publication</td><td>ticketd à l'émission d'un ticket</td></tr>
+      <tr><td>Ticket</td><td>Carte SD, <code>/gamevault/ticket.json</code></td><td>Launcher (après appairage)</td><td>Launcher</td></tr>
+      <tr><td>Clé privée d'appareil</td><td>Coffre Windows : service <code>gamevault-launcher</code>, compte <code>device-key</code></td><td>Launcher (premier lancement)</td><td>Cœur Rust du launcher uniquement</td></tr>
+      <tr><td>Amis, demandes, profils, temps de jeu, appareils, nonces</td><td><code>ticketd.db</code></td><td>ticketd</td><td>ticketd, puis site et launcher via l'API</td></tr>
+      <tr><td>Avatars</td><td><code>ticketd/data/avatars/&lt;adresse&gt;</code></td><td>ticketd</td><td>Site</td></tr>
+      <tr><td>Réglages, langue, historique local, session</td><td><code>localStorage</code> du launcher (<code>gv-settings</code>, <code>gv-lang</code>, <code>gv-playlog</code>, <code>gv-session</code>, <code>gv-watch</code>, <code>gv-shelfmode</code>)</td><td>Launcher</td><td>Launcher</td></tr>
+      <tr><td>Historique indexé</td><td>Subgraph</td><td>The Graph (depuis les événements)</td><td>Page provenance</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="carte">La cartouche SD</h3>
+  <p>Le launcher considère comme cartouche tout volume amovible qui contient <code>/gamevault/ticket.json</code> (détection Rust via <code>sysinfo</code>, <code>launcher/src-tauri/src/media.rs</code>).</p>
+  <div class="tree">E:\
+└── gamevault\
+    ├── build.enc     le jeu chiffré (nonce 12 octets ‖ données ‖ tag), identique pour toutes les copies
+    ├── ticket.json   le ticket signé, scellé pour UNE machine, réécrit à chaque appairage
+    └── meta.json     titre, studio, numéro d'édition (affichage seulement, nettoyé à la lecture)</div>
+  <p>Le ticket contient <code>tokenId</code>, <code>contract</code>, <code>chainId</code>, <code>ownerAddress</code>, <code>devicePubKey</code>, <code>wrappedContentKey</code>, <code>issuedAt</code>, <code>expiresAt</code> et <code>platformSignature</code>. La signature porte sur le SHA-256 d'un JSON canonique (ordre des champs fixe, adresses en minuscules), défini dans <code>shared/src/ticket.ts</code> et reproduit à l'identique en Rust (<code>launcher/src-tauri/src/ticket.rs</code>).</p>
+  <p>Une carte vierge installée par le launcher reçoit un ticket « vide » (signature <code>0x</code>) : le launcher l'affiche comme « à appairer » jusqu'au premier appairage.</p>
+</section>
+
+<section id="roles">
+  <h2>4. Acteurs et droits</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Acteur</th><th>Qui c'est</th><th>Ce qu'il peut faire</th></tr></thead>
+    <tbody>
+      <tr><td>Visiteur</td><td>N'importe qui, sans wallet</td><td>Parcourir le catalogue et les occasions, voir la provenance d'une licence.</td></tr>
+      <tr><td>Joueur propriétaire</td><td>Wallet qui détient une licence (<code>ownerOf</code>)</td><td>Appairer jusqu'à 2 machines, écrire une cartouche, jouer, mettre en vente, retirer de la vente, prêter à un ami, reprendre un prêt.</td></tr>
+      <tr><td>Emprunteur</td><td>Wallet désigné par <code>userOf</code> pendant un prêt</td><td>Appairer sa machine et jouer jusqu'à la fin du prêt, rendre le jeu plus tôt.</td></tr>
+      <tr><td>Acheteur</td><td>Tout wallet avec des ETH</td><td>Acheter une licence neuve (<code>GameLicense.buy</code>) ou d'occasion (<code>Marketplace.buy</code>).</td></tr>
+      <tr><td>Ami</td><td>Deux wallets liés dans ticketd</td><td>Envoyer, accepter, refuser, annuler, retirer une amitié (signature, sans frais). Débloque le prêt après 3 jours.</td></tr>
+      <tr><td>Studio</td><td>Wallet qui a enregistré un studio</td><td>Créer des jeux et des éditions, publier un build chiffré, toucher 100 % des ventes neuves et les royalties des reventes.</td></tr>
+      <tr><td>Admin plateforme</td><td><code>ADMIN_ADDRESS</code>, propriétaire de <code>GameLicense</code></td><td>Changer la clé d'attestation, transférer la propriété du contrat (en deux étapes). Reçoit les 5 % de frais de revente. Ne peut ni bouger les licences ni changer les prix.</td></tr>
+      <tr><td>Opérateur ticketd</td><td>Qui fait tourner ticketd et détient ses clés</td><td>Émettre des tickets, signer des attestations, détenir les clés de contenu. C'est le tiers de confiance du système.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Matrice : qui peut appeler quoi</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Action</th><th>Où</th><th>Visiteur</th><th>Propriétaire</th><th>Emprunteur</th><th>Studio</th><th>Admin</th></tr></thead>
+    <tbody>
+      <tr><td>Enregistrer un studio</td><td><code>GameRegistry.registerStudio</code></td><td class="yes">oui</td><td class="yes">oui</td><td class="yes">oui</td><td class="yes">oui</td><td class="yes">oui</td></tr>
+      <tr><td>Créer jeu / édition</td><td><code>createGame</code>, <code>createEdition</code></td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="yes">son studio</td><td class="no">non</td></tr>
+      <tr><td>Publier un build</td><td>ticketd <code>POST /publish</code></td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="yes">son studio</td><td class="no">non</td></tr>
+      <tr><td>Acheter neuf</td><td><code>GameLicense.buy</code></td><td class="yes">avec wallet</td><td class="yes">oui</td><td class="yes">oui</td><td class="yes">oui</td><td class="yes">oui</td></tr>
+      <tr><td>Obtenir un ticket</td><td>ticketd <code>POST /ticket</code></td><td class="no">non</td><td class="yes">sauf pendant un prêt</td><td class="yes">pendant le prêt</td><td class="no">non</td><td class="no">non</td></tr>
+      <tr><td>Mettre en vente / retirer</td><td><code>Marketplace.list</code>, <code>unlist</code></td><td class="no">non</td><td class="yes">oui</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
+      <tr><td>Acheter d'occasion</td><td><code>Marketplace.buy</code></td><td class="yes">avec wallet</td><td class="yes">oui</td><td class="yes">oui</td><td class="yes">oui</td><td class="yes">oui</td></tr>
+      <tr><td>Prêter</td><td><code>GameLicense.lend</code></td><td class="no">non</td><td class="yes">ami depuis 3 j</td><td class="no">non</td><td class="no">non</td><td class="no">non</td></tr>
+      <tr><td>Finir un prêt</td><td><code>GameLicense.endLoan</code></td><td class="no">non</td><td class="yes">oui</td><td class="yes">oui</td><td class="no">non</td><td class="no">non</td></tr>
+      <tr><td>Retirer des gains en attente</td><td><code>Marketplace.withdraw</code></td><td colspan="5">Toute adresse qui a un crédit (<code>pendingWithdrawals &gt; 0</code>)</td></tr>
+      <tr><td>Changer la clé d'attestation</td><td><code>GameLicense.setAttestationSigner</code></td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="no">non</td><td class="yes">oui</td></tr>
+      <tr><td>Révoquer un appareil</td><td>ticketd <code>POST /devices/revoke</code></td><td class="no">non</td><td class="yes">ses appareils</td><td class="yes">ses appareils</td><td class="no">non</td><td class="no">non</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="cles">
+  <h2>5. Clés et secrets</h2>
+  <p>Chaque clé a un seul rôle (séparation faite le 7 octobre 2026, audit K1). La fuite d'une clé ne donne donc que le pouvoir de ce rôle.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Clé</th><th>Où elle vit</th><th>Ce qu'elle signe ou protège</th><th>Si elle fuit</th></tr></thead>
+    <tbody>
+      <tr><td>Wallet du joueur</td><td>Wallet du joueur (navigateur, téléphone)</td><td>Achats, ventes, prêts ; message d'appairage ; messages amis, profil, appareils</td><td>Vol des licences : c'est le compte.</td></tr>
+      <tr><td>Clé d'appareil</td><td>Coffre Windows, lue seulement par le cœur Rust</td><td>Déballe la clé de contenu d'un ticket</td><td>Permet de déchiffrer les tickets scellés pour cette machine.</td></tr>
+      <tr><td><code>TICKET_SIGNER_PRIVKEY</code></td><td><code>ticketd/.env</code></td><td>Signe les tickets. Sa clé publique est intégrée au launcher (<code>02f99334…292c</code>).</td><td>Fabrication de tickets valides hors ligne. Remède : nouvelle clé + nouvelle version du launcher.</td></tr>
+      <tr><td><code>ATTEST_SIGNER_PRIVKEY</code></td><td><code>ticketd/.env</code></td><td>Signe les attestations d'amitié EIP-712 lues par <code>lend()</code></td><td>Contourner la règle des 3 jours. Remède : <code>setAttestationSigner</code> par l'admin.</td></tr>
+      <tr><td>Clé admin (<code>ADMIN_ADDRESS</code>)</td><td><code>contracts/.env</code> (à déplacer vers un wallet matériel)</td><td>Propriétaire de <code>GameLicense</code> ; reçoit les frais</td><td>Changer la clé d'attestation, détourner les futurs frais.</td></tr>
+      <tr><td>Clé de gaz (<code>PRIVATE_KEY</code>)</td><td><code>contracts/.env</code></td><td>Paie les déploiements. Aucun rôle après.</td><td>Perte des ETH de test. Le déploiement refuse qu'elle ait un rôle.</td></tr>
+      <tr><td><code>KEYSTORE_MASTER_KEY</code></td><td><code>ticketd/.env</code> + gestionnaire de mots de passe</td><td>Chiffre les clés de contenu au repos (AES-GCM, le CID sert de donnée associée)</td><td>Avec la base, donne toutes les clés de contenu. Perdue : les jeux publiés ne peuvent plus être servis. Volontairement absente des sauvegardes.</td></tr>
+      <tr><td><code>PINATA_JWT</code></td><td><code>ticketd/.env</code></td><td>Envoyer des fichiers sur IPFS (droits minimaux)</td><td>Remplir le quota Pinata. Expire le 8 octobre 2027.</td></tr>
+      <tr><td>Clés de contenu</td><td><code>ticketd.db</code>, chiffrées</td><td>Déchiffrent les builds</td><td>Le build concerné devient lisible par tous.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note">Les fichiers <code>.env</code> et <code>ticketd/data/</code> sont exclus de git. La clé de développement <code>0xAD5B…631b</code> a circulé en clair : elle ne sert plus qu'à payer le gaz de test.</div>
+</section>
+
+<section id="scenarios">
+  <h2>6. Scénarios</h2>
+  <p>Chaque scénario donne les acteurs, les prérequis, puis les étapes dans l'ordre réel d'exécution. La ligne grise sous chaque étape indique le code concerné.</p>
+
+  <!-- S1 -->
+  <div class="scenario" id="s-install">
+    <h3>S1 · Installer et lancer le launcher pour la première fois</h3>
+    <div class="meta"><span><b>Acteur</b> joueur</span><span><b>Prérequis</b> Windows ; en développement : <code>dev.cmd</code></span><span><b>Résultat</b> machine identifiée par une clé d'appareil</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Ouvre le launcher. L'écran de démarrage déroule ses vérifications.<span class="where">launcher/src/main.ts · runBoot</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>Demande la clé publique de l'appareil. Au premier lancement, le cœur Rust génère une paire de clés et la range dans le coffre Windows. Il n'y a pas d'écran d'inscription : la création est implicite.<span class="where">get_device_pubkey → crypto.rs · device_priv (service gamevault-launcher / device-key)</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>Cherche les cartouches insérées, charge le catalogue depuis la blockchain, teste ticketd (<code>GET /health</code>), lit les licences détenues, les annonces et les amis.<span class="where">scan_cartridges · fetchOnchainCatalog · fetchOwned · fetchMarketState · fetchFriends</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>Affiche l'accueil. Sans carte : « INSERT SD CARD TO PLAY ». Avec une carte : l'état de la carte (prête, à appairer, ticket expiré, build manquant). Le launcher rescanne les cartes toutes les 2 secondes.<span class="where">homeView · refresh</span></div></li>
+    </ol>
+  </div>
+
+  <!-- S2 -->
+  <div class="scenario" id="s-publish">
+    <h3>S2 · Un studio publie un jeu</h3>
+    <div class="meta"><span><b>Acteur</b> studio</span><span><b>Page</b> <code>/studio</code></span><span><b>Coût</b> 3 transactions + 1 signature</span><span><b>Résultat</b> une édition achetable</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-studio">studio</span>Enregistre son studio (transaction). Le site lit l'identifiant dans l'événement <code>StudioRegistered</code>.<span class="where">web/app/studio/page.tsx → GameRegistry.registerStudio(name)</span></div></li>
+      <li><div><span class="who w-studio">studio</span>Crée un jeu (transaction). Seul le propriétaire du studio peut le faire.<span class="where">GameRegistry.createGame(studioId, title)</span></div></li>
+      <li><div><span class="who w-web">site</span>Le studio choisit le fichier : <code>.html</code> (jeu web) ou <code>.exe</code> (jeu natif, reconnu par l'en-tête « MZ »). Le navigateur calcule son SHA-256.<span class="where">publishEdition</span></div></li>
+      <li><div><span class="who w-studio">studio</span>Signe le message de publication (gratuit) : wallet, studio, sha256, nom du fichier, date, nonce.<span class="where">message « GameVault Publish » (7 lignes)</span></div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>Reçoit le fichier en clair. Vérifie la signature, l'âge (10 min max), le nonce, que le fichier correspond au hash signé, et que le wallet possède bien le studio on-chain. Génère une clé de contenu aléatoire, chiffre le build, l'épingle sur IPFS, garde la clé chiffrée et une copie du build en cache.<span class="where">POST /publish · ticketd/src/service.ts · publishBuild</span></div></li>
+      <li><div><span class="who w-studio">studio</span>Crée l'édition (transaction) avec prix, stock, royalties (20 % max) et le couple CID + hash renvoyé par ticketd.<span class="where">GameRegistry.createEdition(gameId, supply, price, royaltyBps, cid, hash)</span></div></li>
+    </ol>
+    <div class="note">La clé de contenu ne quitte jamais ticketd. Elle est liée au studio qui l'a publiée et à la <b>première</b> édition qui référence ce CID : une autre édition qui réutiliserait le même CID ne peut pas obtenir de ticket (audit T1).</div>
+    <figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  actor S as Studio
+  participant W as Site /studio
+  participant T as ticketd
+  participant I as IPFS
+  participant R as GameRegistry
+  S->>W: choisit le fichier .html ou .exe
+  W->>S: demande la signature du message Publish
+  S-->>W: signature
+  W->>T: POST /publish (fichier + message + signature)
+  T->>R: studios(id) : le signataire est-il propriétaire ?
+  T->>T: clé aléatoire, chiffrement AES-GCM
+  T->>I: épingle build.enc
+  T->>T: range la clé chiffrée (content_keys)
+  T-->>W: CID + sha256
+  W->>S: transaction createEdition
+  S->>R: createEdition(..., CID, sha256)
+</pre>
+      <figcaption>Publication. Le contenu en clair n'est vu que par le navigateur du studio et ticketd.</figcaption>
+    </figure>
+  </div>
+
+  <!-- S3 -->
+  <div class="scenario" id="s-buy">
+    <h3>S3 · Acheter un jeu neuf</h3>
+    <div class="meta"><span><b>Acteur</b> acheteur</span><span><b>Pages</b> <code>/</code> puis <code>/game/[editionId]</code></span><span><b>Coût</b> 1 transaction</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Depuis le launcher : BUY sur la fiche d'un jeu ouvre directement sa page <code>/game/&lt;édition&gt;</code> ; STORE ouvre l'accueil du site. Le catalogue est lu sur la blockchain, sans serveur intermédiaire.<span class="where">web/app/page.tsx · fetchOnchainCatalog</span></div></li>
+      <li><div><span class="who w-player">joueur</span>Ouvre la fiche du jeu et clique sur Acheter. Une transaction envoie exactement le prix.<span class="where">web/app/game/[editionId]/page.tsx → GameLicense.buy(editionId)</span></div></li>
+      <li><div><span class="who w-chain">contrat</span><code>GameRegistry.recordMint</code> vérifie l'édition et le stock. <code>GameLicense</code> crée le jeton, enregistre les royalties ERC-2981 (destinataire : le propriétaire du studio), émet <code>LicenseMinted</code>, puis envoie 100 % du prix au studio.<span class="where">contracts/src/GameLicense.sol · buy</span></div></li>
+      <li><div><span class="who w-web">site</span>Lit le numéro de licence dans l'événement et explique la suite : écrire la cartouche dans le launcher.</div></li>
+    </ol>
+  </div>
+
+  <!-- S4 -->
+  <div class="scenario" id="s-write">
+    <h3>S4 · Écrire le jeu sur une cartouche</h3>
+    <div class="meta"><span><b>Acteur</b> propriétaire</span><span><b>Où</b> launcher, fiche du jeu, bouton WRITE TO CARD</span><span><b>Prérequis</b> posséder une licence de l'édition, avoir une carte vierge insérée</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-launcher">launcher</span>Liste les volumes amovibles et ouvre l'écran lecteur de carte en mode installation.<span class="where">openInstall → list_removable_volumes</span></div></li>
+      <li><div><span class="who w-player">joueur</span>Choisit la carte et saisit son numéro de licence.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Vérifie on-chain que cette licence appartient bien à l'édition (<code>editionOf</code>).<span class="where">installTo</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>Télécharge le build chiffré : d'abord le miroir ticketd, puis les passerelles IPFS. Il compare son SHA-256 au hash inscrit dans l'édition et passe au miroir suivant si ça ne correspond pas.<span class="where">shared/src/storage.ts · fetchBuild (ticketd /build/, Pinata, ipfs.io, dweb.link)</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>Écrit <code>/gamevault/build.enc</code>, <code>meta.json</code> et un ticket vide sur la carte.<span class="where">install_cartridge (Rust, chemin contrôlé par known_mount)</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>Enchaîne automatiquement sur l'appairage (S5).</div></li>
+    </ol>
+    <div class="note">C'est le seul chemin d'écriture d'une cartouche : l'ancien outil en ligne de commande <code>station/</code> a été retiré le 8 octobre 2026. Pour développer sans carte SD, <code>GAMEVAULT_DEV_MEDIA_DIR</code> fait passer un dossier quelconque pour une carte : le launcher peut y installer un jeu comme sur une vraie carte.</div>
+  </div>
+
+  <!-- S5 -->
+  <div class="scenario" id="s-pair">
+    <h3>S5 · Appairer une machine</h3>
+    <div class="meta"><span><b>Acteurs</b> propriétaire ou emprunteur, launcher, site <code>/pair</code>, ticketd</span><span><b>Coût</b> 1 signature, aucune transaction</span><span><b>Résultat</b> un ticket scellé pour cette machine sur la carte</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Clique PAIR THIS MACHINE (ou RENEW si le ticket a expiré ; c'est le même parcours).<span class="where">startPairing</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>Tire un nonce aléatoire et affiche un QR code vers <code>/pair?device=&lt;clé&gt;&amp;nonce=…&amp;token=…&amp;contract=…</code>. Le bouton OPEN IN BROWSER ouvre la même adresse.</div></li>
+      <li><div><span class="who w-web">site</span>Avant toute signature, affiche les places d'appareils : renouvellement (aucune place consommée), « cette machine occupera une place », ou l'appareil qui sera déconnecté si le compte en a déjà deux.<span class="where">web/app/pair/page.tsx · GET /devices/:wallet</span></div></li>
+      <li><div><span class="who w-player">joueur</span>Lit et signe le message d'appairage au format SIWE (EIP-4361). Il contient l'adresse, la clé d'appareil, le nonce, la chaîne, la licence et la date.<span class="where">shared/src/siwe.ts · buildPairingMessage</span></div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>Vérifie dans cet ordre : format exact du message, chaîne et contrat, âge ≤ 10 min, nonce jamais vu, signature. Puis le droit de jouer : si un prêt est actif, seul l'emprunteur est servi (le propriétaire est refusé) ; sinon seul le propriétaire.<span class="where">POST /ticket · service.ts · issueTicket</span></div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>Retrouve la clé de contenu (édition → CID → clé chiffrée, contrôle studio), l'enveloppe en ECIES pour la clé d'appareil, fixe l'expiration (30 jours, ou la fin du prêt si elle arrive avant) et signe le ticket. Enregistre l'appareil (2 maximum par compte ; au-delà, le moins récemment vu est déconnecté).<span class="where">contentKeyFor · wrapKey · signTicket · registerDevice</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>Interroge <code>GET /pending/:nonce</code> toutes les 1,5 s (10 min maximum). Reçoit le ticket une seule fois.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Vérifie le ticket (signature plateforme, cette machine, cette licence), puis le cœur Rust le revérifie avant de l'écrire sur la carte.<span class="where">completePairing → write_ticket → ticket.rs · verify_for_write</span></div></li>
+    </ol>
+    <figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  actor J as Joueur
+  participant L as Launcher
+  participant W as Site /pair
+  participant T as ticketd
+  participant C as GameLicense
+  L->>L: nonce aléatoire, QR avec clé d'appareil
+  J->>W: scanne le QR ou clique OPEN IN BROWSER
+  W->>T: GET /devices/wallet (places restantes)
+  W->>J: affiche le message SIWE
+  J-->>W: signature du wallet
+  W->>T: POST /ticket (message + signature)
+  T->>T: format, âge, nonce, signature
+  T->>C: ownerOf, userOf, userExpires
+  T->>T: clé de contenu, ECIES vers la clé d'appareil, signature du ticket
+  T->>T: registre des appareils (2 max)
+  loop toutes les 1,5 s
+    L->>T: GET /pending/nonce
+  end
+  T-->>L: ticket signé (une seule fois)
+  L->>L: vérification TypeScript puis Rust
+  L->>L: écrit ticket.json sur la carte
+</pre>
+      <figcaption>Appairage. La clé privée du wallet ne quitte jamais le wallet ; celle de l'appareil ne quitte jamais le coffre Windows.</figcaption>
+    </figure>
+    <div class="gap"><b>Écart avec la conception.</b> CLAUDE.md prévoit que le launcher garde la session SIWE et la revérifie à chaque lancement, puis qu'il prouve la possession de la clé d'appareil par une auto-signature. Dans le code actuel, le launcher garde seulement l'adresse (<code>gv-session</code>) ; la preuve de possession est implicite (le déballage ECIES échoue sans la bonne clé). Le contrôle SIWE est fait par ticketd à l'émission.</div>
+  </div>
+
+  <!-- S6 -->
+  <div class="scenario" id="s-launch">
+    <h3>S6 · Lancer un jeu</h3>
+    <div class="meta"><span><b>Acteur</b> joueur</span><span><b>Prérequis</b> carte insérée, ticket valide scellé pour cette machine, build présent</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-launcher">launcher</span>Le bouton PLAY n'est actif que si la carte est jugée authentique : forme du ticket, chaîne, signature plateforme, non expiré, scellé pour cette machine, build présent.<span class="where">judge · isOurs · playableNow</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span><b>Contrôle en ligne</b> (délai 2 s) : lit <code>ownerOf</code> et <code>userOf</code>. Si un prêt est actif, seul l'emprunteur a le droit de jouer. Si le détenteur du droit n'est pas le propriétaire du ticket : refus <code>ERR 0x51</code>. Puis demande à ticketd si cet appareil est toujours actif ; sinon <code>ERR 0x53</code>.<span class="where">checkOwnerOnline · deviceStillActive (GET /devices/:owner/:pubkey/status)</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>Si le réseau ne répond pas : le lancement continue, au titre de la fenêtre hors ligne (« OFFLINE · 30D WINDOW »).</div></li>
+      <li><div><span class="who w-launcher">cœur Rust</span>Revérifie tout le ticket de son côté : numéro de licence, format, chaîne 84532, signature plateforme, expiration, machine. Une horloge système illisible compte comme expiré.<span class="where">play_game → ticket.rs · verify_for_launch</span></div></li>
+      <li><div><span class="who w-launcher">cœur Rust</span>Lit la clé d'appareil dans le coffre, déballe la clé de contenu (ECIES), déchiffre le build en mémoire (AES-GCM).<span class="where">crypto.rs · device_priv · ecies_unwrap · decrypt_build</span></div></li>
+      <li><div><span class="who w-launcher">cœur Rust</span><b>Jeu web</b> : garde le HTML en mémoire et le sert à la fenêtre par le protocole interne <code>game://</code> ; rien n'est écrit sur disque. <b>Jeu natif</b> (le fichier commence par « MZ ») : écrit l'exe dans <code>%LOCALAPPDATA%\GameVault\run\…</code>, vérifie son hash, le lance dans sa propre console et surveille le processus.<span class="where">lib.rs · protocole game · launch_native</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>Note le début de session (historique local) ; à la fin, envoie le temps de jeu à ticketd pour « les plus joués ».<span class="where">logPlayStart · logPlayEnd → POST /profile/playstat</span></div></li>
+    </ol>
+    <figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  actor J as Joueur
+  participant UI as Launcher (interface)
+  participant C as GameLicense
+  participant T as ticketd
+  participant R as Launcher (cœur Rust)
+  J->>UI: PLAY
+  UI->>C: ownerOf + userOf (2 s max)
+  alt réseau disponible
+    C-->>UI: détenteur du droit de jouer
+    UI->>T: appareil encore actif ?
+    T-->>UI: actif ou déconnecté
+  else hors ligne
+    UI->>UI: fenêtre hors ligne de 30 jours
+  end
+  UI->>R: play_game(carte)
+  R->>R: vérifie signature, expiration, machine
+  R->>R: coffre, ECIES, AES-GCM en mémoire
+  alt jeu web
+    R-->>UI: sert le HTML via game://
+  else jeu natif .exe
+    R->>R: lance l'exe, surveille le processus
+  end
+</pre>
+      <figcaption>Ordre réel des contrôles au lancement.</figcaption>
+    </figure>
+    <div class="note">Pendant une partie native, le launcher refait le contrôle en ligne toutes les 60 secondes. Si la licence a été revendue ou l'appareil déconnecté, il tue le processus et efface son dossier (<code>ERR 0x52</code> ou <code>ERR 0x53</code>). À la fermeture du launcher, tout jeu natif est tué.</div>
+    <div class="gap"><b>Écart.</b> Un jeu web en cours de partie n'est pas recontrôlé : la révocation s'applique au lancement suivant.</div>
+  </div>
+
+  <!-- S7 -->
+  <div class="scenario" id="s-offline">
+    <h3>S7 · Jouer hors ligne, renouveler le ticket</h3>
+    <div class="meta"><span><b>Règle</b> un ticket vaut 30 jours (ou jusqu'à la fin d'un prêt)</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-launcher">launcher</span>Sans réseau, seuls comptent la signature plateforme et la date d'expiration. Le jeu se lance normalement.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Après expiration, la carte affiche TICKET EXPIRED et le bouton devient RENEW.</div></li>
+      <li><div><span class="who w-player">joueur</span>RENEW relance exactement l'appairage (S5). Si la licence a été revendue entre-temps, ticketd refuse : le vendeur perd définitivement l'accès à la fin de sa fenêtre.</div></li>
+    </ol>
+    <div class="note">C'est la fenêtre hors ligne façon Steam : présentée comme une fonctionnalité, elle borne aussi la durée pendant laquelle un vendeur déconnecté peut encore jouer.</div>
+  </div>
+
+  <!-- S8 -->
+  <div class="scenario" id="s-resale">
+    <h3>S8 · Revendre sa licence (la démo de référence)</h3>
+    <div class="meta"><span><b>Acteurs</b> vendeur, acheteur</span><span><b>Pages</b> <code>/trade?action=list|unlist|buy</code></span><span><b>Partage</b> 85 % vendeur · 10 % studio · 5 % plateforme (édition à 10 %)</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">vendeur</span>Dans le launcher : SELL, saisit un prix, LIST ↗. Le launcher ouvre <code>/trade?action=list&amp;token=N&amp;price=X</code>.<span class="where">launcher main.ts · tradeUrl</span></div></li>
+      <li><div><span class="who w-player">vendeur</span>Signe deux transactions : autoriser la Marketplace sur ce jeton (<code>approve</code>), puis, une fois l'autorisation confirmée on-chain, la mise en vente. La page n'affiche « confirmée » qu'après le reçu de la transaction. L'annonce mémorise le compteur de transferts du jeton.<span class="where">web/app/trade/page.tsx → GameLicense.approve → Marketplace.list</span></div></li>
+      <li><div><span class="who w-player">acheteur</span>Trouve l'annonce dans « Occasions » sur le site (seules les annonces encore valides sont affichées), consulte l'historique de la licence depuis <code>/trade</code>, puis achète au prix exact.<span class="where">Marketplace.buy(tokenId)</span></div></li>
+      <li><div><span class="who w-chain">contrat</span>Vérifie que l'annonce existe, que le prix est exact, que le vendeur possède encore le jeton et que le jeton n'a pas bougé depuis l'annonce (anti-annonce ressuscitée, audit K3). Lit les royalties ERC-2981, transfère le jeton (ce qui tue un éventuel prêt), puis paie les trois parts.<span class="where">Marketplace.sol · buy · _pay</span></div></li>
+      <li><div><span class="who w-chain">contrat</span>Chaque part est envoyée directement avec 30 000 unités de gaz. Si un destinataire refuse l'ETH, sa part est créditée dans le contrat et la vente passe quand même (audit K4, voir S14).</div></li>
+      <li><div><span class="who w-launcher">launcher du vendeur</span>Au prochain lancement en ligne : <code>ERR 0x51 · OWNERSHIP MOVED ON-CHAIN</code>. Si un jeu natif tournait : tué dans les 60 secondes (<code>ERR 0x52</code>). Hors ligne : il garde sa fenêtre restante puis ne peut plus renouveler.</div></li>
+      <li><div><span class="who w-player">acheteur</span>Insère la carte (le vendeur la lui donne, ou il en écrit une neuve via S4) et appaire sa propre machine (S5). ticketd enveloppe la même clé de contenu pour sa machine : le build n'est jamais rechiffré.</div></li>
+    </ol>
+    <figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  actor V as Vendeur
+  actor A as Acheteur
+  participant M as Marketplace
+  participant G as GameLicense
+  participant LV as Launcher vendeur
+  V->>G: approve(Marketplace, token)
+  V->>M: list(token, prix)
+  A->>M: buy(token) avec le prix exact
+  M->>G: royaltyInfo, puis transferFrom(vendeur, acheteur)
+  M-->>V: 85 % (ou crédit si refus)
+  M-->>M: 10 % studio, 5 % plateforme
+  LV->>G: ownerOf au lancement suivant
+  G-->>LV: acheteur
+  LV->>LV: ERR 0x51, jeu natif tué
+  A->>A: appaire sa machine (S5)
+</pre>
+      <figcaption>Revente et révocation.</figcaption>
+    </figure>
+    <p>Retirer une annonce : UNLIST ↗ dans le launcher, puis <code>Marketplace.unlist</code> (seul le vendeur enregistré peut le faire).</p>
+  </div>
+
+  <!-- S9 -->
+  <div class="scenario" id="s-redownload">
+    <h3>S9 · Retélécharger le build (carte abîmée ou build manquant)</h3>
+    <ol class="steps">
+      <li><div><span class="who w-launcher">launcher</span>Si la carte n'a pas de <code>build.enc</code>, la fiche affiche FETCH BUILD.<span class="where">actionFor · downloadBuild</span></div></li>
+      <li><div><span class="who w-launcher">launcher</span>Retrouve le CID et le hash de l'édition sur la blockchain, télécharge depuis ticketd puis IPFS (60 s par miroir, 512 Mo max), vérifie le SHA-256.</div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>Ne sert que les CID enregistrés on-chain. S'il ne l'a pas en cache, il le récupère sur IPFS, vérifie le hash, le met en cache.<span class="where">GET /build/:cid · getBuild</span></div></li>
+      <li><div><span class="who w-launcher">cœur Rust</span>Réécrit <code>build.enc</code> sur la carte.<span class="where">write_build</span></div></li>
+    </ol>
+  </div>
+
+  <!-- S10 -->
+  <div class="scenario" id="s-friends">
+    <h3>S10 · Ajouter un ami</h3>
+    <div class="meta"><span><b>Page</b> <code>/friends</code> (le launcher affiche la liste et renvoie vers le site)</span><span><b>Coût</b> une signature par action, aucune transaction</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur A</span>Cherche B par pseudo ou par adresse. Les homonymes s'affichent avec leur adresse : « Picsou (0x12…ab) ».<span class="where">GET /profile/search?q=</span></div></li>
+      <li><div><span class="who w-player">joueur A</span>Envoie une demande : signe le message « GameVault Amis » (action, moi, l'autre, date, nonce).<span class="where">POST /friends/action (action: request)</span></div></li>
+      <li><div><span class="who w-player">joueur B</span>Voit la demande reçue et l'accepte (ou la refuse). A peut annuler sa demande en attente, qui reste visible dans « envoyées ».<span class="where">action: accept | decline | cancel</span></div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>À l'acceptation, enregistre la date d'amitié. Refuse si l'un des deux a déjà 16 amis.<span class="where">service.ts · friendAction (transaction SQLite)</span></div></li>
+      <li><div><span class="who w-player">l'un ou l'autre</span>Peut retirer l'amitié à tout moment (<code>action: remove</code>).</div></li>
+    </ol>
+    <div class="note">L'amitié vit dans la base de ticketd, pas sur la blockchain : elle ne coûte rien. La règle des 3 jours n'est pas appliquée par ticketd mais par le contrat au moment du prêt, à partir de la date que ticketd atteste.</div>
+  </div>
+
+  <!-- S11 -->
+  <div class="scenario" id="s-lend">
+    <h3>S11 · Prêter un jeu à un ami</h3>
+    <div class="meta"><span><b>Acteurs</b> prêteur (propriétaire), emprunteur</span><span><b>Page</b> <code>/friends</code></span><span><b>Règles on-chain</b> amis depuis ≥ 3 jours · 14 jours max · 24 h de repos entre deux prêts · un seul emprunteur à la fois</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">prêteur</span>Choisit la licence, l'ami (seuls les amis assez anciens sont proposés) et la durée (1 à 14 jours).</div></li>
+      <li><div><span class="who w-web">site</span>Demande l'attestation d'amitié à ticketd, sans signature de l'utilisateur. ticketd vérifie que l'amitié existe et signe en EIP-712 <code>FriendAttestation(owner, borrower, tokenId, since, deadline)</code>, valable 10 minutes.<span class="where">POST /friends/attest · service.ts · attestFriendship</span></div></li>
+      <li><div><span class="who w-player">prêteur</span>Envoie la transaction <code>lend</code>.<span class="where">GameLicense.lend(tokenId, to, expires, since, deadline, sig)</span></div></li>
+      <li><div><span class="who w-chain">contrat</span>Vérifie dans l'ordre : appelant propriétaire, emprunteur valide, pas de prêt en cours, délai de repos respecté, attestation non expirée, signée par la clé d'attestation actuelle, amitié de 3 jours, durée valide. Enregistre l'emprunteur et émet <code>UpdateUser</code>.</div></li>
+      <li><div><span class="who w-player">emprunteur</span>Reçoit la carte (ou en écrit une) et appaire sa machine (S5). ticketd le sert parce qu'il est <code>userOf</code> ; son ticket expire au plus tard à la fin du prêt.</div></li>
+      <li><div><span class="who w-launcher">launcher du prêteur</span>Le contrôle en ligne voit que le droit de jouer est passé à l'emprunteur : refus <code>ERR 0x51</code>. ticketd refuse aussi de lui émettre un ticket pendant le prêt (« règle cartouche »).</div></li>
+      <li><div><span class="who w-player">fin</span>Le prêt finit seul à l'échéance, ou plus tôt par <code>endLoan</code> (prêteur : « Récupérer », emprunteur : « Rendre »). Une revente du jeton tue aussi le prêt. Le délai de repos de 24 h démarre.</div></li>
+    </ol>
+    <figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  actor P as Prêteur
+  actor E as Emprunteur
+  participant W as Site /friends
+  participant T as ticketd
+  participant G as GameLicense
+  P->>W: licence, ami, durée
+  W->>T: POST /friends/attest
+  T->>T: amitié existe ? date since
+  T-->>W: signature EIP-712 (10 min)
+  P->>G: lend(token, ami, fin, since, deadline, sig)
+  G->>G: 3 jours, 14 jours max, repos 24 h, signature
+  G-->>G: UpdateUser(token, ami, fin)
+  E->>T: appairage (S5), servi comme userOf
+  P->>G: endLoan(token) ou échéance
+</pre>
+      <figcaption>Prêt. Le prêteur garde la propriété mais pas le droit de jouer.</figcaption>
+    </figure>
+    <div class="note">En développement, <code>POST /friends/backdate</code> (actif seulement avec <code>GAMEVAULT_DEV=1</code>) antidate une amitié pour tester sans attendre 3 jours.</div>
+  </div>
+
+  <!-- S12 -->
+  <div class="scenario" id="s-profile">
+    <h3>S12 · Gérer son profil</h3>
+    <div class="meta"><span><b>Page</b> <code>/profile</code></span><span><b>Coût</b> une signature par enregistrement</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Choisit un pseudo (2 à 24 caractères, pas forcément unique), un avatar (recadré dans le navigateur en 256×256, 300 Ko max), jusqu'à 12 favoris.</div></li>
+      <li><div><span class="who w-player">joueur</span>Signe le message « GameVault Profil », qui inclut le hash de l'avatar.<span class="where">POST /profile</span></div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>Vérifie signature, âge, nonce, type réel de l'image (JPEG, PNG, WebP) et que l'image envoyée correspond au hash signé. Enregistre.</div></li>
+      <li><div><span class="who w-web">site</span>Affiche aussi « Les plus joués » (rempli par le launcher), les appareils (S13), les gains en attente (S14). Les succès sont préparés côté format (<code>shared/src/achievements.ts</code>) mais pas encore branchés.</div></li>
+    </ol>
+  </div>
+
+  <!-- S13 -->
+  <div class="scenario" id="s-devices">
+    <h3>S13 · Deux appareils actifs par compte</h3>
+    <div class="meta"><span><b>Règle</b> un compte peut être actif sur 2 machines (chez soi et chez un ami, par exemple)</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-ticketd">ticketd</span>À chaque ticket émis, enregistre la machine. Une machine déjà connue ne consomme pas de place.<span class="where">registerDevice (MAX_DEVICES = 2)</span></div></li>
+      <li><div><span class="who w-ticketd">ticketd</span>Pour une troisième machine, déconnecte la moins récemment vue. Le site l'annonce avant la signature (S5).</div></li>
+      <li><div><span class="who w-launcher">launcher déconnecté</span>Au lancement en ligne suivant : <code>ERR 0x53 · DEVICE SLOT RELEASED</code> ; un jeu natif en cours est tué. Hors ligne, il garde sa fenêtre jusqu'à l'expiration du ticket.</div></li>
+      <li><div><span class="who w-player">joueur</span>Peut libérer une place lui-même sur <code>/profile</code> → Déconnecter (signature « GameVault Appareils »).<span class="where">POST /devices/revoke</span></div></li>
+    </ol>
+  </div>
+
+  <!-- S14 -->
+  <div class="scenario" id="s-payout">
+    <h3>S14 · Retirer des gains en attente</h3>
+    <div class="meta"><span><b>Quand</b> rarement : seulement si une adresse a refusé un paiement pendant une revente</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-chain">contrat</span>Pendant <code>Marketplace.buy</code>, si l'envoi à un destinataire échoue (contrat qui refuse l'ETH, ou qui consomme plus de 30 000 gaz), le montant est ajouté à <code>pendingWithdrawals[destinataire]</code> et l'événement <code>PaymentCredited</code> est émis.</div></li>
+      <li><div><span class="who w-web">site</span>Sur <code>/profile</code>, la section « Gains en attente » n'apparaît que si le wallet connecté a un crédit.<span class="where">web/app/components/PendingPayout.tsx</span></div></li>
+      <li><div><span class="who w-player">bénéficiaire</span>Clique « Retirer » : transaction <code>Marketplace.withdraw()</code>. Le crédit est remis à zéro avant l'envoi.</div></li>
+    </ol>
+  </div>
+
+  <!-- S15 -->
+  <div class="scenario" id="s-provenance">
+    <h3>S15 · Consulter la provenance d'une licence</h3>
+    <div class="meta"><span><b>Page</b> <code>/provenance/[tokenId]</code></span><span><b>État</b> <span class="pill ok">en ligne sur Goldsky depuis le 8 octobre 2026</span></span></div>
+    <ol class="steps">
+      <li><div><span class="who w-chain">The Graph</span>Le subgraph lit les événements des trois contrats et construit Studio, Game, Edition, License, Transfer, RoyaltyPayment, Loan, PendingPayout.<span class="where">subgraph/subgraph.yaml · src/mapping.ts</span></div></li>
+      <li><div><span class="who w-web">site</span>La page interroge l'URL du subgraph (<code>SUBGRAPH_URL</code> dans <code>shared/src/deployments.ts</code>, remplaçable par <code>NEXT_PUBLIC_SUBGRAPH_URL</code>) : propriétaire, date de création, annonce en cours, historique des transferts, ventes et royalties.</div></li>
+    </ol>
+    <div class="note">Hébergement : <b>Goldsky</b>, projet <code>gamevault</code>, version 0.2.0, étiquette <code>prod</code>. L'URL publique passe par l'étiquette et ne change pas d'une version à l'autre. Le subgraph est au format The Graph standard : il peut être redéployé sur Subgraph Studio sans modification. La commande de déploiement est dans <code>subgraph/README.md</code>.</div><div class="note">On y accède depuis la fiche du jeu dans le launcher (bouton <code>PROVENANCE #N ↗</code>), depuis la page d'achat d'occasion <code>/trade</code> (pour vérifier l'historique avant de signer), depuis les licences listées sur <code>/friends</code> et depuis la confirmation d'un achat neuf.</div>
+  </div>
+
+  <!-- S16 -->
+  <div class="scenario" id="s-ops">
+    <h3>S16 · Exploitation de la plateforme</h3>
+    <h4>Déployer les contrats</h4>
+    <ol class="steps">
+      <li><div><span class="who w-admin">opérateur</span><code>contracts/.env</code> fournit <code>PRIVATE_KEY</code> (gaz seulement), <code>ADMIN_ADDRESS</code>, <code>ATTEST_SIGNER</code>. Le script refuse que la clé de gaz ait un rôle.</div></li>
+      <li><div><span class="who w-admin">opérateur</span><code>forge script script/Deploy.s.sol --rpc-url base_sepolia --broadcast</code> déploie Registry, License (3 j / 14 j / 1 j), relie Registry → License, déploie Marketplace.</div></li>
+      <li><div><span class="who w-admin">opérateur</span>Reporte les adresses dans <code>shared/src/deployments.ts</code> (source unique pour le site, le launcher et ticketd) et dans <code>subgraph/subgraph.yaml</code>.</div></li>
+    </ol>
+    <p>Pour remplacer seulement la Marketplace (comme pour les paiements différés) : <code>GAME_LICENSE=0x… forge script script/DeployMarketplace.s.sol …</code>. Rien d'autre ne référence la Marketplace : licences et cartes ne bougent pas.</p>
+    <h4>Gestes courants</h4>
+    <div class="tbl"><table>
+      <thead><tr><th>Geste</th><th>Commande ou action</th></tr></thead>
+      <tbody>
+        <tr><td>Changer la clé d'attestation</td><td>L'admin appelle <code>GameLicense.setAttestationSigner(nouvelle)</code>, puis met à jour <code>ATTEST_SIGNER_PRIVKEY</code> dans ticketd. Les anciennes attestations cessent immédiatement d'être valides.</td></tr>
+        <tr><td>Sauvegarder ticketd</td><td><code>npm run backup -w @gamevault/ticketd</code> écrit <code>ticketd/data/backups/ticketd-&lt;date&gt;.db</code> à chaud. La clé maître n'y est pas.</td></tr>
+        <tr><td>Vérifier ticketd</td><td><code>npm run selftest -w @gamevault/ticketd</code> (base en mémoire, sans chaîne).</td></tr>
+        <tr><td>Intégration continue</td><td>À chaque push : typecheck des 4 projets TypeScript, autotests, build du site, <code>npm audit</code> bloquant au niveau « high », 40 tests Foundry, tests Rust du launcher sous Windows.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section id="ref">
+  <h2>7. Référence technique</h2>
+
+  <h3 id="ref-contracts">Contrats (Base Sepolia, chainId 84532)</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Contrat</th><th>Adresse</th><th>Bloc</th></tr></thead>
+    <tbody>
+      <tr><td>GameRegistry</td><td><code>0x7546b4D2f62052468957FD9381cf4Ac433776aba</code></td><td>47811332</td></tr>
+      <tr><td>GameLicense</td><td><code>0xcB73916fA8AF03894B85e6e05aa8a8169f046Bd9</code></td><td>47811332</td></tr>
+      <tr><td>Marketplace</td><td><code>0x3Ff123D804Ca5FE65B282f94c2a85cDBD7664B99</code></td><td>47829208</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>GameRegistry · contracts/src/GameRegistry.sol</h4>
+  <div class="tbl"><table>
+    <thead><tr><th>Fonction</th><th>Qui</th><th>Contrôles et effets</th></tr></thead>
+    <tbody>
+      <tr><td><code>registerStudio(name)</code></td><td>tout le monde</td><td>Crée un studio dont l'appelant est propriétaire. Événement <code>StudioRegistered</code>.</td></tr>
+      <tr><td><code>createGame(studioId, title)</code></td><td>propriétaire du studio</td><td><code>GameCreated</code>.</td></tr>
+      <tr><td><code>createEdition(gameId, supply, price, royaltyBps, buildCid, buildHash)</code></td><td>propriétaire du studio du jeu</td><td>Stock &gt; 0, royalties ≤ 2000 (20 %). Les termes ne sont plus modifiables ensuite. <code>EditionCreated</code>.</td></tr>
+      <tr><td><code>recordMint(editionId)</code></td><td>GameLicense uniquement</td><td>Édition connue, stock restant ; incrémente <code>minted</code>.</td></tr>
+      <tr><td><code>setLicense(address)</code></td><td>déployeur, une seule fois</td><td>Relie le registre au contrat de licences.</td></tr>
+      <tr><td>Lectures</td><td>tous</td><td><code>studios</code>, <code>games</code>, <code>editions</code>, <code>studioCount</code>, <code>gameCount</code>, <code>editionCount</code>.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>GameLicense · contracts/src/GameLicense.sol</h4>
+  <div class="tbl"><table>
+    <thead><tr><th>Fonction</th><th>Qui</th><th>Contrôles et effets</th></tr></thead>
+    <tbody>
+      <tr><td><code>buy(editionId)</code> payable</td><td>tout le monde</td><td>Prix exact ; crée le jeton, royalties ERC-2981 vers le studio ; 100 % du prix envoyé au studio. <code>LicenseMinted</code> + <code>Transfer</code>.</td></tr>
+      <tr><td><code>lend(tokenId, to, expires, since, deadline, sig)</code></td><td>propriétaire</td><td>9 contrôles (voir S11). <code>UpdateUser</code>.</td></tr>
+      <tr><td><code>endLoan(tokenId)</code></td><td>propriétaire ou emprunteur</td><td>Prêt actif ; démarre le repos de 24 h. <code>UpdateUser(token, 0, 0)</code>.</td></tr>
+      <tr><td><code>userOf</code>, <code>userExpires</code>, <code>lastLoanEnd</code></td><td>tous</td><td>État du prêt (modèle ERC-4907, interface volontairement non annoncée).</td></tr>
+      <tr><td><code>attestationDigest(...)</code></td><td>tous</td><td>Empreinte EIP-712 d'une attestation (domaine « GameVault License » v1).</td></tr>
+      <tr><td><code>setAttestationSigner(next)</code></td><td>admin</td><td>Rotation de la clé d'attestation. <code>AttestationSignerUpdated</code>.</td></tr>
+      <tr><td><code>transferOwnership</code> / <code>acceptOwnership</code></td><td>admin / futur admin</td><td>Passation en deux étapes (Ownable2Step).</td></tr>
+      <tr><td>ERC-721 standard</td><td>selon ERC-721</td><td><code>ownerOf</code>, <code>approve</code>, <code>transferFrom</code>… Chaque transfert incrémente <code>transferCount</code> et tue un prêt en cours.</td></tr>
+      <tr><td><code>royaltyInfo(tokenId, price)</code></td><td>tous</td><td>ERC-2981, lu par la Marketplace.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>Marketplace · contracts/src/Marketplace.sol</h4>
+  <div class="tbl"><table>
+    <thead><tr><th>Fonction</th><th>Qui</th><th>Contrôles et effets</th></tr></thead>
+    <tbody>
+      <tr><td><code>list(tokenId, price)</code></td><td>propriétaire</td><td>Prix &gt; 0, Marketplace autorisée ; mémorise <code>transferCount</code>. <code>Listed</code>.</td></tr>
+      <tr><td><code>unlist(tokenId)</code></td><td>vendeur enregistré</td><td><code>Unlisted</code>.</td></tr>
+      <tr><td><code>buy(tokenId)</code> payable</td><td>tout le monde</td><td>Annonce valide, prix exact, vendeur toujours propriétaire, jeton pas bougé ; transfert puis paiements avec repli en crédit. <code>Sale</code>, éventuellement <code>PaymentCredited</code>.</td></tr>
+      <tr><td><code>withdraw()</code></td><td>toute adresse créditée</td><td>Remet le crédit à zéro puis envoie. <code>Withdrawn</code>.</td></tr>
+      <tr><td>Constantes</td><td></td><td><code>PLATFORM_FEE_BPS = 500</code> (5 %), <code>PAYMENT_GAS_STIPEND = 30000</code>. Pas d'admin, pas de pause.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="ref-ticketd">API ticketd (http://localhost:8787)</h3>
+  <p>ticketd n'écoute que sur la machine locale (127.0.0.1 et ::1). Il n'accepte que les origines du site et du launcher, limite la taille des requêtes (16 Ko pour un message signé, 600 Ko pour un profil, 100 Mo pour un build) et masque les URL dans ses messages d'erreur.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Route</th><th>Appelée par</th><th>Authentification</th><th>Rôle</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /health</code></td><td>launcher</td><td>aucune</td><td>Témoin de vie.</td></tr>
+      <tr><td><code>POST /ticket</code></td><td>site <code>/pair</code></td><td>message SIWE signé</td><td>Émet un ticket (S5).</td></tr>
+      <tr><td><code>GET /pending/:nonce</code></td><td>launcher</td><td>le nonce sert de secret</td><td>Remet le ticket une seule fois, garde 10 min, en mémoire.</td></tr>
+      <tr><td><code>POST /publish</code></td><td>site <code>/studio</code></td><td>message « Publish » signé (en-têtes <code>X-GameVault-Message</code>, <code>X-GameVault-Signature</code>)</td><td>Chiffre, épingle, garde la clé (S2).</td></tr>
+      <tr><td><code>GET /build/:cid</code></td><td>launcher</td><td>aucune</td><td>Miroir des builds (CID enregistrés on-chain seulement).</td></tr>
+      <tr><td><code>GET /devices/:wallet</code></td><td>site</td><td>aucune</td><td>Appareils du compte et maximum (2).</td></tr>
+      <tr><td><code>GET /devices/:wallet/:pubkey/status</code></td><td>launcher</td><td>aucune</td><td>Appareil encore actif ? Met à jour « vu le ».</td></tr>
+      <tr><td><code>POST /devices/revoke</code></td><td>site <code>/profile</code></td><td>message « Appareils » signé</td><td>Déconnecte un appareil.</td></tr>
+      <tr><td><code>GET /friends/:addr</code></td><td>site, launcher</td><td>aucune</td><td>Amis, demandes reçues et envoyées.</td></tr>
+      <tr><td><code>POST /friends/action</code></td><td>site</td><td>message « Amis » signé</td><td>request, accept, decline, cancel, remove.</td></tr>
+      <tr><td><code>POST /friends/attest</code></td><td>site</td><td>aucune (utile seulement au propriétaire on-chain)</td><td>Attestation EIP-712 pour <code>lend</code>.</td></tr>
+      <tr><td><code>POST /friends/backdate</code></td><td>développeur</td><td>aucune, active seulement si <code>GAMEVAULT_DEV=1</code></td><td>Antidate une amitié.</td></tr>
+      <tr><td><code>GET /profile/:addr</code></td><td>site</td><td>aucune</td><td>Pseudo, avatar, favoris, plus joués.</td></tr>
+      <tr><td><code>GET /profile/avatar/:addr</code></td><td>site</td><td>aucune</td><td>Image de l'avatar.</td></tr>
+      <tr><td><code>GET /profile/search?q=</code></td><td>site</td><td>aucune</td><td>Recherche par pseudo ou début d'adresse (10 résultats).</td></tr>
+      <tr><td><code>POST /profile</code></td><td>site</td><td>message « Profil » signé</td><td>Enregistre le profil.</td></tr>
+      <tr><td><code>POST /profile/playstat</code></td><td>launcher</td><td>aucune</td><td>Ajoute du temps de jeu (cosmétique).</td></tr>
+    </tbody>
+  </table></div>
+  <p>Tous les messages signés partagent les mêmes règles : format exact ligne par ligne, âge de 10 minutes maximum, nonce à usage unique conservé en base (un message rejoué après un redémarrage est refusé).</p>
+
+  <h3 id="ref-db">Base de ticketd · ticketd/data/ticketd.db</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Table</th><th>Contenu</th></tr></thead>
+    <tbody>
+      <tr><td><code>content_keys</code></td><td>CID, clé chiffrée (AES-GCM, CID en donnée associée), studio et wallet de publication.</td></tr>
+      <tr><td><code>nonces</code></td><td>Nonces déjà utilisés et leur expiration (20 min).</td></tr>
+      <tr><td><code>friend_requests</code>, <code>friendships</code></td><td>Demandes en attente ; amitiés avec leur date de début.</td></tr>
+      <tr><td><code>profiles</code></td><td>Pseudo, type d'avatar, favoris.</td></tr>
+      <tr><td><code>playstats</code></td><td>Secondes jouées par adresse et par édition.</td></tr>
+      <tr><td><code>devices</code></td><td>Appareils par compte, date d'appairage, dernière activité.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Variables d'environnement de ticketd (noms seulement) : <code>TICKET_SIGNER_PRIVKEY</code>, <code>ATTEST_SIGNER_PRIVKEY</code>, <code>KEYSTORE_MASTER_KEY</code>, <code>PINATA_JWT</code>, <code>GAMELICENSE_ADDRESS</code>, <code>RPC_URL</code>, <code>PORT</code>, <code>HOST</code>, <code>CORS_ORIGINS</code>, <code>GAMEVAULT_DEV</code>, <code>GAMEVAULT_SKIP_OWNER_CHECK</code> (autotest).</p>
+
+  <h3 id="ref-tauri">Commandes du launcher · launcher/src-tauri/src/lib.rs</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Commande</th><th>Rôle</th></tr></thead>
+    <tbody>
+      <tr><td><code>get_device_pubkey</code></td><td>Clé publique de la machine ; la crée au premier appel.</td></tr>
+      <tr><td><code>scan_cartridges</code></td><td>Cartouches insérées (volumes amovibles avec <code>/gamevault/ticket.json</code>).</td></tr>
+      <tr><td><code>list_removable_volumes</code></td><td>Tous les volumes amovibles, vierges compris.</td></tr>
+      <tr><td><code>install_cartridge</code></td><td>Écrit build, meta et ticket vide sur une carte.</td></tr>
+      <tr><td><code>write_build</code></td><td>Réécrit <code>build.enc</code>.</td></tr>
+      <tr><td><code>write_ticket</code></td><td>Réécrit <code>ticket.json</code> après vérification complète du ticket.</td></tr>
+      <tr><td><code>play_game</code></td><td>Vérifie, déchiffre, sert le jeu web ou lance le jeu natif.</td></tr>
+      <tr><td><code>stop_game</code></td><td>Vide la mémoire, tue le jeu natif, efface son dossier.</td></tr>
+      <tr><td><code>native_status</code></td><td>Jeu natif en cours ? Sert à resynchroniser après un rechargement.</td></tr>
+      <tr><td>Protocole <code>game://</code></td><td>Sert le jeu web depuis la mémoire (un seul fichier HTML).</td></tr>
+    </tbody>
+  </table></div>
+  <p>Toutes les commandes qui touchent une carte refusent un chemin qui n'est pas un volume amovible détecté (<code>known_mount</code>). L'interface ne peut joindre que ticketd, le RPC Base Sepolia et les passerelles IPFS (politique de sécurité du contenu dans <code>tauri.conf.json</code>), et n'ouvre dans le navigateur que des adresses <code>localhost:3000</code>.</p>
+
+  <h3 id="ref-web">Pages web · web/app</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Page</th><th>Pour qui</th><th>Ce qu'elle fait</th><th>Signatures</th></tr></thead>
+    <tbody>
+      <tr><td><code>/</code></td><td>tous</td><td>Catalogue on-chain, recherche, nouveautés, occasions, genres, studios.</td><td>aucune</td></tr>
+      <tr><td><code>/game/[editionId]</code></td><td>acheteur</td><td>Fiche et achat neuf.</td><td>1 transaction</td></tr>
+      <tr><td><code>/trade</code></td><td>vendeur, acheteur</td><td>Ouverte par le launcher : mettre en vente, retirer, acheter d'occasion.</td><td>1 à 2 transactions</td></tr>
+      <tr><td><code>/pair</code></td><td>propriétaire, emprunteur</td><td>Cible du QR : places d'appareils, message SIWE, demande du ticket.</td><td>1 signature</td></tr>
+      <tr><td><code>/studio</code></td><td>studio</td><td>Studio, jeu, publication du build, édition.</td><td>3 transactions + 1 signature</td></tr>
+      <tr><td><code>/friends</code></td><td>joueurs</td><td>Recherche, demandes, amis, prêts en cours, prêter, reprendre, rendre.</td><td>signatures (amis), transactions (prêts)</td></tr>
+      <tr><td><code>/profile</code></td><td>joueurs</td><td>Pseudo, avatar, favoris, plus joués, appareils, gains en attente.</td><td>signatures, 1 transaction pour retirer</td></tr>
+      <tr><td><code>/provenance/[tokenId]</code></td><td>tous</td><td>Historique d'une licence depuis le subgraph.</td><td>aucune</td></tr>
+    </tbody>
+  </table></div>
+  <p>Variables du site : <code>NEXT_PUBLIC_TICKETD_URL</code> (par défaut <code>http://localhost:8787</code>), <code>NEXT_PUBLIC_SUBGRAPH_URL</code>, <code>NEXT_PUBLIC_WC_PROJECT_ID</code> (nécessaire pour le QR WalletConnect mobile).</p>
+
+  <h3 id="ref-shared">Bibliothèque shared · shared/src</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Module</th><th>Contenu</th><th>Utilisé par</th></tr></thead>
+    <tbody>
+      <tr><td><code>ticket.ts</code></td><td>Format du ticket, JSON canonique, <code>signTicket</code>, <code>verifyTicket</code>, <code>isExpired</code>.</td><td>ticketd, launcher</td></tr>
+      <tr><td><code>ecies.ts</code></td><td><code>wrapKey</code>, <code>unwrapKey</code> : ECDH secp256k1, SHA-256, AES-256-GCM.</td><td>ticketd (Rust en miroir)</td></tr>
+      <tr><td><code>buildcrypto.ts</code></td><td><code>encryptBuild</code>, <code>decryptBuild</code>.</td><td>ticketd</td></tr>
+      <tr><td><code>siwe.ts</code></td><td><code>buildPairingMessage</code>, <code>parsePairingMessage</code> (reconstruction exacte).</td><td>site, ticketd</td></tr>
+      <tr><td><code>storage.ts</code></td><td><code>putBuild</code> (Pinata), <code>fetchBuild</code> (miroirs + vérification du hash).</td><td>ticketd, launcher</td></tr>
+      <tr><td><code>deployments.ts</code></td><td>Chaîne et adresses des contrats : la source unique.</td><td>tous</td></tr>
+      <tr><td><code>abi.ts</code></td><td>ABI minimales des trois contrats.</td><td>tous</td></tr>
+      <tr><td><code>registryCatalog.ts</code></td><td><code>fetchOnchainCatalog</code>, résumés et genres d'affichage.</td><td>site, launcher</td></tr>
+      <tr><td><code>achievements.ts</code></td><td>Format des succès (inspiré Steamworks / EOS), validation, règles de déblocage.</td><td>pas encore branché</td></tr>
+      <tr><td><code>devkeys.ts</code></td><td>Clés de développement publiques (jamais en production).</td><td>autotests, mode dev de ticketd</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="ref-subgraph">Subgraph · subgraph/</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Entité</th><th>Construite à partir de</th></tr></thead>
+    <tbody>
+      <tr><td>Studio, Game, Edition</td><td><code>StudioRegistered</code>, <code>GameCreated</code>, <code>EditionCreated</code> ; <code>minted</code> via <code>LicenseMinted</code>.</td></tr>
+      <tr><td>License</td><td><code>Transfer</code> (propriétaire, annonce effacée à chaque transfert), <code>Listed</code>/<code>Unlisted</code>/<code>Sale</code>, <code>UpdateUser</code> (emprunteur en cours).</td></tr>
+      <tr><td>Transfer, RoyaltyPayment, Loan</td><td>Historique immuable : un enregistrement par événement.</td></tr>
+      <tr><td>PendingPayout</td><td><code>PaymentCredited</code> / <code>Withdrawn</code>.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Une fin de prêt naturelle n'émet pas d'événement : comparer <code>loanExpires</code> à l'heure actuelle.</p><p>URL publique (GraphQL, lecture seule) : <code>https://api.goldsky.com/api/public/project_cmuzez7v1cucq01x6aioa96jc/subgraphs/gamevault/prod/gn</code>. Clé de déploiement : <code>GOLDSKY_DEPLOY_KEY</code> dans <code>subgraph/.env</code> (hors git).</p>
+
+  <h3 id="ref-errors">Codes d'erreur du launcher</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Code</th><th>Quand</th><th>Que faire</th></tr></thead>
+    <tbody>
+      <tr><td><code>ERR 0x21 · LICENCE CHECKSUM MISMATCH</code></td><td>Le ticket reçu à l'appairage est invalide, pour une autre machine ou une autre licence.</td><td>Relancer l'appairage.</td></tr>
+      <tr><td><code>ERR 0x21 · &lt;message Rust&gt;</code></td><td>Le cœur Rust refuse au lancement : ticket expiré, autre machine, clé absente, déchiffrement impossible.</td><td>RENEW, ou réappairer.</td></tr>
+      <tr><td><code>ERR 0x31 · PAIRING TIMEOUT</code></td><td>Appairage ouvert depuis plus de 10 minutes.</td><td>Recommencer.</td></tr>
+      <tr><td><code>ERR 0x42 · CARD WRITE FAILED</code></td><td>Téléchargement ou écriture de la carte en échec.</td><td>Vérifier la carte et ticketd.</td></tr>
+      <tr><td><code>ERR 0x51 · OWNERSHIP MOVED ON-CHAIN</code></td><td>Licence revendue, ou prêtée (pour le prêteur).</td><td>Normal après une vente ou pendant un prêt.</td></tr>
+      <tr><td><code>ERR 0x52 · RESOLD MID-SESSION</code></td><td>Revente détectée pendant un jeu natif ; processus tué.</td><td>Normal.</td></tr>
+      <tr><td><code>ERR 0x53 · DEVICE SLOT RELEASED</code></td><td>Machine déconnectée du compte (3e appareil ou révocation).</td><td>Réappairer, ce qui libère une autre place.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="securite">
+  <h2>8. Sécurité : garanties et limites</h2>
+  <h3>Ce qui est garanti</h3>
+  <ul>
+    <li>Le wallet ne signe que dans le navigateur ; ni le launcher, ni la carte, ni ticketd ne voient sa clé privée.</li>
+    <li>Un ticket est lié à une seule machine : copier la carte ne sert à rien sans la clé d'appareil du coffre Windows.</li>
+    <li>Le ticket est vérifié deux fois au lancement, en TypeScript puis dans le cœur Rust, avant tout déchiffrement ou lancement d'exe.</li>
+    <li>Le jeu web déchiffré reste en mémoire ; l'exe natif n'existe sur disque que pendant la partie et son hash est vérifié avant le lancement.</li>
+    <li>En ligne, une revente ou un prêt révoque l'ancien détenteur au lancement suivant (et en cours de partie pour un jeu natif).</li>
+    <li>Les messages signés ne peuvent pas être rejoués, même après un redémarrage de ticketd.</li>
+    <li>Les clés de contenu sont chiffrées au repos ; chaque clé de la plateforme a un rôle unique.</li>
+    <li>Aucun destinataire ne peut bloquer une revente (paiements avec repli en crédit).</li>
+  </ul>
+  <h3>Limites connues et assumées</h3>
+  <ul>
+    <li><b>Copie déchiffrée.</b> Un utilisateur technique peut extraire la clé de contenu avant de revendre et garder une copie. C'est vrai de tout système sans puce sécurisée : « vérification de propriété, pas DRM ».</li>
+    <li><b>Fenêtre hors ligne.</b> Un vendeur qui reste déconnecté peut jouer jusqu'à 30 jours après la vente. La durée reste à arbitrer.</li>
+    <li><b>ticketd est un tiers de confiance.</b> Il détient les clés de contenu et la clé de signature des tickets. Sa compromission compromet les jeux publiés.</li>
+    <li><b>Exe natifs non signés.</b> La signature Authenticode des studios n'est pas encore vérifiée.</li>
+    <li><b>Vente neuve.</b> <code>GameLicense.buy</code> paie encore le studio directement : un studio qui refuse l'ETH ne bloque que ses propres ventes.</li>
+  </ul>
+</section>
+
+<section id="ecarts">
+  <h2>9. Écarts connus</h2>
+  <p>Relevés en inventoriant le code le 8 octobre 2026. Les bugs et dérives trouvés ce jour-là ont été corrigés : avatar en 404, confirmations de transaction affichées trop tôt, annonces périmées visibles, textes obsolètes, documentation et code mort (outil <code>station/</code>, scripts de fixtures, migration ponctuelle). Restent des choix de conception, à trancher plutôt qu'à corriger :</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Zone</th><th>Écart</th><th>Nature</th></tr></thead>
+    <tbody>
+      <tr><td>Launcher</td><td>La session SIWE n'est pas revérifiée au lancement et il n'y a pas d'auto-signature avec la clé d'appareil, contrairement à CLAUDE.md (voir S5). La possession de la clé est prouvée implicitement par le déballage ECIES.</td><td><span class="pill warn">décision</span></td></tr>
+      <tr><td>Launcher</td><td>Pas de contrôle de révocation pendant une partie de jeu web (seulement au lancement ; les jeux natifs sont recontrôlés toutes les 60 s).</td><td><span class="pill warn">décision</span></td></tr>
+      <tr><td>ticketd</td><td><code>POST /profile/playstat</code> n'est pas signé : n'importe qui peut gonfler le temps de jeu d'une adresse.</td><td><span class="pill">cosmétique</span></td></tr>
+      <tr><td>Site</td><td>Les règles 3 j / 24 h et le texte 85/10/5 sont écrits en dur dans les pages au lieu d'être lus sur le contrat.</td><td><span class="pill">mineur</span></td></tr>
+      <tr><td>Contrats</td><td>Vente neuve en paiement direct au studio (sans repli en crédit), à aligner au prochain redéploiement complet.</td><td><span class="pill">prochain reset</span></td></tr>
+      <tr><td>Performance</td><td>Le site et le launcher parcourent tous les jetons un par un sur le RPC ; à basculer sur le subgraph quand le volume grandira.</td><td><span class="pill">à l'échelle</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="dev">
+  <h2>10. Lancer le projet</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Service</th><th>Adresse</th><th>Commande</th></tr></thead>
+    <tbody>
+      <tr><td>Tout d'un coup (3 fenêtres)</td><td></td><td><code>dev.cmd</code> à la racine</td></tr>
+      <tr><td>ticketd</td><td><code>http://localhost:8787</code></td><td><code>npm run dev -w @gamevault/ticketd</code></td></tr>
+      <tr><td>Site web</td><td><code>http://localhost:3000</code></td><td><code>npm run dev -w @gamevault/web</code></td></tr>
+      <tr><td>Launcher</td><td>fenêtre Tauri (Vite sur 1420)</td><td><code>launcher\dev.cmd</code> (charge MSVC via vcvars64, puis <code>npm run tauri dev</code>)</td></tr>
+    </tbody>
+  </table></div>
+  <h4>Vérifier</h4>
+  <pre class="code">npm run typecheck                          # shared, ticketd, launcher, web
+npm run selftest -w @gamevault/shared
+npm run selftest -w @gamevault/ticketd
+cd contracts &amp;&amp; forge test                   # 40 tests
+cd launcher/src-tauri &amp;&amp; cargo test         # 7 tests du ticket (avec vcvars64)</pre>
+  <div class="note">Sous Windows avec les workspaces npm : le <code>node_modules</code> racine contient des liens vers les dossiers du projet. Ne jamais le déplacer ou le supprimer avec PowerShell pendant que des serveurs tournent ; utiliser <code>npm ci</code>.</div>
+</section>
+
+<footer>
+  Référence établie à partir du code du dépôt le 8 octobre 2026, après le ménage du code mort et les corrections de l'auto-audit. Les chemins de fichiers sont relatifs à la racine du monorepo GameVault.
+</footer>
+</main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral" });</script>
+</body>
+</html>

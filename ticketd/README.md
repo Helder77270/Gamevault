@@ -1,22 +1,48 @@
-# ticketd — ticket issuance service (Node/TS)
+# ticketd — platform service (Node 22, zero framework)
 
-Promoted from stretch: the demo climax (resale → revocation) depends on this. Everything downstream consumes it.
+Issues launch tickets after an on-chain ownership check, encrypts and stores
+studio builds, and runs the off-chain social layer (friends, profiles,
+devices). Listens on loopback only (127.0.0.1 + ::1), CORS restricted to the
+web app and the launcher, every request body size-capped.
 
-`POST /ticket`:
-1. Verify SIWE signature. The SIWE message EMBEDS the device pubkey (from the launcher's pairing QR) — this binds wallet ↔ device and prevents device substitution.
-2. Check `ownerOf(tokenId)` on-chain matches the SIWE signer
-3. ECIES-wrap the AES-256-GCM content key to the DEVICE pubkey (@noble/curves, @noble/ciphers). Not the wallet pubkey — wallets have no secp256k1 decryption API, a key wrapped to the wallet could never be unwrapped.
-4. Sign ticket `{ tokenId, contract, chainId, ownerAddress, devicePubKey, wrappedContentKey, issuedAt, expiresAt }` with the platform key
-5. Return ticket
+## Routes
 
-Same endpoint serves renewal and re-wrap-on-resale (buyer pairs their own device after purchase, which triggers issuance).
+| Route | Caller | Auth | Purpose |
+|---|---|---|---|
+| `GET /health` | launcher | – | liveness |
+| `POST /ticket` | web `/pair` | SIWE pairing message (embeds the device pubkey) | issue a ticket sealed to that device |
+| `GET /pending/:nonce` | launcher | nonce | hand the ticket over once (10 min, memory) |
+| `POST /publish` | web `/studio` | studio-signed message in `X-GameVault-Message` / `X-GameVault-Signature` | encrypt with a fresh key, pin to IPFS, store the key |
+| `GET /build/:cid` | launcher | – | build mirror: builds cached at publish, otherwise on-chain CIDs fetched from IPFS and sha256-checked |
+| `GET /devices/:wallet`, `GET /devices/:wallet/:pubkey/status`, `POST /devices/revoke` | web, launcher | revoke is signed | 2 active devices per account |
+| `GET /friends/:addr`, `POST /friends/action`, `POST /friends/attest` | web, launcher | actions are signed | friends (DB, zero gas) + EIP-712 attestation for `lend()` |
+| `POST /friends/backdate` | dev only | `GAMEVAULT_DEV=1` | simulate a 3-day-old friendship |
+| `GET /profile/:addr`, `GET /profile/avatar/:addr`, `GET /profile/search?q=`, `POST /profile` | web | profile save is signed | pseudo, avatar, favorites |
+| `POST /profile/playstat` | launcher | – (cosmetic) | play time for "most played" |
+
+Every signed message: exact canonical format, ≤ 10 min old, single-use nonce
+persisted in SQLite (no replay after a restart).
+
+## Ticket issuance (`POST /ticket`)
+1. Parse and byte-compare the SIWE pairing message; chain + contract must match.
+2. Freshness, nonce, signature.
+3. Play right on-chain: the active borrower (`userOf`) during a loan — the
+   owner is refused then — otherwise the owner (`ownerOf`).
+4. Content key: edition → CID → encrypted key, bound to the publishing studio
+   and to the first edition using that CID.
+5. ECIES-wrap the key to the DEVICE pubkey, expiry = min(30 days, loan end),
+   sign with `TICKET_SIGNER_PRIVKEY`, register the device (LRU eviction past 2).
+
+## Storage
+`data/ticketd.db` (SQLite, WAL): `content_keys` (encrypted with
+`KEYSTORE_MASTER_KEY`, CID as AAD), `nonces`, `friend_requests`,
+`friendships`, `profiles`, `playstats`, `devices`. Avatars and cached builds
+are files under `data/`. Backup: `npm run backup -w @gamevault/ticketd`
+(the master key is deliberately not in the backup).
 
 ## Run
 ```
-npm run dev -w ticketd        # http://localhost:8787, --watch
-npm run selftest -w ticketd   # end-to-end issuance proof, no HTTP/chain
+npm run dev -w @gamevault/ticketd        # http://localhost:8787, --watch, loads .env + .env.dev
+npm run selftest -w @gamevault/ticketd   # issuance proof: in-memory DB, no chain
 ```
-Config via env (see .env.example). Until P1 contracts are deployed,
-GAMELICENSE_ADDRESS is unset → ownerOf() check is SKIPPED (loud warning).
-Guards implemented: signature-vs-address, canonical message format (rebuild
-and byte-compare), 10-min freshness window, nonce replay set.
+Configuration: see `.env.example` (variable names and roles).

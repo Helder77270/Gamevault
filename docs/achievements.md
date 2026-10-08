@@ -263,9 +263,9 @@ EOS se convertit ligne à ligne.
 | Phase | Contenu | Touche |
 |---|---|---|
 | **0 — fait** | Ce document ; types + `validateManifest` + `evaluateUnlocks` + `applyStatIngest` dans `shared/src/achievements.ts` (non exporté du package) ; manifeste exemple « GameVault Runner ». | `docs/`, `shared/` |
-| **1 — pré-intégration légère** | `station/publish` valide et épingle `achievements/` si présent, écrit CID + hash dans `meta.json`, copie sur la cartouche. Launcher : affiche la liste (verrouillés / cachés) depuis la cartouche ; API `window.gamevault.achievements` en no-op journalisé. Exporter le module dans `shared/package.json`. | station, launcher, shared |
+| **1 — pré-intégration légère** | la publication studio (`/studio` → ticketd `/publish`) valide et épingle `achievements/` si présent, écrit CID + hash dans `meta.json`, copie sur la cartouche. Launcher : affiche la liste (verrouillés / cachés) depuis la cartouche ; API `window.gamevault.achievements` en no-op journalisé. Exporter le module dans `shared/package.json`. | web, ticketd, launcher, shared |
 | **2 — boucle complète** | Journal local signé par la clé device ; `POST /achievements/events` + tables dans ticketd ; toasts in-game ; page profil web avec succès et % de rareté. Brancher 3 succès dans GameVault Runner pour la démo. | launcher, ticketd, web, game |
-| **3 — ancrage** | `achievementsCid` / `achievementsHash` dans l'édition `GameRegistry` (redéploiement) ; entités subgraph ; convertisseurs `steam-vdf → achievements.json` et `eos-zip → achievements.json` ; rejet des événements postérieurs à un `Transfer`. | contracts, subgraph, station |
+| **3 — ancrage** | `achievementsCid` / `achievementsHash` dans l'édition `GameRegistry` (redéploiement) ; entités subgraph ; convertisseurs `steam-vdf → achievements.json` et `eos-zip → achievements.json` ; rejet des événements postérieurs à un `Transfer`. | contracts, subgraph, ticketd |
 | **4 — portabilité** | Export Open Badges 3.0 ; claim ERC-5192 opt-in pour certains succès ; méta-succès « platine ». | ticketd, contracts, web |
 
 ---
