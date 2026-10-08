@@ -913,9 +913,10 @@ async function play(g: Game): Promise<void> {
     await new Promise((r) => setTimeout(r, 700));
     if (launched.kind === "exe") {
       state.nativeRun = { g, pid: launched.pid ?? 0, startedAt: Date.now() };
-      startNativeWatchdog();
+      startSessionWatchdog();
     } else {
       state.playing = g;
+      startSessionWatchdog(); // web games are re-checked during play too
     }
     render(); // player view / native panel mounts underneath the overlay
     launchHide(); // then the overlay fades to reveal it
@@ -928,37 +929,44 @@ async function play(g: Game): Promise<void> {
 // Decision 2026-10-05: on resale detected mid-session, the process is
 // TERMINATED (not just notified) — live revocation at full strength.
 
-const NATIVE_OWNER_CHECK_MS = 60_000;
-let nativeWatchdog: number | undefined;
+// Session watchdog — the ownership is re-checked DURING play, for native
+// (.exe) and web games alike: resale (or a released device slot) ends the
+// session within OWNER_CHECK_MS. Offline, the check returns "offline" and
+// the session goes on (the offline window rule).
+const OWNER_CHECK_MS = 20_000;
+let sessionWatchdog: number | undefined;
 
-function startNativeWatchdog(): void {
-  stopNativeWatchdog();
-  nativeWatchdog = window.setInterval(async () => {
-    const ticket = state.nativeRun?.g?.ticket;
+function startSessionWatchdog(): void {
+  stopSessionWatchdog();
+  sessionWatchdog = window.setInterval(async () => {
+    const native = state.nativeRun !== null;
+    const ticket = native ? state.nativeRun?.g?.ticket : state.playing?.ticket;
     if (!ticket) return;
     const check = await checkOwnerOnline(ticket);
-    if (check === "revoked" || check === "evicted") {
-      stopNativeWatchdog();
-      await invoke("stop_game"); // kills the child, cleans the run dir
-      state.nativeRun = null;
-      if (check === "revoked") {
-        chimeCash();
-        fail(t("err.movedT"), t("err.resoldMidM"), "ERR 0x52 · RESOLD MID-SESSION · PROCESS TERMINATED", "detail");
-      } else {
-        chimeOut();
-        fail(t("err.evictedT"), t("err.evictedM"), "ERR 0x53 · DEVICE SLOT RELEASED · PROCESS TERMINATED", "detail");
-      }
+    if (check !== "revoked" && check !== "evicted") return;
+    stopSessionWatchdog();
+    await invoke("stop_game"); // drops the web bundle from memory / kills the native child
+    if (!native) logPlayEnd(); // native: the "native-exited" event logs it
+    state.playing = null;
+    state.nativeRun = null;
+    const ended = native ? "PROCESS TERMINATED" : "SESSION TERMINATED";
+    if (check === "revoked") {
+      chimeCash();
+      fail(t("err.movedT"), t(native ? "err.resoldMidM" : "err.resoldMidWebM"), `ERR 0x52 · RESOLD MID-SESSION · ${ended}`, "detail");
+    } else {
+      chimeOut();
+      fail(t("err.evictedT"), t("err.evictedM"), `ERR 0x53 · DEVICE SLOT RELEASED · ${ended}`, "detail");
     }
-  }, NATIVE_OWNER_CHECK_MS);
+  }, OWNER_CHECK_MS);
 }
 
-function stopNativeWatchdog(): void {
-  if (nativeWatchdog !== undefined) window.clearInterval(nativeWatchdog);
-  nativeWatchdog = undefined;
+function stopSessionWatchdog(): void {
+  if (sessionWatchdog !== undefined) window.clearInterval(sessionWatchdog);
+  sessionWatchdog = undefined;
 }
 
 void listen<{ code: number | null; seconds: number; killed: boolean }>("native-exited", (e) => {
-  stopNativeWatchdog();
+  stopSessionWatchdog();
   logPlayEnd();
   const wasRunning = state.nativeRun !== null;
   state.nativeRun = null;
@@ -969,7 +977,7 @@ void listen<{ code: number | null; seconds: number; killed: boolean }>("native-e
 function nativeView(run: NonNullable<typeof state.nativeRun>): string {
   const ed = run.g ? editionFor(run.g) : undefined;
   const guard = run.g?.ticket
-    ? "OWNERSHIP RE-CHECKED EVERY 60 S · RESALE TERMINATES THE PROCESS"
+    ? `OWNERSHIP RE-CHECKED EVERY ${OWNER_CHECK_MS / 1000} S · RESALE TERMINATES THE PROCESS`
     : "SESSION RESYNCED · TICKET UNKNOWN — EJECT TO REARM THE GUARD";
   return `
     <div class="launch-ov" style="animation:none">
@@ -982,7 +990,7 @@ function nativeView(run: NonNullable<typeof state.nativeRun>): string {
 }
 
 async function quit(): Promise<void> {
-  stopNativeWatchdog();
+  stopSessionWatchdog();
   await invoke("stop_game"); // drops the HTML bundle AND/OR kills the native child
   logPlayEnd();
   state.playing = null;
@@ -2371,7 +2379,7 @@ async function runBoot(): Promise<void> {
         pid: ns.pid ?? 0,
         startedAt: Date.now() - (ns.seconds ?? 0) * 1000,
       };
-      startNativeWatchdog();
+      startSessionWatchdog();
     }
   } catch {
     /* command absent on an older rust build */

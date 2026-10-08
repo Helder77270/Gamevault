@@ -529,8 +529,7 @@ sequenceDiagram
 </pre>
       <figcaption>Ordre réel des contrôles au lancement.</figcaption>
     </figure>
-    <div class="note">Pendant une partie native, le launcher refait le contrôle en ligne toutes les 60 secondes. Si la licence a été revendue ou l'appareil déconnecté, il tue le processus et efface son dossier (<code>ERR 0x52</code> ou <code>ERR 0x53</code>). À la fermeture du launcher, tout jeu natif est tué.</div>
-    <div class="gap"><b>Écart.</b> Un jeu web en cours de partie n'est pas recontrôlé : la révocation s'applique au lancement suivant.</div>
+    <div class="note">Pendant la partie, web comme native, le launcher refait le contrôle en ligne toutes les 20 secondes (<code>startSessionWatchdog</code>). Si la licence a été revendue ou l'appareil déconnecté : jeu natif tué et son dossier effacé, jeu web retiré de la mémoire du cœur Rust, puis <code>ERR 0x52 · RESOLD MID-SESSION</code> ou <code>ERR 0x53</code>. Hors ligne, la partie continue (fenêtre hors ligne). À la fermeture du launcher, tout jeu natif est tué.</div>
   </div>
 
   <!-- S7 -->
@@ -555,7 +554,7 @@ sequenceDiagram
       <li><div><span class="who w-player">acheteur</span>Trouve l'annonce dans « Occasions » sur le site (seules les annonces encore valides sont affichées), consulte l'historique de la licence depuis <code>/trade</code>, puis achète au prix exact.<span class="where">Marketplace.buy(tokenId)</span></div></li>
       <li><div><span class="who w-chain">contrat</span>Vérifie que l'annonce existe, que le prix est exact, que le vendeur possède encore le jeton et que le jeton n'a pas bougé depuis l'annonce (anti-annonce ressuscitée, audit K3). Lit les royalties ERC-2981, transfère le jeton (ce qui tue un éventuel prêt), puis paie les trois parts.<span class="where">Marketplace.sol · buy · _pay</span></div></li>
       <li><div><span class="who w-chain">contrat</span>Chaque part est envoyée directement avec 30 000 unités de gaz. Si un destinataire refuse l'ETH, sa part est créditée dans le contrat et la vente passe quand même (audit K4, voir S14).</div></li>
-      <li><div><span class="who w-launcher">launcher du vendeur</span>Au prochain lancement en ligne : <code>ERR 0x51 · OWNERSHIP MOVED ON-CHAIN</code>. Si un jeu natif tournait : tué dans les 60 secondes (<code>ERR 0x52</code>). Hors ligne : il garde sa fenêtre restante puis ne peut plus renouveler.</div></li>
+      <li><div><span class="who w-launcher">launcher du vendeur</span>Si une partie est en cours (web ou native) : coupée dans les 20 secondes (<code>ERR 0x52 · RESOLD MID-SESSION</code>). Au lancement suivant : <code>ERR 0x51 · OWNERSHIP MOVED ON-CHAIN</code>. Hors ligne : il garde sa fenêtre restante puis ne peut plus renouveler.</div></li>
       <li><div><span class="who w-player">acheteur</span>Insère la carte (le vendeur la lui donne, ou il en écrit une neuve via S4) et appaire sa propre machine (S5). ticketd enveloppe la même clé de contenu pour sa machine : le build n'est jamais rechiffré.</div></li>
     </ol>
     <figure class="diagram">
@@ -936,7 +935,7 @@ sequenceDiagram
       <tr><td><code>ERR 0x31 · PAIRING TIMEOUT</code></td><td>Appairage ouvert depuis plus de 10 minutes.</td><td>Recommencer.</td></tr>
       <tr><td><code>ERR 0x42 · CARD WRITE FAILED</code></td><td>Téléchargement ou écriture de la carte en échec.</td><td>Vérifier la carte et ticketd.</td></tr>
       <tr><td><code>ERR 0x51 · OWNERSHIP MOVED ON-CHAIN</code></td><td>Licence revendue, ou prêtée (pour le prêteur).</td><td>Normal après une vente ou pendant un prêt.</td></tr>
-      <tr><td><code>ERR 0x52 · RESOLD MID-SESSION</code></td><td>Revente détectée pendant un jeu natif ; processus tué.</td><td>Normal.</td></tr>
+      <tr><td><code>ERR 0x52 · RESOLD MID-SESSION</code></td><td>Revente détectée pendant une partie (contrôle toutes les 20 s) : processus natif tué ou jeu web retiré de la mémoire.</td><td>Normal.</td></tr>
       <tr><td><code>ERR 0x53 · DEVICE SLOT RELEASED</code></td><td>Machine déconnectée du compte (3e appareil ou révocation).</td><td>Réappairer, ce qui libère une autre place.</td></tr>
     </tbody>
   </table></div>
@@ -950,7 +949,7 @@ sequenceDiagram
     <li>Un ticket est lié à une seule machine : copier la carte ne sert à rien sans la clé d'appareil du coffre Windows.</li>
     <li>Le ticket est vérifié deux fois au lancement, en TypeScript puis dans le cœur Rust, avant tout déchiffrement ou lancement d'exe.</li>
     <li>Le jeu web déchiffré reste en mémoire ; l'exe natif n'existe sur disque que pendant la partie et son hash est vérifié avant le lancement.</li>
-    <li>En ligne, une revente ou un prêt révoque l'ancien détenteur au lancement suivant (et en cours de partie pour un jeu natif).</li>
+    <li>En ligne, une revente ou un prêt révoque l'ancien détenteur au lancement suivant, et en cours de partie dans les 20 secondes (jeux web et natifs).</li>
     <li>Les messages signés ne peuvent pas être rejoués, même après un redémarrage de ticketd.</li>
     <li>Les clés de contenu sont chiffrées au repos ; chaque clé de la plateforme a un rôle unique.</li>
     <li>Aucun destinataire ne peut bloquer une revente (paiements avec repli en crédit).</li>
@@ -974,7 +973,6 @@ sequenceDiagram
     <thead><tr><th>Zone</th><th>Écart</th><th>Nature</th></tr></thead>
     <tbody>
       <tr><td>Launcher</td><td>La session SIWE n'est pas revérifiée au lancement et il n'y a pas d'auto-signature avec la clé d'appareil, contrairement à CLAUDE.md (voir S5). La possession de la clé est prouvée implicitement par le déballage ECIES.</td><td><span class="pill warn">décision</span></td></tr>
-      <tr><td>Launcher</td><td>Pas de contrôle de révocation pendant une partie de jeu web (seulement au lancement ; les jeux natifs sont recontrôlés toutes les 60 s).</td><td><span class="pill warn">décision</span></td></tr>
       <tr><td>Site</td><td>Les règles 3 j / 24 h et le texte 85/10/5 sont écrits en dur dans les pages au lieu d'être lus sur le contrat.</td><td><span class="pill">mineur</span></td></tr>
       <tr><td>Contrats</td><td>Vente neuve en paiement direct au studio (sans repli en crédit), à aligner au prochain redéploiement complet.</td><td><span class="pill">prochain reset</span></td></tr>
       <tr><td>Performance</td><td>Le site et le launcher parcourent tous les jetons un par un sur le RPC ; à basculer sur le subgraph quand le volume grandira.</td><td><span class="pill">à l'échelle</span></td></tr>

@@ -98,10 +98,10 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
 Bugs corrigés (avatar 404, confirmations trop tôt, annonces périmées,
 crash ticketd sur URL malformée), code mort retiré (station/, fixtures,
 HANDOFF.md). Restent des DÉCISIONS de conception :
-- [ ] Revérifier la session SIWE au lancement + auto-signature de la clé
-      d'appareil (CLAUDE.md le prévoit, le code ne le fait pas)
-- [ ] Révocation en cours de partie pour les jeux web (aujourd'hui : au
-      lancement seulement ; natifs recontrôlés toutes les 60 s)
+- [x] Révocation en cours de partie pour les jeux web ET natifs, toutes les
+      20 s (v1 #1, 2026-10-08)
+- [x] Session SIWE non revérifiée au lancement : ACCEPTÉE comme limite v1
+      (preuve de propriété à l'appairage, clé d'appareil ensuite)
 - [ ] Signer /profile/playstat (cosmétique)
 - [ ] Lire 3 j / 24 h / 85-10-5 sur le contrat au lieu du texte en dur
 

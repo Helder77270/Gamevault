@@ -149,6 +149,7 @@ const FR = {
   "err.movedT": "Licence déplacée on-chain.",
   "err.movedM": "Cette licence a changé de main (revente ou prêt). Le nouveau détenteur doit appairer sa machine pour jouer.",
   "err.resoldMidM": "La licence a changé de main pendant la partie — le processus a été terminé.",
+  "err.resoldMidWebM": "La licence a changé de main pendant la partie — la session a été fermée et le jeu retiré de la mémoire.",
   "err.evictedT": "Appareil déconnecté.",
   "err.evictedM":
     "Votre compte a été appairé sur d'autres machines : 2 appareils maximum peuvent être actifs en même temps, et celui-ci était le moins utilisé. Réappairez-le pour jouer (l'appareil le moins utilisé sera déconnecté à son tour), ou libérez une place depuis votre profil.",
@@ -315,6 +316,7 @@ const EN: Record<Key, string> = {
   "err.movedT": "Licence moved on-chain.",
   "err.movedM": "This licence changed hands (resale or loan). The new holder must pair their machine to play.",
   "err.resoldMidM": "The licence changed hands during the session — the process was terminated.",
+  "err.resoldMidWebM": "The licence changed hands during the session — the session was closed and the game removed from memory.",
   "err.evictedT": "Device signed out.",
   "err.evictedM":
     "Your account was paired on other machines: at most 2 devices can be active at once, and this one was the least used. Pair it again to play (the least used device will be signed out in turn), or free a slot from your profile.",
