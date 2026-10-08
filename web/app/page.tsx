@@ -6,49 +6,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { createPublicClient, formatEther, http } from "viem";
-import { baseSepolia } from "viem/chains";
+import { formatEther } from "viem";
 import { fetchOnchainCatalog, BLURBS, GENRES, hueOf, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { DEPLOYMENTS } from "@gamevault/shared/deployments";
-import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
-
-// Second-hand listings — THE thing Steam doesn't have. Read straight from
-// the Marketplace contract: every token with a listing that buy() would
-// still accept.
-type Occasion = { tokenId: string; editionId: string; price: bigint; seller: string };
-
-const ZERO = "0x0000000000000000000000000000000000000000";
-
-async function fetchOccasions(): Promise<Occasion[]> {
-  if (!DEPLOYMENTS.gameLicense || !DEPLOYMENTS.marketplace) return [];
-  const c = createPublicClient({ chain: baseSepolia, transport: http() });
-  const license = DEPLOYMENTS.gameLicense as `0x${string}`;
-  const market = DEPLOYMENTS.marketplace as `0x${string}`;
-  const next = await c.readContract({ address: license, abi: LICENSE_ABI, functionName: "nextTokenId" });
-  const found: Occasion[] = [];
-  for (let i = BigInt(1); i <= next; i++) {
-    try {
-      const [seller, price, nonce] = await c.readContract({ address: market, abi: MARKETPLACE_ABI, functionName: "listings", args: [i] });
-      if (seller.toLowerCase() === ZERO) continue;
-      // Same rules as Marketplace.buy(): the seller still owns the token, it
-      // has not moved since it was listed, and the Marketplace may still
-      // transfer it (approval not revoked).
-      const [owner, moves, approved, operator] = await Promise.all([
-        c.readContract({ address: license, abi: LICENSE_ABI, functionName: "ownerOf", args: [i] }),
-        c.readContract({ address: license, abi: LICENSE_ABI, functionName: "transferCount", args: [i] }),
-        c.readContract({ address: license, abi: LICENSE_ABI, functionName: "getApproved", args: [i] }),
-        c.readContract({ address: license, abi: LICENSE_ABI, functionName: "isApprovedForAll", args: [seller, market] }),
-      ]);
-      if (owner.toLowerCase() !== seller.toLowerCase() || moves !== nonce) continue;
-      if (approved.toLowerCase() !== market.toLowerCase() && !operator) continue;
-      const ed = await c.readContract({ address: license, abi: LICENSE_ABI, functionName: "editionOf", args: [i] });
-      found.push({ tokenId: i.toString(), editionId: ed.toString(), price, seller });
-    } catch {
-      /* burned / unknown token */
-    }
-  }
-  return found;
-}
+import { fetchOccasions, type Occasion } from "./lib/occasions";
+import { ticketdGet } from "./lib/ticketd";
+import { Avatar, shortAddr } from "./components/Avatar";
 
 const artStyle = (editionId: string): React.CSSProperties => ({
   background: `linear-gradient(160deg, oklch(0.62 0.13 ${hueOf(editionId)}) 0%, oklch(0.34 0.1 ${hueOf(editionId) + 30}) 65%, oklch(0.22 0.06 265) 100%)`,
@@ -73,15 +36,24 @@ function Card({ e }: { e: OnchainEdition }) {
   );
 }
 
-function OccCard({ o, e }: { o: Occasion; e: OnchainEdition | undefined }) {
+type Names = Record<string, { name: string | null; hasAvatar: boolean }>;
+
+/** Second-hand capsule: opens /occasions on this listing, where the seller,
+ *  their other listings and the purchase live side by side. */
+function OccCard({ o, e, names }: { o: Occasion; e: OnchainEdition | undefined; names: Names }) {
   const discount = e && e.priceWei > BigInt(0) ? Number(((e.priceWei - o.price) * BigInt(100)) / e.priceWei) : 0;
+  const seller = names[o.seller];
   return (
-    <Link href={`/trade?action=buy&token=${o.tokenId}`} className="mcard">
+    <Link href={`/occasions?sel=${o.tokenId}`} className="mcard">
       <div className="mart occ-art" style={e ? artStyle(e.editionId) : undefined}>
         <div className="occbadge">OCCASION</div>
-        <div className="martnote">licence #{o.tokenId} · revente par {o.seller.slice(0, 6)}…{o.seller.slice(-4)}</div>
+        <div className="martnote">licence #{o.tokenId}</div>
       </div>
       <div className="mtitle">{e?.title ?? `Licence #${o.tokenId}`}</div>
+      <div className="occ-seller">
+        <Avatar addr={o.seller} name={seller?.name} hasAvatar={seller?.hasAvatar} size={20} />
+        <span>{seller?.name ?? shortAddr(o.seller)}</span>
+      </div>
       <div className="mmeta">
         <span>{discount > 0 ? `-${discount}% VS NEUF` : "SECONDE MAIN"}</span>
         <span className="mprice occ-price">{formatEther(o.price)} ETH</span>
@@ -113,6 +85,7 @@ const norm = (s: string): string =>
 export default function Marketplace() {
   const [catalog, setCatalog] = useState<OnchainEdition[] | null>(null);
   const [occasions, setOccasions] = useState<Occasion[]>([]);
+  const [names, setNames] = useState<Names>({});
   const [q, setQ] = useState("");
 
   useEffect(() => {
@@ -120,7 +93,11 @@ export default function Marketplace() {
       .then(setCatalog)
       .catch(() => setCatalog([]));
     fetchOccasions()
-      .then(setOccasions)
+      .then(async (list) => {
+        setOccasions(list);
+        const sellers = [...new Set(list.map((o) => o.seller))];
+        if (sellers.length) setNames(await ticketdGet<Names>(`/profiles/names?a=${sellers.join(",")}`).catch(() => ({})));
+      })
       .catch(() => setOccasions([]));
   }, []);
 
@@ -213,14 +190,16 @@ export default function Marketplace() {
       {occasions.length > 0 && (
         <>
           <div className="cat-head">
-            <h2>Occasions · seconde main</h2>
+            <h2>
+              <Link href="/occasions">Occasions · seconde main →</Link>
+            </h2>
             <span className="count">
               {occasions.length} LICENCE{occasions.length > 1 ? "S" : ""} · ROYALTIES AUTO AU STUDIO
             </span>
           </div>
           <div className="hrow">
             {occasions.map((o) => (
-              <OccCard key={o.tokenId} o={o} e={catalog.find((e) => e.editionId === o.editionId)} />
+              <OccCard key={o.tokenId} o={o} e={catalog.find((e) => e.editionId === o.editionId)} names={names} />
             ))}
           </div>
         </>
