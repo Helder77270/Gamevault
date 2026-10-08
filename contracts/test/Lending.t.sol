@@ -29,7 +29,7 @@ contract LendingTest is Test {
         vm.warp(1_750_000_000); // real-world-ish clock — "since 3 days ago" must not underflow
         platform = vm.addr(platformPk);
         registry = new GameRegistry();
-        license = new GameLicense(registry, admin, platform, 3 days, 14 days, 1 days);
+        license = new GameLicense(registry, admin, platform, makeAddr("platformFees"), 3 days, 14 days, 1 days);
         registry.setLicense(address(license));
         market = new Marketplace(license, platform);
 

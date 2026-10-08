@@ -23,7 +23,7 @@ contract GameVaultTest is Test {
 
     function setUp() public {
         registry = new GameRegistry();
-        license = new GameLicense(registry, platform, makeAddr("attestSigner"), 3 days, 14 days, 1 days);
+        license = new GameLicense(registry, platform, makeAddr("attestSigner"), platform, 3 days, 14 days, 1 days);
         registry.setLicense(address(license));
         market = new Marketplace(license, platform);
 
@@ -45,13 +45,20 @@ contract GameVaultTest is Test {
 
         assertEq(license.ownerOf(tokenId), alice);
         assertEq(license.editionOf(tokenId), editionId);
-        assertEq(studio.balance, 0.01 ether); // 100% primary to studio
+        // primary: 92 % to the studio, 8 % to the platform
+        assertEq(studio.balance, 0.0092 ether);
+        assertEq(platform.balance, 0.0008 ether);
         (,,,,,, uint256 minted) = registry.editions(editionId);
         assertEq(minted, 1);
 
         (address receiver, uint256 amount) = license.royaltyInfo(tokenId, 1 ether);
         assertEq(receiver, studio);
         assertEq(amount, 0.1 ether); // 10%
+    }
+
+    function test_RevertZeroPlatform() public {
+        vm.expectRevert("GameLicense: zero platform");
+        new GameLicense(registry, platform, makeAddr("attestSigner"), address(0), 3 days, 14 days, 1 days);
     }
 
     function test_RevertPrimaryWrongPrice() public {
@@ -89,6 +96,7 @@ contract GameVaultTest is Test {
 
         uint256 aliceBefore = alice.balance;
         uint256 studioBefore = studio.balance;
+        uint256 platformBefore = platform.balance;
 
         vm.prank(bob);
         market.buy{value: 1 ether}(tokenId);
@@ -98,7 +106,7 @@ contract GameVaultTest is Test {
         // 85% seller / 10% studio (via royaltyInfo) / 5% platform
         assertEq(alice.balance - aliceBefore, 0.85 ether);
         assertEq(studio.balance - studioBefore, 0.10 ether);
-        assertEq(platform.balance, 0.05 ether);
+        assertEq(platform.balance - platformBefore, 0.05 ether);
         // listing consumed
         (address seller,,) = market.listings(tokenId);
         assertEq(seller, address(0));

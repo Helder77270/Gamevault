@@ -32,6 +32,11 @@ import {GameRegistry} from "./GameRegistry.sol";
 ///         attestation signer and can rotate it; the deployer keeps no role.
 contract GameLicense is ERC721, ERC2981, EIP712, Ownable2Step, ReentrancyGuard, IGameVaultEvents {
     GameRegistry public immutable registry;
+    /// GameVault's cut of a PRIMARY sale: 8 %, under Steam (30 %), Epic
+    /// (12 %) and itch.io's default (10 %). The studio keeps 92 %.
+    uint256 public constant PRIMARY_FEE_BPS = 800;
+    /// Receives the primary-sale fee (same role as Marketplace.platform).
+    address public immutable platform;
     /// Signs friendship attestations — rotatable by the owner.
     address public attestationSigner;
     uint256 public nextTokenId;
@@ -69,12 +74,15 @@ contract GameLicense is ERC721, ERC2981, EIP712, Ownable2Step, ReentrancyGuard, 
         GameRegistry registryContract,
         address admin,
         address attestationSigner_,
+        address platformAddress,
         uint64 minFriendAge,
         uint64 maxLoanDuration,
         uint64 loanCooldown
     ) ERC721("GameVault License", "GVL") EIP712("GameVault License", "1") Ownable(admin) {
         require(attestationSigner_ != address(0), "GameLicense: zero signer");
+        require(platformAddress != address(0), "GameLicense: zero platform");
         registry = registryContract;
+        platform = platformAddress;
         attestationSigner = attestationSigner_;
         MIN_FRIEND_AGE = minFriendAge;
         MAX_LOAN_DURATION = maxLoanDuration;
@@ -171,7 +179,7 @@ contract GameLicense is ERC721, ERC2981, EIP712, Ownable2Step, ReentrancyGuard, 
     }
 
     /// @notice Primary sale: pay the edition price, receive the license.
-    ///         100% of the primary price goes to the studio.
+    ///         92 % of the price goes to the studio, 8 % to the platform.
     function buy(uint256 editionId) external payable nonReentrant returns (uint256 tokenId) {
         (address studioOwner, uint96 royaltyBps, uint256 price) = registry.recordMint(editionId);
         require(msg.value == price, "GameLicense: wrong price");
@@ -182,7 +190,9 @@ contract GameLicense is ERC721, ERC2981, EIP712, Ownable2Step, ReentrancyGuard, 
         _setTokenRoyalty(tokenId, studioOwner, royaltyBps);
         emit LicenseMinted(tokenId, editionId, msg.sender);
 
-        Address.sendValue(payable(studioOwner), msg.value);
+        uint256 fee = (msg.value * PRIMARY_FEE_BPS) / 10_000;
+        Address.sendValue(payable(platform), fee);
+        Address.sendValue(payable(studioOwner), msg.value - fee);
     }
 
     /// ERC-4907 is NOT advertised: userOf/userExpires follow its views, but

@@ -93,7 +93,7 @@ contract PaymentsTest is Test, IGameVaultEvents {
 
     function setUp() public {
         registry = new GameRegistry();
-        license = new GameLicense(registry, platform, makeAddr("attestSigner"), 3 days, 14 days, 1 days);
+        license = new GameLicense(registry, platform, makeAddr("attestSigner"), platform, 3 days, 14 days, 1 days);
         registry.setLicense(address(license));
         market = new Marketplace(license, platform);
 
@@ -125,6 +125,7 @@ contract PaymentsTest is Test, IGameVaultEvents {
 
         hostile.setAccepting(false);
         uint256 aliceBefore = alice.balance;
+        uint256 platformBefore = platform.balance;
 
         vm.expectEmit(true, false, false, true, address(market));
         emit PaymentCredited(address(hostile), 0.1 ether);
@@ -134,7 +135,7 @@ contract PaymentsTest is Test, IGameVaultEvents {
         // the sale went through, the honest parties were paid directly
         assertEq(license.ownerOf(tokenId), bob);
         assertEq(alice.balance - aliceBefore, 0.85 ether);
-        assertEq(platform.balance, 0.05 ether);
+        assertEq(platform.balance - platformBefore, 0.05 ether);
         // the studio's 10% waits in the Marketplace
         assertEq(market.pendingWithdrawals(address(hostile)), 0.1 ether);
         assertEq(address(market).balance, 0.1 ether);
@@ -153,12 +154,13 @@ contract PaymentsTest is Test, IGameVaultEvents {
         uint256 tokenId = seller.buyAndList{value: 0.01 ether}(license, market, editionId, 2 ether);
 
         uint256 studioBefore = studio.balance;
+        uint256 platformBefore = platform.balance;
         vm.prank(bob);
         market.buy{value: 2 ether}(tokenId);
 
         assertEq(license.ownerOf(tokenId), bob);
         assertEq(studio.balance - studioBefore, 0.2 ether);
-        assertEq(platform.balance, 0.1 ether);
+        assertEq(platform.balance - platformBefore, 0.1 ether);
         assertEq(market.pendingWithdrawals(address(seller)), 1.7 ether);
 
         seller.claim(market);
