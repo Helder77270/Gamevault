@@ -82,7 +82,7 @@ fn play_game(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(u64::MAX); // broken clock = treat as expired, fail closed
-    let verified = ticket::verify_for_launch(&ticket, &crypto::device_pubkey_hex()?, now)?;
+    let verified = ticket::verify_for_launch(&ticket, ticket::licence_contract(), &crypto::device_pubkey_hex()?, now)?;
 
     let device_priv = crypto::device_priv()?; // OS keystore (Credential Manager)
     let content_key = crypto::ecies_unwrap(&verified.wrapped_content_key, &device_priv)
@@ -288,7 +288,7 @@ fn write_ticket(mount_point: String, ticket_json: String) -> Result<(), String> 
     known_mount(&mount_point)?;
     // Only a genuine ticket sealed for THIS machine ever reaches a card
     let parsed = serde_json::from_str::<Value>(&ticket_json).map_err(|e| format!("ticket invalide: {e}"))?;
-    ticket::verify_for_write(&parsed, &crypto::device_pubkey_hex()?)?;
+    ticket::verify_for_write(&parsed, ticket::licence_contract(), &crypto::device_pubkey_hex()?)?;
     let path = Path::new(&mount_point).join("gamevault").join("ticket.json");
     std::fs::write(&path, ticket_json).map_err(|e| format!("écriture ticket: {e}"))
 }

@@ -469,6 +469,11 @@ function judge(c: Cartridge): Game {
   }
   if (ticket.chainId !== CHAIN.id) return { cartridge: c, ticket, meta, verdict: "tampered" };
   if (ticket.platformSignature === "0x") return { cartridge: c, ticket, meta, verdict: "unpaired" };
+  // A ticket names its contract: one from an abandoned deployment is a card
+  // to re-pair, even if the same wallet holds the same token number on the
+  // current contract (the Rust core refuses it too).
+  if (!DEPLOYMENTS.gameLicense || ticket.contract.toLowerCase() !== DEPLOYMENTS.gameLicense.toLowerCase())
+    return { cartridge: c, ticket, meta, verdict: "unpaired" };
   if (!verifyPlatformSig(ticket)) return { cartridge: c, ticket, meta, verdict: "tampered" };
   if (isExpired(ticket)) return { cartridge: c, ticket, meta, verdict: "expired" };
   return { cartridge: c, ticket, meta, verdict: "authentic" };
