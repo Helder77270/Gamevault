@@ -19,6 +19,10 @@ export const CHAIN = {
 // anymore. Also in this set: EIP-712 attestations bound to a tokenId,
 // no false ERC-4907 claim, resurrected Marketplace listings rejected.
 // Earlier sets of the day (v1 0x2dEC…, v2 0x4030…, v3 0x9FC8…) abandoned.
+// MARKETPLACE ALONE redeployed 2026-10-08, block 47829208 (audit K4: push
+// payments with a pull fallback — a receiver refusing ETH no longer blocks
+// resales). Previous Marketplace 0x89dF…8a40 retired with no listing, no
+// approval and no balance; registry + licences untouched.
 export const DEPLOYMENTS: {
   gameRegistry: `0x${string}` | "";
   gameLicense: `0x${string}` | "";
@@ -26,7 +30,7 @@ export const DEPLOYMENTS: {
 } = {
   gameRegistry: "0x7546b4D2f62052468957FD9381cf4Ac433776aba",
   gameLicense: "0xcB73916fA8AF03894B85e6e05aa8a8169f046Bd9",
-  marketplace: "0x89dFfcfdAd3f0EA66554821CAcB9D004E0af8a40",
+  marketplace: "0x3Ff123D804Ca5FE65B282f94c2a85cDBD7664B99",
 };
 
 export const DEPLOY_BLOCK = 47811332;

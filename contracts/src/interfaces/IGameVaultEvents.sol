@@ -34,4 +34,8 @@ interface IGameVaultEvents {
         uint256 royaltyAmount,
         uint256 platformFee
     );
+    /// A sale share the receiver refused (or out of stipend) — kept in the
+    /// Marketplace until the payee calls withdraw() (audit K4).
+    event PaymentCredited(address indexed payee, uint256 amount);
+    event Withdrawn(address indexed payee, uint256 amount);
 }

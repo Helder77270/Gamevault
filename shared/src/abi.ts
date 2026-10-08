@@ -254,4 +254,19 @@ export const MARKETPLACE_ABI = [
     inputs: [{ name: "tokenId", type: "uint256" }],
     outputs: [],
   },
+  // Pull fallback (audit K4): shares a receiver refused, claimable later.
+  {
+    name: "pendingWithdrawals",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "payee", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "withdraw",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
 ] as const;

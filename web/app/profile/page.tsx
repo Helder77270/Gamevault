@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { fetchOnchainCatalog, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { ConnectButton } from "../components/ConnectButton";
+import { PendingPayout } from "../components/PendingPayout";
 
 const TICKETD_URL = process.env.NEXT_PUBLIC_TICKETD_URL ?? "http://localhost:8787";
 
@@ -270,6 +271,8 @@ export default function ProfilePage() {
           ) : (
             <p className="addr">Aucun appareil actif — appairez une machine depuis le launcher.</p>
           )}
+
+          {address && <PendingPayout address={address} />}
 
           <h2 className="section">Succès</h2>
           <p className="addr">Bientôt — les hauts faits de vos licences (premier prêt, revente, collection complète…).</p>

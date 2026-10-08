@@ -11,11 +11,25 @@ import {GameLicense} from "./GameLicense.sol";
 ///         edition set, capped at 20% by the registry); the platform adds a
 ///         flat 5%; the seller gets the rest. On a 10% edition:
 ///         85% seller / 10% studio / 5% platform.
+///
+///         PAYMENTS (audit K4): push with a pull fallback. Each share is sent
+///         directly with a bounded gas stipend — wallets (EOA, Safe) are paid
+///         in the same transaction as before. If a receiver reverts or burns
+///         the stipend, its share is CREDITED instead and claimed later with
+///         withdraw(): no receiver can block a sale. Before this, a studio
+///         whose royalty address refused ETH froze the resale of every copy
+///         of its games, held by other people.
 contract Marketplace is ReentrancyGuard, IGameVaultEvents {
     uint256 public constant PLATFORM_FEE_BPS = 500; // 5%
+    /// Enough for an EOA or a Safe proxy's receive(), too little for a
+    /// receiver to do anything expensive inside our buy().
+    uint256 public constant PAYMENT_GAS_STIPEND = 30_000;
 
     GameLicense public immutable license;
     address public immutable platform;
+
+    /// Shares that could not be pushed — claimable with withdraw().
+    mapping(address payee => uint256) public pendingWithdrawals;
 
     struct Listing {
         address seller;
@@ -66,10 +80,31 @@ contract Marketplace is ReentrancyGuard, IGameVaultEvents {
 
         license.transferFrom(l.seller, msg.sender, tokenId);
 
-        if (royaltyAmount > 0) Address.sendValue(payable(royaltyReceiver), royaltyAmount);
-        Address.sendValue(payable(platform), platformFee);
-        Address.sendValue(payable(l.seller), l.price - royaltyAmount - platformFee);
+        _pay(royaltyReceiver, royaltyAmount);
+        _pay(platform, platformFee);
+        _pay(l.seller, l.price - royaltyAmount - platformFee);
 
         emit Sale(tokenId, l.seller, msg.sender, l.price, royaltyAmount, platformFee);
+    }
+
+    /// @notice Claim the shares that could not be pushed during a sale.
+    ///         Full gas here: it is the payee's own transaction.
+    function withdraw() external nonReentrant {
+        uint256 amount = pendingWithdrawals[msg.sender];
+        require(amount > 0, "Marketplace: nothing to withdraw");
+        pendingWithdrawals[msg.sender] = 0;
+        emit Withdrawn(msg.sender, amount);
+        Address.sendValue(payable(msg.sender), amount);
+    }
+
+    /// Push `amount` to `to` with a bounded stipend; credit it on failure.
+    /// Only called from buy() (nonReentrant), after all state changes.
+    function _pay(address to, uint256 amount) private {
+        if (amount == 0) return;
+        (bool ok,) = payable(to).call{value: amount, gas: PAYMENT_GAS_STIPEND}("");
+        if (!ok) {
+            pendingWithdrawals[to] += amount;
+            emit PaymentCredited(to, amount);
+        }
     }
 }

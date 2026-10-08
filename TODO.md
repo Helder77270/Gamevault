@@ -85,7 +85,9 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
 - [ ] wagmi 3 : NON nécessaire pour l'instant (RainbowKit 2.2.11 ne le supporte
       pas) ; uuid réglé par override. Reste decode-uri-component (DoS client
       sur URI WalletConnect forgée, modérée) → à revoir quand RainbowKit suit
-- [ ] Contrats (prochain redéploiement) : pull payments (K4) — K3, K5, K6 faits
+- [x] Pull payments Marketplace (K4) — Marketplace seul redéployé (2026-10-08)
+- [ ] Prochain full reset : même repli pull pour la vente primaire (GameLicense.buy)
+- [ ] Subgraph : subgraph.yaml pointe encore les adresses de juillet (cf. P3)
 
 ## P3 — Subgraph : déployer pour de vrai
 - [ ] Subgraph Studio base-sepolia : adresses + startBlock → deploy
