@@ -59,9 +59,9 @@ l'usage réel entre amis.
 Nouvelles adresses dans deployments.ts (+friendRegistry) ; éditions
 republiées : 1 Snake, 2 Runner, 3 Native Runtime Test (Witcheur cassée
 disparue) ; tokens #1 (runner) et #2 (native) mintés au wallet dev. RESTE :
-- [ ] Régénérer la Pinata JWT et la clé dev (ont transité en clair) —
-      avant toute démo publique
-- [ ] Réécrire la carte SD physique via le launcher (install + pair)
+- [x] Pinata JWT régénérée, droits minimaux (2026-10-08). La clé dev (0xAD5B,
+      transitée en clair) ne paie plus que le gaz testnet
+- [x] Carte SD réappairée (licence #2 transférée au wallet 0xbDdE, 2026-10-08)
 - [ ] BLURBS/GENRES de registryCatalog à reclaver sur les nouvelles éditions
 
 ## P2bis — Sécurité : chantiers structurels de l'audit (docs/audit-2026-10-07.md)
@@ -69,8 +69,8 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
 - [x] `/publish` signé par le wallet du studio + clé liée au studio (2026-10-07)
 - [x] Séparer les clés (tickets / attestations rotatable / admin + frais),
       ancienne clé sans rôle (2026-10-07, bloc 47811332)
-- [ ] Régénérer le JWT Pinata (dashboard Pinata — a transité en clair) ;
-      déplacer ADMIN_PRIVKEY (contracts/.env) vers un wallet matériel/multisig
+- [x] JWT Pinata régénéré (2026-10-08)
+- [ ] Déplacer ADMIN_PRIVKEY (contracts/.env) vers un wallet matériel/multisig
 - [x] Registre d'appareils : 2 actifs max par compte (2026-10-07)
 - [ ] Décider : raccourcir la fenêtre hors ligne (30 j) ? limite le temps de jeu
       d'un appareil déconnecté qui reste hors ligne
