@@ -151,7 +151,7 @@ export default function PublicProfilePage() {
             <Link className="btn" href="/profile">Modifier mon profil</Link>
           ) : (
             <>
-              {relation === "friend" && <Link className="btn" href={`/friends?chat=${addr}`}>Message</Link>}
+              {relation === "friend" && <Link className="btn" href={`/chat?with=${addr}`}>Message</Link>}
               {relation === "friend" && <span className="btn ghost">Amis ✓</span>}
               {relation === "pending" && <span className="btn ghost">Demande envoyée</span>}
               {relation === "incoming" && (

@@ -192,7 +192,7 @@ function OccasionsInner() {
                   <div style={{ display: "flex", gap: "0.5rem" }}>
                     <Link className="btn ghost" href={`/u/${selected.seller}`} style={{ flex: 1, textAlign: "center" }}>Voir le profil</Link>
                     {seller?.friend && (
-                      <Link className="btn ghost" href={`/friends?chat=${selected.seller}`} style={{ flex: 1, textAlign: "center" }}>Message</Link>
+                      <Link className="btn ghost" href={`/chat?with=${selected.seller}`} style={{ flex: 1, textAlign: "center" }}>Message</Link>
                     )}
                   </div>
                   <Link className="addr" href={`/provenance/${selected.tokenId}`} style={{ color: "var(--cyan)", textAlign: "center" }}>
