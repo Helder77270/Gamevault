@@ -94,6 +94,7 @@ const FR = {
   "det.notInserted": "NOT INSERTED",
   "det.resold": "⛔ RESOLD ON-CHAIN — le nouveau propriétaire {a} doit appairer sa machine.",
   "det.pricePlaceholder": "prix ETH",
+  "det.provTitle": "Historique on-chain de la licence #{id} : propriétaires, reventes, royalties",
 
   // insert / reader
   "ins.slot": "Insérez une carte pour commencer.",
@@ -240,6 +241,7 @@ const EN: Record<Key, string> = {
   "det.notInserted": "NOT INSERTED",
   "det.resold": "⛔ RESOLD ON-CHAIN — the new owner {a} must pair their machine.",
   "det.pricePlaceholder": "price ETH",
+  "det.provTitle": "On-chain history of licence #{id}: owners, resales, royalties",
 
   "ins.slot": "Slot a card to begin.",
   "ins.slotSub": "The reader detects the card, reads its licence block and verifies the platform signature.",

@@ -92,7 +92,7 @@ Les correctifs rapides sont faits ; restent les décisions/chantiers :
 ## P3 — Subgraph : ✅ DÉPLOYÉ 2026-10-08 (Goldsky, gamevault/0.2.0, tag prod)
 - [x] Déployé sur Goldsky (Studio : compte bloqué ; Alchemy Subgraphs fermé)
 - [x] /provenance/[tokenId] branché (SUBGRAPH_URL dans shared/deployments.ts)
-- [ ] Lien vers /provenance depuis la fiche d'une licence (aucune page n'y mène)
+- [x] Liens vers /provenance : fiche launcher, /trade, /friends, achat neuf (2026-10-08)
 - [ ] Bibliothèque complète dans le launcher via subgraph (licences
       possédées sans cartouche insérée)
 

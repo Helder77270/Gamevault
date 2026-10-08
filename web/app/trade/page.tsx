@@ -5,6 +5,7 @@
 // moment: ?action=list|unlist|buy&token=N[&price=ETH]
 
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { parseEther, formatEther } from "viem";
 import { useAccount, useReadContract, useWriteContract } from "wagmi";
@@ -126,6 +127,12 @@ function TradeInner() {
         <p>
           Le transfert du NFT révoque instantanément le vendeur. Après l&apos;achat, appairez votre machine
           depuis le launcher pour jouer.
+        </p>
+      )}
+      {(action === "buy" || action === "list") && /^\d{1,12}$/.test(token) && (
+        <p>
+          <Link href={`/provenance/${token}`}>Voir l&apos;historique de la licence #{token}</Link> : propriétaires
+          successifs, reventes et royalties versées.
         </p>
       )}
 

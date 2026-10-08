@@ -1527,6 +1527,14 @@ function detailView(): string {
 
   const { action, hint } = actionFor(e, g, ownedTok, can);
 
+  // Provenance (subgraph page on the web app): the licence on the card,
+  // otherwise every licence of this edition the library address owns.
+  const provIds = g?.ticket ? [g.ticket.tokenId] : ownedTok.map((o) => o.tokenId);
+  const provRow = provIds
+    .filter((id) => /^\d{1,12}$/.test(id))
+    .map((id) => `<button class="pillbtn" data-prov="${esc(id)}" title="${esc(t("det.provTitle", { id }))}">📜 PROVENANCE #${esc(id)} ↗</button>`)
+    .join("");
+
   let marketRow = "";
   if (g?.ticket && isOurs(g) && g.verdict === "authentic" && !resold) {
     if (listed && m) {
@@ -1568,7 +1576,7 @@ function detailView(): string {
         <div class="detail-actions">
           ${action}
           <div class="detail-hint">${esc(hint)}</div>
-          <div style="flex-basis:100%;display:flex;gap:8px;flex-wrap:wrap">${marketRow}</div>
+          <div style="flex-basis:100%;display:flex;gap:8px;flex-wrap:wrap">${marketRow}${provRow}</div>
         </div>
       </div>
     </div>`;
@@ -1942,6 +1950,12 @@ function wire(root: HTMLElement): void {
     beep([880], 0.08); // preview at the new level
   });
 
+  root.querySelectorAll<HTMLButtonElement>("[data-prov]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const id = b.dataset.prov ?? "";
+      if (/^\d{1,12}$/.test(id)) void openUrl(`${MARKETPLACE_URL}/provenance/${id}`);
+    }),
+  );
   root.querySelectorAll<HTMLButtonElement>("[data-lendfriend]").forEach((b) =>
     b.addEventListener("click", () => void openUrl(`${MARKETPLACE_URL}/friends`)),
   );

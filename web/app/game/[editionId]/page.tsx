@@ -141,7 +141,8 @@ export default function GamePage() {
             {mintedToken && (
               <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--sub)" }}>
                 Licence mintée ! Ouvrez le launcher → Game Shelf → « {e.title} » → WRITE TO CARD avec le token #
-                {mintedToken}.
+                {mintedToken}. Son historique on-chain :{" "}
+                <Link href={`/provenance/${mintedToken}`}>provenance de la licence #{mintedToken}</Link>.
               </p>
             )}
             {error && <p className="error-box">{error}</p>}

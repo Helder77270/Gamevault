@@ -7,6 +7,7 @@
 // comprise). endLoan reste une transaction du propriétaire/emprunteur.
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
 import { LICENSE_ABI } from "@gamevault/shared/abi";
 import { DEPLOYMENTS } from "@gamevault/shared/deployments";
@@ -300,7 +301,10 @@ export default function FriendsPage() {
             const maturedFriends = friends.filter((f) => nowSec >= f.since + FRIEND_AGE);
             return (
               <div key={t.tokenId} style={{ marginBottom: "0.9rem" }}>
-                <b>{titleOf(t.editionId)}</b> <span className="addr">licence #{t.tokenId}</span>
+                <b>{titleOf(t.editionId)}</b>{" "}
+                <Link className="addr" href={`/provenance/${t.tokenId}`} title="Historique on-chain de la licence">
+                  licence #{t.tokenId} ↗
+                </Link>
                 {loanLive ? (
                   <p style={{ margin: "0.3rem 0 0" }}>
                     Prêtée à <code>{short(t.user)}</code> — retour le {new Date(t.expires * 1000).toLocaleDateString()}{" "}
@@ -347,7 +351,10 @@ export default function FriendsPage() {
               {borrowed.map((t) => (
                 <p key={t.tokenId}>
                   <b>{titleOf(t.editionId)}</b>{" "}
-                  <span className="addr">#{t.tokenId} · jusqu&apos;au {new Date(t.expires * 1000).toLocaleDateString()}</span>{" "}
+                  <Link className="addr" href={`/provenance/${t.tokenId}`} title="Historique on-chain de la licence">
+                    #{t.tokenId} ↗
+                  </Link>{" "}
+                  <span className="addr">· jusqu&apos;au {new Date(t.expires * 1000).toLocaleDateString()}</span>{" "}
                   <button className="btn ghost" disabled={!!busy} onClick={() => void endLoan(t.tokenId)}>
                     Rendre plus tôt
                   </button>
