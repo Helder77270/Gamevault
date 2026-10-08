@@ -14,7 +14,7 @@ import { DEV_PLATFORM_PRIV, devContentKeyFor } from "@gamevault/shared/devkeys";
 import { LICENSE_ABI, REGISTRY_ABI } from "@gamevault/shared/abi";
 import { CHAIN, DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { fetchBuild, putBuild, type StoredBuild } from "@gamevault/shared/storage";
-import { DATA_DIR, consumeNonce, devices, friends, getContentKey, nonceUsed, playstats, profiles, putContentKey, tx } from "./db.ts";
+import { consumeNonce, devices, friends, getContentKey, nonceUsed, putContentKey, sessions, tx } from "./db.ts";
 
 const TICKET_TTL_SEC = 30 * 24 * 3600; // 30-day offline window
 const MESSAGE_MAX_AGE_MS = 10 * 60 * 1000; // pairing message freshness
@@ -154,6 +154,19 @@ export async function publishBuild(plain: Uint8Array, message: string, signature
 // Integrity remains CLIENT-side (sha256 vs the on-chain hash), so this
 // server is as untrusted as a gateway.
 
+/** On-chain owner of a studio (GameRegistry.studios). */
+export async function studioOwner(studioId: string): Promise<string> {
+  if (!DEPLOYMENTS.gameRegistry) throw new Error("GameRegistry non déployé");
+  const [owner] = await client.readContract({
+    address: DEPLOYMENTS.gameRegistry as `0x${string}`,
+    abi: REGISTRY_ABI,
+    functionName: "studios",
+    args: [BigInt(studioId)],
+  });
+  if (owner === "0x0000000000000000000000000000000000000000") throw new Error(`studio #${studioId} inconnu`);
+  return owner;
+}
+
 const BUILDS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../data/builds");
 
 function cacheBuild(cid: string, bytes: Uint8Array): void {
@@ -176,97 +189,14 @@ export async function getBuild(cid: string): Promise<Uint8Array> {
   return bytes;
 }
 
-// ── Friends DB (décidé 2026-10-07) ───────────────────────────────────────
-// L'amitié est OFF-CHAIN : une transaction par ami tuait l'usage. Ici,
-// chaque action est un simple message signé par le wallet (zéro gas).
-// Le contrat garde sa garde : au prêt, la plateforme signe une ATTESTATION
-// « owner et borrower amis depuis T » que lend() vérifie on-chain avec
-// l'âge minimal. Backdate = simulation des 3 jours en dev.
+// ── Lending attestation ─────────────────────────────────────────────────
+// Friendship lives in the DB (social.ts). The contract keeps its guard: at
+// lend time the platform signs an ATTESTATION "owner and borrower friends
+// since T" that lend() checks on-chain together with the minimum age.
 
 const ATTEST_TTL_SEC = 10 * 60;
-const MAX_FRIENDS = 16;
 const NONCE_TTL_MS = MESSAGE_MAX_AGE_MS * 2;
-
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
-const FRIEND_ACTIONS = ["request", "accept", "decline", "cancel", "remove"] as const;
-
-export function friendMessage(f: { action: string; me: string; other: string; at: string; nonce: string }): string {
-  return ["GameVault Amis", `action: ${f.action}`, `me: ${f.me}`, `other: ${f.other}`, `at: ${f.at}`, `nonce: ${f.nonce}`].join("\n");
-}
-
-/** Strict parse: exact line order, then re-serialize and compare — no
- *  smuggled lines (audit T13). */
-function parseFriendMessage(message: string): { action: string; me: string; other: string; at: string; nonce: string } {
-  const lines = message.split("\n");
-  if (lines.length !== 6 || lines[0] !== "GameVault Amis") throw new Error("message inattendu");
-  const keys = ["action", "me", "other", "at", "nonce"];
-  const v: Record<string, string> = {};
-  keys.forEach((k, i) => {
-    const l = lines[i + 1];
-    if (!l.startsWith(`${k}: `)) throw new Error(`champ ${k} attendu`);
-    v[k] = l.slice(k.length + 2);
-  });
-  const f = { action: v.action, me: v.me, other: v.other, at: v.at, nonce: v.nonce };
-  if (friendMessage(f) !== message) throw new Error("message non canonique");
-  return f;
-}
-
-/** Message signé côté wallet :
- *  GameVault Amis\naction: request|accept|decline|cancel|remove\nme: 0x…\nother: 0x…\nat: ISO\nnonce: uuid */
-export async function applyFriendAction(message: string, signature: `0x${string}`): Promise<{ ok: true }> {
-  const { action, me, other, at, nonce } = parseFriendMessage(message);
-  if (!(FRIEND_ACTIONS as readonly string[]).includes(action)) throw new Error("action inconnue");
-  if (!ADDR_RE.test(me) || !ADDR_RE.test(other)) throw new Error("adresse invalide");
-  if (me.toLowerCase() === other.toLowerCase()) throw new Error("pas d'amitié avec soi-même");
-  const age = Date.now() - Date.parse(at);
-  if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) throw new Error("message expiré");
-  if (nonceUsed(nonce)) throw new Error("nonce déjà utilisé");
-  const sigOk = await verifyMessage({ address: me as `0x${string}`, message, signature });
-  if (!sigOk) throw new Error("signature invalide");
-
-  tx(() => {
-    consumeNonce(nonce, NONCE_TTL_MS);
-    if (action === "request") {
-      if (friends.since(me, other)) throw new Error("déjà amis");
-      friends.request(me, other);
-    } else if (action === "accept") {
-      if (!friends.hasRequest(other, me)) throw new Error("aucune demande de cette adresse");
-      // Anti-farm cap (audit T10): a lending ring needs many "friends".
-      if (friends.count(me) >= MAX_FRIENDS || friends.count(other) >= MAX_FRIENDS) {
-        throw new Error(`limite de ${MAX_FRIENDS} amis atteinte`);
-      }
-      friends.deleteRequest(other, me);
-      friends.deleteRequest(me, other);
-      friends.set(me, other, Math.floor(Date.now() / 1000));
-    } else if (action === "decline") {
-      friends.deleteRequest(other, me);
-    } else if (action === "cancel") {
-      friends.deleteRequest(me, other);
-    } else {
-      friends.remove(me, other);
-    }
-  });
-  console.log(`✔ amis: ${action} ${me} <-> ${other}`);
-  return { ok: true };
-}
-
-export function friendsOf(addr: string): {
-  friends: { addr: string; since: number; name: string | null }[];
-  incoming: { addr: string; name: string | null }[];
-  outgoing: { addr: string; name: string | null }[];
-} {
-  if (!ADDR_RE.test(addr)) throw new Error("adresse invalide");
-  const list = friends.list(addr);
-  const incoming = friends.incoming(addr);
-  const outgoing = friends.outgoing(addr);
-  const names = profiles.names([...list.map((f) => f.addr), ...incoming, ...outgoing]);
-  const nameOf = (a: string): string | null => names[a] ?? null;
-  return {
-    friends: list.map((f) => ({ ...f, name: nameOf(f.addr) })),
-    incoming: incoming.map((a) => ({ addr: a, name: nameOf(a) })),
-    outgoing: outgoing.map((a) => ({ addr: a, name: nameOf(a) })),
-  };
-}
 
 /** L'attestation que lend() vérifie on-chain (EIP-712, liée à UNE licence).
  *  Gratuite, courte durée. */
@@ -305,137 +235,6 @@ export async function attestFriendship(
     },
   });
   return { since, deadline, sig, license };
-}
-
-// ── Profils (décidé 2026-10-07) ──────────────────────────────────────────
-// Pseudo + avatar + favoris, modifiables à volonté par message SIGNÉ (zéro
-// gas, comme les amis). Les pseudos ne sont PAS uniques — la recherche
-// désambiguïse par l'adresse : « Picsou (0x1234…) ». L'avatar est
-// redimensionné côté client ; ici on borne octets + type (magic bytes).
-// Les stats de jeu (cosmétiques) sont poussées par le launcher.
-
-const AVATARS_DIR = join(DATA_DIR, "avatars");
-const AVATAR_MAX_BYTES = 300 * 1024;
-const AVATAR_MIN_BYTES = 256;
-
-const NAME_RE = /^[\p{L}\p{N} _.\-]{2,24}$/u;
-
-function avatarKind(bytes: Uint8Array): string | null {
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
-  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e) return "image/png";
-  if (bytes.length >= 12 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return "image/webp";
-  return null;
-}
-
-export function profileMessage(f: { me: string; name: string; avatar: string; favorites: string; at: string; nonce: string }): string {
-  return ["GameVault Profil", `me: ${f.me}`, `name: ${f.name}`, `avatar: ${f.avatar}`, `favorites: ${f.favorites}`, `at: ${f.at}`, `nonce: ${f.nonce}`].join("\n");
-}
-
-function parseProfileMessage(message: string) {
-  const lines = message.split("\n");
-  if (lines.length !== 7 || lines[0] !== "GameVault Profil") throw new Error("message inattendu");
-  const keys = ["me", "name", "avatar", "favorites", "at", "nonce"];
-  const v: Record<string, string> = {};
-  keys.forEach((k, i) => {
-    const l = lines[i + 1];
-    if (!l.startsWith(`${k}: `) && l !== `${k}:`) throw new Error(`champ ${k} attendu`);
-    v[k] = l.slice(k.length + 2);
-  });
-  const f = { me: v.me, name: v.name, avatar: v.avatar, favorites: v.favorites, at: v.at, nonce: v.nonce };
-  if (profileMessage(f) !== message) throw new Error("message non canonique");
-  return f;
-}
-
-/** Message signé :
- *  GameVault Profil\nme: 0x…\nname: pseudo\navatar: <sha256hex|keep|none>\nfavorites: 1,2\nat: ISO\nnonce: uuid */
-export async function setProfile(message: string, signature: `0x${string}`, avatarB64?: string): Promise<{ ok: true }> {
-  const { me, name, avatar, favorites, at, nonce } = parseProfileMessage(message);
-  if (!ADDR_RE.test(me)) throw new Error("adresse invalide");
-  if (!NAME_RE.test(name)) throw new Error("pseudo invalide (2-24 caractères, lettres/chiffres/espaces/-_.)");
-  const age = Date.now() - Date.parse(at);
-  if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) throw new Error("message expiré");
-  if (nonceUsed(nonce)) throw new Error("nonce déjà utilisé");
-  if (!(await verifyMessage({ address: me as `0x${string}`, message, signature }))) throw new Error("signature invalide");
-  consumeNonce(nonce, NONCE_TTL_MS);
-
-  const favList = favorites
-    ? favorites.split(",").map((s) => s.trim()).filter((s) => /^\d{1,6}$/.test(s)).slice(0, 12)
-    : [];
-
-  const meL = me.toLowerCase();
-  let avatarType = profiles.get(meL)?.avatarType ?? null;
-
-  if (avatar === "none") {
-    avatarType = null;
-  } else if (avatar !== "keep") {
-    if (!avatarB64) throw new Error("avatar annoncé mais absent du corps");
-    const bytes = Buffer.from(avatarB64, "base64");
-    if (bytes.length > AVATAR_MAX_BYTES) throw new Error(`avatar trop lourd (max ${AVATAR_MAX_BYTES / 1024} Ko)`);
-    if (bytes.length < AVATAR_MIN_BYTES) throw new Error("avatar trop petit pour être une image");
-    const kind = avatarKind(bytes);
-    if (!kind) throw new Error("avatar: formats acceptés jpeg/png/webp");
-    if (createHashHex(bytes) !== avatar.toLowerCase()) throw new Error("le hash signé ne correspond pas à l'image envoyée");
-    mkdirSync(AVATARS_DIR, { recursive: true });
-    writeFileSync(join(AVATARS_DIR, meL), bytes);
-    avatarType = kind;
-  }
-
-  profiles.upsert(meL, { name, avatarType, favorites: favList, updatedAt: Date.now() });
-  console.log(`✔ profil: ${me} -> « ${name} »${avatarType ? " (avatar)" : ""}`);
-  return { ok: true };
-}
-
-const createHashHex = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
-
-export function getProfile(addr: string): {
-  addr: string;
-  name: string | null;
-  hasAvatar: boolean;
-  favorites: string[];
-  topPlayed: { editionId: string; seconds: number }[];
-  updatedAt: number | null;
-} {
-  if (!ADDR_RE.test(addr)) throw new Error("adresse invalide");
-  const p = profiles.get(addr);
-  return {
-    addr,
-    name: p?.name ?? null,
-    hasAvatar: Boolean(p?.avatarType),
-    favorites: p?.favorites ?? [],
-    topPlayed: playstats.top(addr, 8),
-    updatedAt: p?.updatedAt ?? null,
-  };
-}
-
-export function getAvatar(addr: string): { bytes: Uint8Array; type: string } | null {
-  if (!ADDR_RE.test(addr)) return null;
-  const p = profiles.get(addr);
-  const file = join(AVATARS_DIR, addr.toLowerCase());
-  if (!p?.avatarType || !existsSync(file)) return null;
-  return { bytes: new Uint8Array(readFileSync(file)), type: p.avatarType };
-}
-
-const fold = (s: string): string => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-
-/** Recherche par pseudo (sous-chaîne, accents ignorés) OU préfixe d'adresse.
- *  Plusieurs « Picsou » ? Chacun revient avec son adresse pour trancher. */
-export function searchProfiles(q: string): { addr: string; name: string; hasAvatar: boolean }[] {
-  const query = q.trim();
-  if (query.length < 2) return [];
-  const byAddr = query.toLowerCase().startsWith("0x");
-  return profiles
-    .all()
-    .filter((p) => (byAddr ? p.addr.startsWith(query.toLowerCase()) : fold(p.name).includes(fold(query))))
-    .slice(0, 10);
-}
-
-/** Stats cosmétiques poussées par le launcher — non signées, locales. */
-export function addPlaystat(addr: string, editionId: string, seconds: number): { ok: true } {
-  if (!ADDR_RE.test(addr) || !/^\d{1,6}$/.test(editionId)) throw new Error("payload invalide");
-  const s = Math.floor(seconds);
-  if (!Number.isFinite(s) || s <= 0 || s > 24 * 3600) throw new Error("durée invalide");
-  playstats.add(addr, editionId, s);
-  return { ok: true };
 }
 
 // ── Device registry (audit T4, 2026-10-07) ──────────────────────────────
@@ -511,6 +310,7 @@ export async function revokeDevice(message: string, signature: `0x${string}`): P
   tx(() => {
     consumeNonce(f.nonce, NONCE_TTL_MS);
     devices.remove(f.me, f.device);
+    sessions.removeDevice(f.me, f.device);
   });
   console.log(`✔ appareil ${f.device.slice(0, 12)}… libéré par ${f.me}`);
   return { ok: true };

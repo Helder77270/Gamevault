@@ -150,6 +150,64 @@ function libraryAddress(): string {
   return state.session?.address ?? localStorage.getItem("gv-watch") ?? "";
 }
 
+// ── Social session (ticketd): the DEVICE key stands in for the wallet ──
+// The launcher has no wallet. Its device key — registered to the paired
+// wallet by ticketd at pairing — opens a 24 h session for chat, presence and
+// play stats. The Rust core builds and signs the proof (fixed format), the
+// webview only forwards it.
+
+let social: { token: string; wallet: string; expiresAt: number } | null = null;
+
+async function socialToken(): Promise<string | null> {
+  const wallet = state.session?.address;
+  if (!wallet) return null; // a watched address has no paired device
+  if (social && social.wallet === wallet.toLowerCase() && social.expiresAt > Date.now() + 60_000) return social.token;
+  try {
+    const proof = await invoke<{ message: string; signature: string }>("device_session_proof", { wallet });
+    const res = await fetch(`${TICKETD_URL}/session/device`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(proof),
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    social = (await res.json()) as { token: string; wallet: string; expiresAt: number };
+    return social.token;
+  } catch {
+    return null; // offline, or this machine is no longer registered
+  }
+}
+
+/** Authenticated ticketd call; null when there is no usable session. */
+async function socialFetch(path: string, body?: unknown): Promise<Response | null> {
+  const call = (token: string) =>
+    fetch(`${TICKETD_URL}${path}`, {
+      method: body === undefined ? "GET" : "POST",
+      headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(4000),
+    });
+  try {
+    let token = await socialToken();
+    if (!token) return null;
+    let res = await call(token);
+    if (res.status === 401) {
+      social = null;
+      token = await socialToken();
+      if (!token) return null;
+      res = await call(token);
+    }
+    return res;
+  } catch {
+    return null;
+  }
+}
+
+/** Presence for friends: online / playing <edition>. Heartbeat every 60 s. */
+function pushPresence(): void {
+  void socialFetch("/presence", { playing: sessionEdition || null });
+}
+
 // ── Play history (local — no on-chain playtime exists) ────────
 
 interface PlayLogEntry {
@@ -180,6 +238,7 @@ function logPlayStart(editionId: string): void {
   writeLog(log);
   sessionEdition = editionId;
   sessionStart = Date.now();
+  pushPresence();
 }
 
 function logPlayEnd(): void {
@@ -191,16 +250,10 @@ function logPlayEnd(): void {
     e.totalSeconds += seconds;
     writeLog(log);
   }
-  // Profil « les plus joués » (cosmétique) — fire and forget vers ticketd
-  const addr = libraryAddress();
-  if (addr && seconds > 0) {
-    void fetch(`${TICKETD_URL}/profile/playstat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ addr, editionId: sessionEdition, seconds }),
-    }).catch(() => {});
-  }
+  // Profil « les plus joués » + activité — session de l'appareil, fire and forget
+  if (seconds > 0) void socialFetch("/profile/playstat", { editionId: sessionEdition, seconds });
   sessionEdition = "";
+  pushPresence();
 }
 
 function recentPlays(): { e: OnchainEdition; log: PlayLogEntry }[] {
@@ -2199,4 +2252,6 @@ window.addEventListener("DOMContentLoaded", () => {
   void runBoot();
   setInterval(() => void refresh(), 2000);
   setInterval(renderChrome, 1000); // bottom-bar clock ticks every second
+  setInterval(pushPresence, 60_000); // friends see "online" / "playing X"
+  pushPresence();
 });

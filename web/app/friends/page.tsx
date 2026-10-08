@@ -1,21 +1,21 @@
 "use client";
 
-// Amis & Prêts — l'amitié vit dans la BDD plateforme (ticketd) : chaque
-// action est un message SIGNÉ par le wallet, ZÉRO transaction, zéro gas.
-// Seul le prêt touche la chaîne : ticketd délivre une attestation
+// Amis & Prêts — l'amitié vit dans la BDD plateforme (ticketd) : une
+// signature ouvre la session (24 h), puis les actions sont gratuites et
+// instantanées. Seul le prêt touche la chaîne : ticketd délivre une attestation
 // « amis depuis T » que lend() vérifie on-chain (règle des 3 jours
 // comprise). endLoan reste une transaction du propriétaire/emprunteur.
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useAccount, usePublicClient, useSignMessage, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import { LICENSE_ABI } from "@gamevault/shared/abi";
 import { DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { fetchOnchainCatalog, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { ConnectButton } from "../components/ConnectButton";
+import { TICKETD_URL, useTicketd } from "../lib/ticketd";
 
 const LICENSE = DEPLOYMENTS.gameLicense as `0x${string}`;
-const TICKETD_URL = process.env.NEXT_PUBLIC_TICKETD_URL ?? "http://localhost:8787";
 const ZERO = "0x0000000000000000000000000000000000000000";
 const DAY = 86400;
 const FRIEND_AGE = 3 * DAY;
@@ -32,7 +32,7 @@ export default function FriendsPage() {
   const { address, isConnected } = useAccount();
   const client = usePublicClient();
   const { writeContractAsync } = useWriteContract();
-  const { signMessageAsync } = useSignMessage();
+  const { authed } = useTicketd();
 
   const [friends, setFriends] = useState<Friend[]>([]);
   const [incoming, setIncoming] = useState<Contact[]>([]);
@@ -114,27 +114,13 @@ export default function FriendsPage() {
     }
   };
 
-  /** Action amis = message signé envoyé à ticketd. Gratuit, instantané. */
+  /** Action amis : session ticketd (une signature par 24 h). Gratuit, instantané. */
   const friendAction = async (action: "request" | "accept" | "decline" | "cancel" | "remove", other: string) => {
     if (!address) return;
     setError("");
     setBusy(`${action}-${other}`);
     try {
-      const message = [
-        "GameVault Amis",
-        `action: ${action}`,
-        `me: ${address}`,
-        `other: ${other}`,
-        `at: ${new Date().toISOString()}`,
-        `nonce: ${crypto.randomUUID()}`,
-      ].join("\n");
-      const signature = await signMessageAsync({ message });
-      const res = await fetch(`${TICKETD_URL}/friends/action`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, signature }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      await authed("/friends/action", { body: { action, other } });
       await refresh();
       if (action === "request") {
         setTarget("");
@@ -160,13 +146,9 @@ export default function FriendsPage() {
     setError("");
     setBusy(`lend-${tokenId}`);
     try {
-      const res = await fetch(`${TICKETD_URL}/friends/attest`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ owner: address, borrower: to, tokenId }),
+      const att = await authed<{ since: number; deadline: number; sig: `0x${string}` }>("/friends/attest", {
+        body: { owner: address, borrower: to, tokenId },
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
-      const att = (await res.json()) as { since: number; deadline: number; sig: `0x${string}` };
       const expires = BigInt(Math.floor(Date.now() / 1000) + Number(days) * DAY);
       const hash = await writeContractAsync({
         address: LICENSE,
@@ -175,6 +157,11 @@ export default function FriendsPage() {
         args: [BigInt(tokenId), to as `0x${string}`, expires, BigInt(att.since), BigInt(att.deadline), att.sig],
       });
       await mined(hash);
+      // The loan shows up as a card in the friends' chat (cosmetic, best effort)
+      const editionId = owned.find((o) => o.tokenId === tokenId)?.editionId;
+      if (editionId) {
+        void authed(`/chat/${to}`, { body: { kind: "loan", loan: { tokenId, editionId, expires: Number(expires) } } }).catch(() => {});
+      }
       await refresh();
     } catch (e) {
       setError(String(e instanceof Error ? ((e as Error & { shortMessage?: string }).shortMessage ?? e.message) : e));
@@ -203,7 +190,8 @@ export default function FriendsPage() {
     <div className="pane" style={{ maxWidth: "52rem" }}>
       <h1>Amis &amp; Prêts</h1>
       <p>
-        L&apos;amitié est <b>gratuite</b> : une simple signature, aucune transaction. Prêter un jeu, c&apos;est
+        L&apos;amitié est <b>gratuite</b> : une signature ouvre votre session pour 24 h, ensuite tout est
+        instantané, sans transaction. Prêter un jeu, c&apos;est
         tendre la cartouche — <em>vous perdez l&apos;accès pendant le prêt</em>. Les garde-fous restent on-chain :
         amis depuis <b>3 jours</b> (attesté par la plateforme), <b>14 jours</b> max, <b>24 h</b> de repos entre
         deux prêts.
@@ -212,7 +200,7 @@ export default function FriendsPage() {
 
       {isConnected && address && (
         <>
-          <h2 className="section">1 · Trouver un ami — pseudo ou adresse, signature, 0 gas</h2>
+          <h2 className="section">1 · Trouver un ami — pseudo ou adresse, 0 gas</h2>
           <p>
             <input
               placeholder="Picsou… ou 0x1234…"
@@ -229,7 +217,7 @@ export default function FriendsPage() {
             <p>
               Adresse complète détectée —{" "}
               <button className="btn" disabled={!!busy} onClick={() => void friendAction("request", target)}>
-                {busy === `request-${target}` ? "Signature…" : `Demander ${short(target)}`}
+                {busy === `request-${target}` ? "Envoi…" : `Demander ${short(target)}`}
               </button>
             </p>
           )}
@@ -241,7 +229,7 @@ export default function FriendsPage() {
                 disabled={!!busy || r.addr.toLowerCase() === address.toLowerCase() || friends.some((f) => f.addr.toLowerCase() === r.addr.toLowerCase())}
                 onClick={() => void friendAction("request", r.addr)}
               >
-                {busy === `request-${r.addr}` ? "Signature…" : "Demander"}
+                {busy === `request-${r.addr}` ? "Envoi…" : "Demander"}
               </button>
             </p>
           ))}
@@ -258,7 +246,7 @@ export default function FriendsPage() {
                     EN ATTENTE DE SON ACCEPTATION
                   </span>{" "}
                   <button className="btn ghost" disabled={!!busy} onClick={() => void friendAction("cancel", c.addr)}>
-                    {busy === `cancel-${c.addr}` ? "Signature…" : "Annuler"}
+                    {busy === `cancel-${c.addr}` ? "Envoi…" : "Annuler"}
                   </button>
                 </p>
               ))}
@@ -272,7 +260,7 @@ export default function FriendsPage() {
                 <p key={c.addr}>
                   <b>{label(c)}</b>{" "}
                   <button className="btn" disabled={!!busy} onClick={() => void friendAction("accept", c.addr)}>
-                    {busy === `accept-${c.addr}` ? "Signature…" : "Accepter"}
+                    {busy === `accept-${c.addr}` ? "Envoi…" : "Accepter"}
                   </button>{" "}
                   <button className="btn ghost" disabled={!!busy} onClick={() => void friendAction("decline", c.addr)}>
                     Refuser

@@ -1,21 +1,23 @@
 "use client";
 
-// Profil — pseudo + avatar + favoris, modifiables à volonté par simple
-// signature (zéro gas, BDD ticketd). L'avatar est redimensionné CÔTÉ
-// CLIENT (256 px max, webp) avant envoi — jamais trop lourd, jamais trop
-// petit. Les pseudos ne sont pas uniques : l'adresse tranche.
+// Mon profil (édition) — pseudo, bio, avatar, favoris, via la session
+// ticketd (une signature par 24 h, zéro gas). La vue publique est /u/<adresse>.
+// L'avatar est redimensionné CÔTÉ CLIENT (256 px, webp) avant envoi. Les
+// pseudos ne sont pas uniques : l'adresse tranche.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useAccount, useSignMessage } from "wagmi";
 import { fetchOnchainCatalog, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { ConnectButton } from "../components/ConnectButton";
 import { PendingPayout } from "../components/PendingPayout";
+import { TICKETD_URL, useTicketd } from "../lib/ticketd";
 
-const TICKETD_URL = process.env.NEXT_PUBLIC_TICKETD_URL ?? "http://localhost:8787";
 
 type ProfileData = {
   name: string | null;
   hasAvatar: boolean;
+  bio: string;
   favorites: string[];
   topPlayed: { editionId: string; seconds: number }[];
 };
@@ -23,7 +25,7 @@ type ProfileData = {
 const fmtDur = (s: number): string => (s < 60 ? "< 1 min" : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${String(Math.round((s % 3600) / 60)).padStart(2, "0")}`);
 
 /** Redimensionne l'image au canvas : carré 256 px, webp q0.85 → ~10-40 Ko. */
-async function shrinkAvatar(file: File): Promise<{ b64: string; hashHex: string }> {
+async function shrinkAvatar(file: File): Promise<{ b64: string }> {
   const img = await createImageBitmap(file);
   const size = 256;
   const canvas = document.createElement("canvas");
@@ -34,22 +36,23 @@ async function shrinkAvatar(file: File): Promise<{ b64: string; hashHex: string 
   ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
   const blob: Blob = await new Promise((r) => canvas.toBlob((b) => r(b!), "image/webp", 0.85));
   const buf = new Uint8Array(await blob.arrayBuffer());
-  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", buf));
   let bin = "";
   for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
-  return { b64: btoa(bin), hashHex: Array.from(hash, (b) => b.toString(16).padStart(2, "0")).join("") };
+  return { b64: btoa(bin) };
 }
 
 export default function ProfilePage() {
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
+  const { authed } = useTicketd();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [catalog, setCatalog] = useState<OnchainEdition[]>([]);
   const [name, setName] = useState("");
+  const [bio, setBio] = useState("");
   const [favorites, setFavorites] = useState<string[]>([]);
-  const [pendingAvatar, setPendingAvatar] = useState<{ b64: string; hashHex: string } | "none" | null>(null);
+  const [pendingAvatar, setPendingAvatar] = useState<{ b64: string } | "none" | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -66,6 +69,7 @@ export default function ProfilePage() {
       const data = (await res.json()) as ProfileData;
       setProfile(data);
       setName(data.name ?? "");
+      setBio(data.bio ?? "");
       setFavorites(data.favorites);
       const dev = await fetch(`${TICKETD_URL}/devices/${address}`);
       if (dev.ok) setDevices(await dev.json());
@@ -128,23 +132,8 @@ export default function ProfilePage() {
     setSaved(false);
     setBusy(true);
     try {
-      const avatarField = pendingAvatar === "none" ? "none" : pendingAvatar ? pendingAvatar.hashHex : "keep";
-      const message = [
-        "GameVault Profil",
-        `me: ${address}`,
-        `name: ${name.trim()}`,
-        `avatar: ${avatarField}`,
-        `favorites: ${favorites.join(",")}`,
-        `at: ${new Date().toISOString()}`,
-        `nonce: ${crypto.randomUUID()}`,
-      ].join("\n");
-      const signature = await signMessageAsync({ message });
-      const res = await fetch(`${TICKETD_URL}/profile`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, signature, avatarB64: pendingAvatar && pendingAvatar !== "none" ? pendingAvatar.b64 : undefined }),
-      });
-      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
+      const avatar = pendingAvatar === "none" ? "none" : pendingAvatar ? pendingAvatar.b64 : "keep";
+      await authed("/profile", { body: { name: name.trim(), bio, favorites, avatar } });
       setPendingAvatar(null);
       setPreview(null);
       setAvatarBust(Date.now());
@@ -161,14 +150,24 @@ export default function ProfilePage() {
 
   const titleOf = (id: string): string => catalog.find((e) => e.editionId === id)?.title ?? `Édition #${id}`;
   const avatarUrl = preview ?? (profile?.hasAvatar && pendingAvatar !== "none" ? `${TICKETD_URL}/profile/avatar/${address}?t=${avatarBust}` : null);
-  const dirty = name.trim() !== (profile?.name ?? "") || pendingAvatar !== null || favorites.join(",") !== (profile?.favorites ?? []).join(",");
+  const dirty =
+    name.trim() !== (profile?.name ?? "") ||
+    bio !== (profile?.bio ?? "") ||
+    pendingAvatar !== null ||
+    favorites.join(",") !== (profile?.favorites ?? []).join(",");
 
   return (
     <div className="pane" style={{ maxWidth: "44rem" }}>
       <h1>Mon profil</h1>
       <p>
-        Pseudo et avatar, modifiables quand vous voulez — une signature, <b>zéro transaction</b>. Vos amis vous
+        Pseudo, bio, avatar et vitrine, modifiables quand vous voulez — <b>zéro transaction</b>. Vos amis vous
         trouvent par pseudo <em>ou</em> par adresse (les pseudos ne sont pas uniques : l&apos;adresse départage).
+        {address && (
+          <>
+            {" "}
+            <Link href={`/u/${address}`}>Voir mon profil public →</Link>
+          </>
+        )}
       </p>
       {!isConnected && <ConnectButton />}
 
@@ -212,6 +211,16 @@ export default function ProfilePage() {
             <span className="addr"> ({address.slice(0, 6)}…{address.slice(-4)})</span>
           </p>
 
+          <h2 className="section">À propos ({bio.length}/500)</h2>
+          <textarea
+            value={bio}
+            maxLength={500}
+            rows={4}
+            placeholder="Ce que vous aimez jouer, vos disponibilités pour les prêts…"
+            onChange={(e) => setBio(e.target.value)}
+            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", font: "inherit" }}
+          />
+
           <h2 className="section">Favoris ({favorites.length}/12)</h2>
           <p className="addr">Cliquez pour épingler vos jeux préférés sur votre profil.</p>
           <p>
@@ -230,7 +239,7 @@ export default function ProfilePage() {
 
           <p>
             <button className="btn" disabled={busy || !dirty || name.trim().length < 2 || name.trim().length > 24} onClick={() => void save()}>
-              {busy ? "Signature…" : "Enregistrer le profil"}
+              {busy ? "Enregistrement…" : "Enregistrer le profil"}
             </button>{" "}
             {saved && <span style={{ color: "var(--ok)" }}>✔ enregistré</span>}
           </p>

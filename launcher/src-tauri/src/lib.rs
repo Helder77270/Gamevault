@@ -202,6 +202,32 @@ fn native_status(native: tauri::State<NativeSession>) -> Value {
 }
 
 /// This machine's device pubkey (creates the keypair on first call).
+/// Proof that opens a ticketd SOCIAL session (chat, presence, play stats):
+/// the launcher has no wallet, so its device key — registered to the wallet
+/// when it paired a ticket — stands in. The message is built HERE with a
+/// fixed, domain-separated header, a fresh timestamp and a random nonce: the
+/// webview can ask for a session proof, never make the key sign anything else.
+#[tauri::command]
+fn device_session_proof(wallet: String) -> Result<Value, String> {
+    let valid = wallet.len() == 42 && wallet.starts_with("0x") && wallet[2..].chars().all(|c| c.is_ascii_hexdigit());
+    if !valid {
+        return Err("adresse de wallet invalide".into());
+    }
+    let device = crypto::device_pubkey_hex()?;
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    let mut nonce = [0u8; 16];
+    getrandom::getrandom(&mut nonce).map_err(|e| e.to_string())?;
+    let message = format!(
+        "GameVault Device Session\nwallet: {wallet}\ndevice: {device}\nat: {at}\nnonce: {}",
+        hex::encode(nonce)
+    );
+    let signature = crypto::device_sign(message.as_bytes())?;
+    Ok(serde_json::json!({ "message": message, "signature": hex::encode(signature) }))
+}
+
 #[tauri::command]
 fn get_device_pubkey() -> Result<String, String> {
     crypto::device_pubkey_hex()
@@ -294,6 +320,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            device_session_proof,
             scan_cartridges,
             play_game,
             stop_game,

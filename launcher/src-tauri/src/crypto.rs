@@ -48,6 +48,23 @@ pub fn device_pubkey_hex() -> Result<String, String> {
     Ok(format!("0x{}", hex::encode(point.as_bytes())))
 }
 
+/// ECDSA over sha256(message), compact r||s with low s — what ticketd checks
+/// with @noble/curves secp256k1.verify.
+pub fn sign_prehash_with(priv_key: &[u8; 32], message: &[u8]) -> Result<[u8; 64], String> {
+    use k256::ecdsa::signature::hazmat::PrehashSigner;
+    use k256::ecdsa::{Signature, SigningKey};
+    let key = SigningKey::from_slice(priv_key).map_err(|e| e.to_string())?;
+    let sig: Signature = key.sign_prehash(&Sha256::digest(message)).map_err(|e| e.to_string())?;
+    let sig = sig.normalize_s().unwrap_or(sig);
+    Ok(sig.to_bytes().into())
+}
+
+/// Signs with the DEVICE key from the keystore. Only lib.rs calls this, on a
+/// message it builds itself (never a webview-supplied payload).
+pub fn device_sign(message: &[u8]) -> Result<[u8; 64], String> {
+    sign_prehash_with(&device_priv()?, message)
+}
+
 fn aes_key_from_ecdh(scalar_bytes: &[u8; 32], peer_pub: &[u8]) -> Result<[u8; 32], String> {
     let secret = SecretKey::from_slice(scalar_bytes).map_err(|e| e.to_string())?;
     let peer = PublicKey::from_sec1_bytes(peer_pub).map_err(|e| e.to_string())?;
@@ -81,4 +98,29 @@ pub fn decrypt_build(enc: &[u8], content_key: &[u8]) -> Result<Vec<u8>, String> 
     }
     let (nonce, ciphertext) = enc.split_at(NONCE_LEN);
     gcm_decrypt(content_key, nonce, ciphertext)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use k256::ecdsa::signature::hazmat::PrehashVerifier;
+    use k256::ecdsa::{Signature, VerifyingKey};
+
+    #[test]
+    fn device_signature_verifies_over_sha256_prehash() {
+        let priv_key = [7u8; 32];
+        let msg = b"GameVault Device Session\nwallet: 0x0000000000000000000000000000000000000001";
+        let sig = sign_prehash_with(&priv_key, msg).unwrap();
+        let vk = VerifyingKey::from(SecretKey::from_slice(&priv_key).unwrap().public_key());
+        let parsed = Signature::from_slice(&sig).unwrap();
+        assert!(parsed.normalize_s().is_none(), "low-s expected");
+        assert!(vk.verify_prehash(&Sha256::digest(msg), &parsed).is_ok());
+        assert!(vk.verify_prehash(&Sha256::digest(b"another message"), &parsed).is_err());
+        // Cross-vector: @noble/curves (ticketd) signs the same bytes identically
+        // (RFC 6979 deterministic nonces) — computed with secp256k1.sign().
+        assert_eq!(
+            hex::encode(sig),
+            "9bad8d271565390667511988ad6bc4c53b1c61374f504b31a66da8573d8724482eddc57118d4c08d231995554d1e4bf8c7c81a4ac5f37e79f9bab4c578cda8be"
+        );
+    }
 }

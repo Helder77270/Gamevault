@@ -14,14 +14,20 @@ web app and the launcher, every request body size-capped.
 | `GET /pending/:nonce` | launcher | nonce | hand the ticket over once (10 min, memory) |
 | `POST /publish` | web `/studio` | studio-signed message in `X-GameVault-Message` / `X-GameVault-Signature` | encrypt with a fresh key, pin to IPFS, store the key |
 | `GET /build/:cid` | launcher | – | build mirror: builds cached at publish, otherwise on-chain CIDs fetched from IPFS and sha256-checked |
-| `GET /devices/:wallet`, `GET /devices/:wallet/:pubkey/status`, `POST /devices/revoke` | web, launcher | revoke is signed | 2 active devices per account |
-| `GET /friends/:addr`, `POST /friends/action`, `POST /friends/attest` | web, launcher | actions are signed | friends (DB, zero gas) + EIP-712 attestation for `lend()` |
+| `POST /session` · `POST /session/device` · `GET`/`DELETE /session` | web · launcher | one wallet signature · device-key proof built by the Rust core | 24 h social session (Bearer token, only its hash is stored) |
+| `GET /devices/:wallet`, `GET /devices/:wallet/:pubkey/status`, `POST /devices/revoke` | web, launcher | revoke is signed | 2 active devices per account (revoke also closes that device's sessions) |
+| `GET /friends/:addr`, `POST /friends/action`, `POST /friends/attest` | web, launcher | session (attest: owner only) | friends (DB, zero gas) + EIP-712 attestation for `lend()` |
 | `POST /friends/backdate` | dev only | `GAMEVAULT_DEV=1` | simulate a 3-day-old friendship |
-| `GET /profile/:addr`, `GET /profile/avatar/:addr`, `GET /profile/search?q=`, `POST /profile` | web | profile save is signed | pseudo, avatar, favorites |
-| `POST /profile/playstat` | launcher | – (cosmetic) | play time for "most played" |
+| `GET /profile/:addr`, `GET /profile/avatar/:addr`, `GET /profile/search?q=`, `GET /profiles/names?a=` | web, launcher | – | public profile (bio, presence, friends, activity, play time) |
+| `POST /profile` | web | session | pseudo, bio, avatar, favorites |
+| `POST /profile/playstat`, `POST /presence` | launcher | device session | play time + activity; online / playing presence |
+| `GET`/`POST /studio/:id/page` | web | write: session of the studio's on-chain owner | studio public page (description, links, team) |
+| `GET /chat`, `GET`/`POST /chat/:addr`, `POST /chat/:addr/read` | web, launcher | session, friends only | chat (text + loan cards), unread counters |
+| `GET /events?token=` | web, launcher | session token | live stream (SSE): message, read, presence, friends |
 
-Every signed message: exact canonical format, ≤ 10 min old, single-use nonce
-persisted in SQLite (no replay after a restart).
+Signed messages (pairing, publish, device revoke, session opening): exact
+canonical format, ≤ 10 min old, single-use nonce persisted in SQLite (no
+replay after a restart). Social actions then use the session token.
 
 ## Ticket issuance (`POST /ticket`)
 1. Parse and byte-compare the SIWE pairing message; chain + contract must match.
@@ -36,7 +42,8 @@ persisted in SQLite (no replay after a restart).
 ## Storage
 `data/ticketd.db` (SQLite, WAL): `content_keys` (encrypted with
 `KEYSTORE_MASTER_KEY`, CID as AAD), `nonces`, `friend_requests`,
-`friendships`, `profiles`, `playstats`, `devices`. Avatars and cached builds
+`friendships`, `profiles` (+ bio, member since), `playstats`, `devices`,
+`sessions`, `activity`, `studio_pages`, `messages`. Avatars and cached builds
 are files under `data/`. Backup: `npm run backup -w @gamevault/ticketd`
 (the master key is deliberately not in the backup).
 

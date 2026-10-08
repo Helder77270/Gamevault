@@ -1,31 +1,47 @@
-// Thin HTTP wrapper around service.ts. Zero framework. Routes (details in
-// ticketd/README.md): /health, /ticket + /pending/:nonce (pairing),
-// /publish + /build/:cid (studio builds), /profile*, /devices*, /friends*.
-// Binds to 127.0.0.1 by default (HOST overrides), CORS restricted to the
-// known front-ends, every request body size-capped.
+// Thin HTTP wrapper around service.ts (tickets, builds, devices) and
+// social.ts (sessions, profiles, friends, studio pages, chat). Zero
+// framework. Routes: ticketd/README.md. Binds to 127.0.0.1 by default (HOST
+// overrides), CORS restricted to the known front-ends, every request body
+// size-capped.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
-  addPlaystat,
-  applyFriendAction,
   attestFriendship,
   backdateFriendship,
   devicesOf,
   deviceStatus,
-  friendsOf,
-  getAvatar,
   getBuild,
-  getProfile,
   issueTicket,
   revokeDevice,
-  searchProfiles,
-  setProfile,
   takePendingTicket,
   publishBuild,
 } from "./service.ts";
+import {
+  Unauthorized,
+  addPlaystat,
+  authWallet,
+  chatSummary,
+  chatThread,
+  closeSession,
+  friendAction,
+  friendsOf,
+  getAvatar,
+  getProfile,
+  getStudioPage,
+  markRead,
+  namesOf,
+  openDeviceSession,
+  openWebSession,
+  saveProfile,
+  saveStudioPage,
+  searchProfiles,
+  sendMessage,
+  setPresence,
+  subscribe,
+} from "./social.ts";
 
 const MAX_UPLOAD = 100 * 1024 * 1024; // 100 MB (studio builds)
-const MAX_JSON = 16 * 1024; // signed messages
+const MAX_JSON = 16 * 1024; // signed messages, chat, studio page
 const MAX_PROFILE = 600 * 1024; // profile + base64 avatar
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -41,6 +57,8 @@ const ALLOWED_ORIGINS = new Set([
   "tauri://localhost", // launcher webview, macOS/Linux release
   ...(process.env.CORS_ORIGINS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
 ]);
+
+const ADDR = "(0x[0-9a-fA-F]{40})";
 
 class BodyTooLarge extends Error {}
 
@@ -76,8 +94,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     origin && ALLOWED_ORIGINS.has(origin)
       ? {
           "Access-Control-Allow-Origin": origin,
-          "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type, X-GameVault-Message, X-GameVault-Signature",
+          "Access-Control-Allow-Methods": "POST, GET, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, X-GameVault-Message, X-GameVault-Signature",
           Vary: "Origin",
         }
       : {};
@@ -87,7 +105,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   };
   const fail = (status: number, scope: string, e: unknown) => {
     console.warn(`⛔ ${scope}: ${e instanceof Error ? e.message : e}`);
-    return send(e instanceof BodyTooLarge ? 413 : status, { error: publicError(e) });
+    const code = e instanceof BodyTooLarge ? 413 : e instanceof Unauthorized ? 401 : status;
+    return send(code, { error: publicError(e) });
   };
 
   // Route on the PATH only: a query string (e.g. the avatar's ?t= cache
@@ -97,19 +116,58 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   const qi = raw.indexOf("?");
   const path = qi < 0 ? raw : raw.slice(0, qi);
   const query = new URLSearchParams(qi < 0 ? "" : raw.slice(qi + 1));
+  const GET = req.method === "GET";
+  const POST = req.method === "POST";
+  const match = (re: string) => path.match(new RegExp(`^${re}$`));
+  const session = () => authWallet(req.headers.authorization);
 
   if (req.method === "OPTIONS") return send(204, {});
-  if (req.method === "GET" && path === "/health") return send(200, { ok: true });
+  if (GET && path === "/health") return send(200, { ok: true });
 
   // Launcher polls here after showing the pairing QR
-  const pendingMatch = req.method === "GET" && path.match(/^\/pending\/([\w-]+)$/);
+  const pendingMatch = GET && match("/pending/([\\w-]+)");
   if (pendingMatch) {
     const ticket = takePendingTicket(pendingMatch[1]);
     return ticket ? send(200, ticket) : send(404, { error: "no ticket yet" });
   }
 
-  // ── Profils : pseudo + avatar + favoris, signés ; recherche ──
-  const avatarMatch = req.method === "GET" && path.match(/^\/profile\/avatar\/(0x[0-9a-fA-F]{40})$/);
+  // ── Sessions: one wallet signature (web) or the device key (launcher) ──
+  if (path === "/session") {
+    try {
+      if (POST) {
+        const { message, signature } = await readJson(req);
+        return send(200, await openWebSession(String(message ?? ""), String(signature ?? "") as `0x${string}`));
+      }
+      if (GET) return send(200, session());
+      if (req.method === "DELETE") return send(200, closeSession(req.headers.authorization));
+    } catch (e) {
+      return fail(403, "session", e);
+    }
+  }
+  if (POST && path === "/session/device") {
+    try {
+      const { message, signature } = await readJson(req);
+      return send(200, openDeviceSession(String(message ?? ""), String(signature ?? "")));
+    } catch (e) {
+      return fail(403, "session appareil", e);
+    }
+  }
+
+  // ── Live events (SSE): token in the query, EventSource can't set headers ──
+  if (GET && path === "/events") {
+    try {
+      const { wallet } = authWallet(query.get("token") ?? undefined);
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive", ...cors });
+      res.write(": connected\n\n");
+      subscribe(wallet, res);
+      return;
+    } catch (e) {
+      return fail(401, "events", e);
+    }
+  }
+
+  // ── Profiles: public read, session write ─────────────────────────────
+  const avatarMatch = GET && match(`/profile/avatar/${ADDR}`);
   if (avatarMatch) {
     const av = getAvatar(avatarMatch[1]);
     if (!av) return send(404, { error: "pas d'avatar" });
@@ -123,11 +181,9 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     res.end(Buffer.from(av.bytes));
     return;
   }
-  if (req.method === "GET" && path === "/profile/search") {
-    const q = query.get("q") ?? "";
-    return send(200, searchProfiles(q));
-  }
-  const profileMatch = req.method === "GET" && path.match(/^\/profile\/(0x[0-9a-fA-F]{40})$/);
+  if (GET && path === "/profile/search") return send(200, searchProfiles(query.get("q") ?? ""));
+  if (GET && path === "/profiles/names") return send(200, namesOf((query.get("a") ?? "").split(",")));
+  const profileMatch = GET && match(`/profile/${ADDR}`);
   if (profileMatch) {
     try {
       return send(200, getProfile(profileMatch[1]));
@@ -135,21 +191,49 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return fail(400, "profil", e);
     }
   }
-  if (req.method === "POST" && path.startsWith("/profile")) {
+  if (POST && path === "/profile") {
     try {
-      const body = await readJson(req, MAX_PROFILE);
-      if (path === "/profile") {
-        return send(200, await setProfile(String(body.message ?? ""), String(body.signature ?? "") as `0x${string}`, body.avatarB64 as string | undefined));
-      }
-      if (path === "/profile/playstat") return send(200, addPlaystat(String(body.addr), String(body.editionId), Number(body.seconds)));
-      return send(404, { error: "not found" });
+      return send(200, saveProfile(session().wallet, await readJson(req, MAX_PROFILE)));
     } catch (e) {
       return fail(403, "profil", e);
     }
   }
+  if (POST && path === "/profile/playstat") {
+    try {
+      const { editionId, seconds } = await readJson(req);
+      return send(200, addPlaystat(session().wallet, String(editionId), Number(seconds)));
+    } catch (e) {
+      return fail(403, "playstat", e);
+    }
+  }
+  if (POST && path === "/presence") {
+    try {
+      const { playing } = await readJson(req);
+      return send(200, setPresence(session().wallet, playing == null ? null : String(playing)));
+    } catch (e) {
+      return fail(403, "présence", e);
+    }
+  }
 
-  // ── Device registry: 2 active machines per account ───────────
-  const devStatus = req.method === "GET" && path.match(/^\/devices\/(0x[0-9a-fA-F]{40})\/(0x[0-9a-fA-F]{66})\/status$/);
+  // ── Studio public pages ──────────────────────────────────────────────
+  const studioMatch = match("/studio/(\\d{1,9})/page");
+  if (studioMatch && GET) {
+    try {
+      return send(200, getStudioPage(studioMatch[1]));
+    } catch (e) {
+      return fail(400, "studio", e);
+    }
+  }
+  if (studioMatch && POST) {
+    try {
+      return send(200, await saveStudioPage(session().wallet, studioMatch[1], await readJson(req)));
+    } catch (e) {
+      return fail(403, "studio", e);
+    }
+  }
+
+  // ── Device registry: 2 active machines per account ───────────────────
+  const devStatus = GET && match(`/devices/${ADDR}/(0x[0-9a-fA-F]{66})/status`);
   if (devStatus) {
     try {
       return send(200, deviceStatus(devStatus[1], devStatus[2]));
@@ -157,7 +241,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return fail(400, "appareils", e);
     }
   }
-  const devList = req.method === "GET" && path.match(/^\/devices\/(0x[0-9a-fA-F]{40})$/);
+  const devList = GET && match(`/devices/${ADDR}`);
   if (devList) {
     try {
       return send(200, devicesOf(devList[1]));
@@ -165,7 +249,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return fail(400, "appareils", e);
     }
   }
-  if (req.method === "POST" && path === "/devices/revoke") {
+  if (POST && path === "/devices/revoke") {
     try {
       const body = await readJson(req);
       return send(200, await revokeDevice(String(body.message ?? ""), String(body.signature ?? "") as `0x${string}`));
@@ -174,8 +258,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     }
   }
 
-  // ── Friends DB: wallet-signed actions, zero gas ──────────────
-  const friendsMatch = req.method === "GET" && path.match(/^\/friends\/(0x[0-9a-fA-F]{40})$/);
+  // ── Friends (session, zero gas) + lending attestation ────────────────
+  const friendsMatch = GET && match(`/friends/${ADDR}`);
   if (friendsMatch) {
     try {
       return send(200, friendsOf(friendsMatch[1]));
@@ -183,13 +267,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return fail(400, "amis", e);
     }
   }
-  if (req.method === "POST" && path.startsWith("/friends/")) {
+  if (POST && path.startsWith("/friends/")) {
     try {
       const body = await readJson(req);
-      if (path === "/friends/action") {
-        return send(200, await applyFriendAction(String(body.message ?? ""), String(body.signature ?? "") as `0x${string}`));
-      }
+      if (path === "/friends/action") return send(200, friendAction(session().wallet, String(body.action), String(body.other)));
       if (path === "/friends/attest") {
+        const me = session().wallet;
+        if (me !== String(body.owner).toLowerCase()) throw new Error("seul le propriétaire peut demander l'attestation de prêt");
         return send(200, await attestFriendship(String(body.owner), String(body.borrower), String(body.tokenId)));
       }
       if (path === "/friends/backdate") {
@@ -204,9 +288,42 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     }
   }
 
+  // ── Chat (friends only, session) ─────────────────────────────────────
+  if (GET && path === "/chat") {
+    try {
+      return send(200, chatSummary(session().wallet));
+    } catch (e) {
+      return fail(403, "chat", e);
+    }
+  }
+  const chatRead = POST && match(`/chat/${ADDR}/read`);
+  if (chatRead) {
+    try {
+      const { upTo } = await readJson(req);
+      return send(200, markRead(session().wallet, chatRead[1], Number(upTo)));
+    } catch (e) {
+      return fail(403, "chat", e);
+    }
+  }
+  const chatMatch = match(`/chat/${ADDR}`);
+  if (chatMatch && GET) {
+    try {
+      return send(200, chatThread(session().wallet, chatMatch[1], Number(query.get("after") ?? 0)));
+    } catch (e) {
+      return fail(403, "chat", e);
+    }
+  }
+  if (chatMatch && POST) {
+    try {
+      return send(200, sendMessage(session().wallet, chatMatch[1], await readJson(req)));
+    } catch (e) {
+      return fail(403, "chat", e);
+    }
+  }
+
   // Build distribution: local cache first, IPFS gateways as backup.
   // The client still verifies sha256 against the on-chain hash.
-  const buildMatch = req.method === "GET" && path.match(/^\/build\/([A-Za-z0-9]{10,100})$/);
+  const buildMatch = GET && match("/build/([A-Za-z0-9]{10,100})");
   if (buildMatch) {
     try {
       const bytes = await getBuild(buildMatch[1]);
@@ -220,7 +337,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   // Studio publish: raw build bytes in, studio-signed request in headers
   // (message base64 — headers cannot carry newlines) -> encrypted + pinned.
-  if (req.method === "POST" && path === "/publish") {
+  if (POST && path === "/publish") {
     try {
       const msgB64 = req.headers["x-gamevault-message"];
       const signature = req.headers["x-gamevault-signature"];
@@ -235,7 +352,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     }
   }
 
-  if (req.method === "POST" && path === "/ticket") {
+  if (POST && path === "/ticket") {
     try {
       const { message, signature } = await readJson(req);
       if (typeof message !== "string" || typeof signature !== "string") {
