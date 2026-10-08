@@ -1,5 +1,7 @@
 // ticketd persistence — SQLite via node:sqlite (no native dependency).
-// Replaces the JSON files (audit T11/T12): atomic transactions, persisted
+// Replaced the JSON files on 2026-10-07 (audit T11/T12; one-time migration
+// done — the plaintext key copy was deleted, the other *.migrated.json files
+// hold no secret): atomic transactions, persisted
 // nonces (no replay after a restart), content keys ENCRYPTED AT REST with
 // a master key from the environment (AES-256-GCM, the CID bound as AAD so
 // a ciphertext cannot be moved to another build).
@@ -10,7 +12,7 @@
 // OUTSIDE this machine (password manager).
 
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, mkdirSync, readFileSync, renameSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -78,7 +80,6 @@ export function db(): DatabaseSync {
   conn = new DatabaseSync(inMemory ? ":memory:" : join(DATA_DIR, "ticketd.db"));
   conn.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;");
   conn.exec(SCHEMA);
-  if (!inMemory) migrateLegacyJson(conn);
   return conn;
 }
 
@@ -141,10 +142,6 @@ export function putContentKey(cid: string, key: Uint8Array, publisher: string | 
   db()
     .prepare("INSERT OR REPLACE INTO content_keys (cid, key_enc, publisher, studio_id, created_at) VALUES (?, ?, ?, ?, ?)")
     .run(cid, sealKey(cid, key), publisher, studioId, Date.now());
-}
-
-export function deleteContentKey(cid: string): void {
-  db().prepare("DELETE FROM content_keys WHERE cid = ?").run(cid);
 }
 
 // ── Nonces (persisted: a signed message can never be replayed) ─────────
@@ -232,7 +229,7 @@ export const profiles = {
       .prepare("INSERT OR REPLACE INTO profiles (addr, name, avatar_type, favorites, updated_at) VALUES (?, ?, ?, ?, ?)")
       .run(addr.toLowerCase(), p.name, p.avatarType, JSON.stringify(p.favorites), p.updatedAt);
   },
-  /** Name lookup for a set of addresses (friends lists, search results). */
+  /** Name lookup for a set of addresses (friends lists). */
   names(addrs: string[]): Record<string, string> {
     const out: Record<string, string> = {};
     const stmt = db().prepare("SELECT name FROM profiles WHERE addr = ?");
@@ -296,60 +293,3 @@ export const devices = {
     db().prepare("DELETE FROM devices WHERE wallet = ? AND pubkey = ?").run(wallet.toLowerCase(), pubkey.toLowerCase());
   },
 };
-
-// ── One-time migration from the JSON files ─────────────────────────────
-// Each file is imported in one transaction, then renamed *.migrated.json
-// (kept for manual verification — content-keys.migrated.json holds keys
-// IN CLEAR: delete it once the DB is confirmed).
-
-function migrateLegacyJson(d: DatabaseSync): void {
-  const file = (n: string) => join(DATA_DIR, n);
-  const take = (n: string): unknown => {
-    const p = file(n);
-    if (!existsSync(p)) return undefined;
-    return JSON.parse(readFileSync(p, "utf8"));
-  };
-  const done = (n: string) => renameSync(file(n), file(n.replace(/\.json$/, ".migrated.json")));
-  const run = (n: string, fn: (data: never) => void) => {
-    const data = take(n);
-    if (data === undefined) return;
-    d.exec("BEGIN IMMEDIATE");
-    try {
-      fn(data as never);
-      d.exec("COMMIT");
-    } catch (e) {
-      d.exec("ROLLBACK");
-      throw new Error(`migration ${n} : ${e instanceof Error ? e.message : e}`);
-    }
-    done(n);
-    console.log(`↪ ${n} migré vers SQLite`);
-  };
-
-  run("content-keys.json", (data: Record<string, string | { key: string; publisher: string; studioId: string }>) => {
-    for (const [cid, v] of Object.entries(data)) {
-      const rec = typeof v === "string" ? { key: v, publisher: null, studioId: null } : v;
-      putContentKey(cid, Uint8Array.from(Buffer.from(rec.key.replace(/^0x/, ""), "hex")), rec.publisher, rec.studioId);
-    }
-  });
-  run("friends.json", (data: { requests: Record<string, number>; friendships: Record<string, number> }) => {
-    for (const [k, at] of Object.entries(data.requests ?? {})) {
-      const [from, to] = k.split("|");
-      d.prepare("INSERT OR REPLACE INTO friend_requests (from_addr, to_addr, at) VALUES (?, ?, ?)").run(from, to, at);
-    }
-    for (const [k, since] of Object.entries(data.friendships ?? {})) {
-      const [lo, hi] = k.split("|");
-      d.prepare("INSERT OR REPLACE INTO friendships (lo, hi, since) VALUES (?, ?, ?)").run(lo, hi, since);
-    }
-  });
-  run("profiles.json", (data: Record<string, { name: string; avatarType?: string; favorites: string[]; updatedAt: number }>) => {
-    for (const [addr, p] of Object.entries(data)) {
-      profiles.upsert(addr, { name: p.name, avatarType: p.avatarType ?? null, favorites: p.favorites ?? [], updatedAt: p.updatedAt ?? Date.now() });
-    }
-  });
-  run("playstats.json", (data: Record<string, Record<string, number>>) => {
-    for (const [addr, eds] of Object.entries(data)) for (const [ed, s] of Object.entries(eds)) playstats.add(addr, ed, s);
-  });
-  run("devices.json", (data: Record<string, { pubkey: string; pairedAt: number; lastSeen: number }[]>) => {
-    for (const [wallet, list] of Object.entries(data)) for (const dv of list) devices.upsert(wallet, dv);
-  });
-}

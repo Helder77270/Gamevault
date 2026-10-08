@@ -147,6 +147,13 @@ export default function FriendsPage() {
     setBusy("");
   };
 
+  /** Wait until the transaction is mined before re-reading the chain. */
+  const mined = async (hash: `0x${string}`) => {
+    if (!client) return;
+    const receipt = await client.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error("transaction annulée on-chain");
+  };
+
   /** Prêt : attestation gratuite de ticketd, puis UNE transaction lend(). */
   const lendTo = async (tokenId: string, to: string) => {
     if (!address) return;
@@ -161,13 +168,13 @@ export default function FriendsPage() {
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText);
       const att = (await res.json()) as { since: number; deadline: number; sig: `0x${string}` };
       const expires = BigInt(Math.floor(Date.now() / 1000) + Number(days) * DAY);
-      await writeContractAsync({
+      const hash = await writeContractAsync({
         address: LICENSE,
         abi: LICENSE_ABI,
         functionName: "lend",
         args: [BigInt(tokenId), to as `0x${string}`, expires, BigInt(att.since), BigInt(att.deadline), att.sig],
       });
-      await new Promise((r) => setTimeout(r, 4000));
+      await mined(hash);
       await refresh();
     } catch (e) {
       setError(String(e instanceof Error ? ((e as Error & { shortMessage?: string }).shortMessage ?? e.message) : e));
@@ -179,8 +186,8 @@ export default function FriendsPage() {
     setError("");
     setBusy(`end-${tokenId}`);
     try {
-      await writeContractAsync({ address: LICENSE, abi: LICENSE_ABI, functionName: "endLoan", args: [BigInt(tokenId)] });
-      await new Promise((r) => setTimeout(r, 4000));
+      const hash = await writeContractAsync({ address: LICENSE, abi: LICENSE_ABI, functionName: "endLoan", args: [BigInt(tokenId)] });
+      await mined(hash);
       await refresh();
     } catch (e) {
       setError(String(e instanceof Error ? ((e as Error & { shortMessage?: string }).shortMessage ?? e.message) : e));

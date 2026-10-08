@@ -10,6 +10,16 @@ export const LICENSE_ABI = [
     outputs: [{ type: "address" }],
   },
   {
+    name: "isApprovedForAll",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "operator", type: "address" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
     name: "getApproved",
     type: "function",
     stateMutability: "view",
@@ -32,6 +42,13 @@ export const LICENSE_ABI = [
     stateMutability: "payable",
     inputs: [{ name: "editionId", type: "uint256" }],
     outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "transferCount",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "tokenId", type: "uint256" }],
+    outputs: [{ name: "", type: "uint256" }],
   },
   {
     name: "editionOf",

@@ -1,6 +1,6 @@
-// Thin HTTP wrapper around service.ts. Zero framework.
-//   POST /ticket  { message, signature } -> SignedTicket
-//   GET  /health
+// Thin HTTP wrapper around service.ts. Zero framework. Routes (details in
+// ticketd/README.md): /health, /ticket + /pending/:nonce (pairing),
+// /publish + /build/:cid (studio builds), /profile*, /devices*, /friends*.
 // Binds to 127.0.0.1 by default (HOST overrides), CORS restricted to the
 // known front-ends, every request body size-capped.
 
@@ -17,7 +17,6 @@ import {
   getBuild,
   getProfile,
   issueTicket,
-  resolveNames,
   revokeDevice,
   searchProfiles,
   setProfile,
@@ -91,18 +90,26 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return send(e instanceof BodyTooLarge ? 413 : status, { error: publicError(e) });
   };
 
+  // Route on the PATH only: a query string (e.g. the avatar's ?t= cache
+  // buster) must not make a route miss. Plain string split — `new URL()`
+  // throws on targets Node accepts (e.g. "//"), which would kill the process.
+  const raw = req.url ?? "/";
+  const qi = raw.indexOf("?");
+  const path = qi < 0 ? raw : raw.slice(0, qi);
+  const query = new URLSearchParams(qi < 0 ? "" : raw.slice(qi + 1));
+
   if (req.method === "OPTIONS") return send(204, {});
-  if (req.method === "GET" && req.url === "/health") return send(200, { ok: true });
+  if (req.method === "GET" && path === "/health") return send(200, { ok: true });
 
   // Launcher polls here after showing the pairing QR
-  const pendingMatch = req.method === "GET" && req.url?.match(/^\/pending\/([\w-]+)$/);
+  const pendingMatch = req.method === "GET" && path.match(/^\/pending\/([\w-]+)$/);
   if (pendingMatch) {
     const ticket = takePendingTicket(pendingMatch[1]);
     return ticket ? send(200, ticket) : send(404, { error: "no ticket yet" });
   }
 
   // ── Profils : pseudo + avatar + favoris, signés ; recherche ──
-  const avatarMatch = req.method === "GET" && req.url?.match(/^\/profile\/avatar\/(0x[0-9a-fA-F]{40})$/);
+  const avatarMatch = req.method === "GET" && path.match(/^\/profile\/avatar\/(0x[0-9a-fA-F]{40})$/);
   if (avatarMatch) {
     const av = getAvatar(avatarMatch[1]);
     if (!av) return send(404, { error: "pas d'avatar" });
@@ -116,11 +123,11 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     res.end(Buffer.from(av.bytes));
     return;
   }
-  if (req.method === "GET" && req.url?.startsWith("/profile/search?")) {
-    const q = new URL(req.url, "http://localhost").searchParams.get("q") ?? "";
+  if (req.method === "GET" && path === "/profile/search") {
+    const q = query.get("q") ?? "";
     return send(200, searchProfiles(q));
   }
-  const profileMatch = req.method === "GET" && req.url?.match(/^\/profile\/(0x[0-9a-fA-F]{40})$/);
+  const profileMatch = req.method === "GET" && path.match(/^\/profile\/(0x[0-9a-fA-F]{40})$/);
   if (profileMatch) {
     try {
       return send(200, getProfile(profileMatch[1]));
@@ -128,14 +135,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return fail(400, "profil", e);
     }
   }
-  if (req.method === "POST" && req.url?.startsWith("/profile")) {
+  if (req.method === "POST" && path.startsWith("/profile")) {
     try {
       const body = await readJson(req, MAX_PROFILE);
-      if (req.url === "/profile") {
+      if (path === "/profile") {
         return send(200, await setProfile(String(body.message ?? ""), String(body.signature ?? "") as `0x${string}`, body.avatarB64 as string | undefined));
       }
-      if (req.url === "/profile/resolve") return send(200, resolveNames(Array.isArray(body.addrs) ? body.addrs.map(String) : []));
-      if (req.url === "/profile/playstat") return send(200, addPlaystat(String(body.addr), String(body.editionId), Number(body.seconds)));
+      if (path === "/profile/playstat") return send(200, addPlaystat(String(body.addr), String(body.editionId), Number(body.seconds)));
       return send(404, { error: "not found" });
     } catch (e) {
       return fail(403, "profil", e);
@@ -143,7 +149,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   // ── Device registry: 2 active machines per account ───────────
-  const devStatus = req.method === "GET" && req.url?.match(/^\/devices\/(0x[0-9a-fA-F]{40})\/(0x[0-9a-fA-F]{66})\/status$/);
+  const devStatus = req.method === "GET" && path.match(/^\/devices\/(0x[0-9a-fA-F]{40})\/(0x[0-9a-fA-F]{66})\/status$/);
   if (devStatus) {
     try {
       return send(200, deviceStatus(devStatus[1], devStatus[2]));
@@ -151,7 +157,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return fail(400, "appareils", e);
     }
   }
-  const devList = req.method === "GET" && req.url?.match(/^\/devices\/(0x[0-9a-fA-F]{40})$/);
+  const devList = req.method === "GET" && path.match(/^\/devices\/(0x[0-9a-fA-F]{40})$/);
   if (devList) {
     try {
       return send(200, devicesOf(devList[1]));
@@ -159,7 +165,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return fail(400, "appareils", e);
     }
   }
-  if (req.method === "POST" && req.url === "/devices/revoke") {
+  if (req.method === "POST" && path === "/devices/revoke") {
     try {
       const body = await readJson(req);
       return send(200, await revokeDevice(String(body.message ?? ""), String(body.signature ?? "") as `0x${string}`));
@@ -169,7 +175,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   }
 
   // ── Friends DB: wallet-signed actions, zero gas ──────────────
-  const friendsMatch = req.method === "GET" && req.url?.match(/^\/friends\/(0x[0-9a-fA-F]{40})$/);
+  const friendsMatch = req.method === "GET" && path.match(/^\/friends\/(0x[0-9a-fA-F]{40})$/);
   if (friendsMatch) {
     try {
       return send(200, friendsOf(friendsMatch[1]));
@@ -177,16 +183,16 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return fail(400, "amis", e);
     }
   }
-  if (req.method === "POST" && req.url?.startsWith("/friends/")) {
+  if (req.method === "POST" && path.startsWith("/friends/")) {
     try {
       const body = await readJson(req);
-      if (req.url === "/friends/action") {
+      if (path === "/friends/action") {
         return send(200, await applyFriendAction(String(body.message ?? ""), String(body.signature ?? "") as `0x${string}`));
       }
-      if (req.url === "/friends/attest") {
+      if (path === "/friends/attest") {
         return send(200, await attestFriendship(String(body.owner), String(body.borrower), String(body.tokenId)));
       }
-      if (req.url === "/friends/backdate") {
+      if (path === "/friends/backdate") {
         // DEV only (GAMEVAULT_DEV=1, set by `npm run dev`): simulates the
         // 3-day friendship age. Absent in prod — it bypasses the lending guard.
         if (!DEV) return send(404, { error: "not found" });
@@ -200,7 +206,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   // Build distribution: local cache first, IPFS gateways as backup.
   // The client still verifies sha256 against the on-chain hash.
-  const buildMatch = req.method === "GET" && req.url?.match(/^\/build\/([A-Za-z0-9]{10,100})$/);
+  const buildMatch = req.method === "GET" && path.match(/^\/build\/([A-Za-z0-9]{10,100})$/);
   if (buildMatch) {
     try {
       const bytes = await getBuild(buildMatch[1]);
@@ -214,7 +220,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   // Studio publish: raw build bytes in, studio-signed request in headers
   // (message base64 — headers cannot carry newlines) -> encrypted + pinned.
-  if (req.method === "POST" && req.url === "/publish") {
+  if (req.method === "POST" && path === "/publish") {
     try {
       const msgB64 = req.headers["x-gamevault-message"];
       const signature = req.headers["x-gamevault-signature"];
@@ -229,7 +235,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     }
   }
 
-  if (req.method === "POST" && req.url === "/ticket") {
+  if (req.method === "POST" && path === "/ticket") {
     try {
       const { message, signature } = await readJson(req);
       if (typeof message !== "string" || typeof signature !== "string") {
@@ -246,12 +252,22 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   send(404, { error: "not found" });
 }
 
+// Last line of defence: an unexpected throw answers 500 instead of an
+// unhandled rejection taking the whole service down.
+function safeHandle(req: IncomingMessage, res: ServerResponse): void {
+  handle(req, res).catch((e: unknown) => {
+    console.error(`⛔ requête ${req.method} ${req.url}: ${e instanceof Error ? e.message : e}`);
+    if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "erreur interne" }));
+  });
+}
+
 const tag = DEV ? " (DEV helpers ON)" : "";
 if (HOST) {
-  createServer(handle).listen(PORT, HOST, () => console.log(`ticketd listening on http://${HOST}:${PORT}${tag}`));
+  createServer(safeHandle).listen(PORT, HOST, () => console.log(`ticketd listening on http://${HOST}:${PORT}${tag}`));
 } else {
-  createServer(handle).listen(PORT, "127.0.0.1", () => console.log(`ticketd listening on http://127.0.0.1:${PORT} (+ [::1])${tag}`));
-  createServer(handle)
+  createServer(safeHandle).listen(PORT, "127.0.0.1", () => console.log(`ticketd listening on http://127.0.0.1:${PORT} (+ [::1])${tag}`));
+  createServer(safeHandle)
     .listen(PORT, "::1")
     .on("error", () => {
       /* no IPv6 loopback on this machine — IPv4 is enough */

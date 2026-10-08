@@ -248,9 +248,9 @@ export default function StudioPage() {
               <br />
               CID : <code>{result.cid}</code>
               <br />
-              Les acheteurs peuvent minter (buy({result.editionId})) puis installer le jeu sur carte SD depuis
-              le launcher. Pour l&apos;afficher dans les catalogues (site + launcher), ajoutez l&apos;entrée
-              dans <code>shared/src/catalog.ts</code> — jusqu&apos;à la bascule du catalogue on-chain.
+              L&apos;édition apparaît déjà dans les catalogues du site et du launcher : ils sont lus directement
+              sur la blockchain. Les acheteurs peuvent l&apos;acheter puis installer le jeu sur carte SD depuis le
+              launcher. Résumé et genre affichés sont optionnels (<code>shared/src/registryCatalog.ts</code>).
             </div>
           )}
           {error && <p className="error-box">{error}</p>}

@@ -156,7 +156,7 @@ export async function publishBuild(plain: Uint8Array, message: string, signature
 
 const BUILDS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../data/builds");
 
-export function cacheBuild(cid: string, bytes: Uint8Array): void {
+function cacheBuild(cid: string, bytes: Uint8Array): void {
   mkdirSync(BUILDS_DIR, { recursive: true });
   writeFileSync(join(BUILDS_DIR, cid), bytes);
 }
@@ -429,10 +429,6 @@ export function searchProfiles(q: string): { addr: string; name: string; hasAvat
     .slice(0, 10);
 }
 
-export function resolveNames(addrs: string[]): Record<string, string> {
-  return profiles.names(addrs);
-}
-
 /** Stats cosmétiques poussées par le launcher — non signées, locales. */
 export function addPlaystat(addr: string, editionId: string, seconds: number): { ok: true } {
   if (!ADDR_RE.test(addr) || !/^\d{1,6}$/.test(editionId)) throw new Error("payload invalide");
@@ -450,7 +446,7 @@ export function addPlaystat(addr: string, editionId: string, seconds: number): {
 // Re-pairing / renewing a known device never consumes a slot. Offline, an
 // evicted machine keeps working until its ticket expires (offline window).
 
-export const MAX_DEVICES = 2;
+const MAX_DEVICES = 2;
 const SEEN_BUMP_MS = 10 * 60 * 1000;
 const DEVICE_RE = /^0x0[23][0-9a-fA-F]{64}$/;
 
@@ -599,8 +595,7 @@ async function contentKeyFor(tokenId: string): Promise<Uint8Array> {
       return rec.key;
     }
   }
-  if (!DEV_MODE) throw new Error(`aucune clé de contenu pour l'édition #${editionId}`);
-  return devContentKeyFor(editionId);
+  throw new Error(`aucune clé de contenu pour l'édition #${editionId}`);
 }
 
 // --- Issuance ---------------------------------------------------------------

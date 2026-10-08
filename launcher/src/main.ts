@@ -451,7 +451,7 @@ async function startPairing(g: Game): Promise<void> {
       return;
     }
     try {
-      const res = await fetch(`${TICKETD_URL}/pending/${state.pairing.nonce}`);
+      const res = await fetch(`${TICKETD_URL}/pending/${state.pairing.nonce}`, { signal: AbortSignal.timeout(3000) });
       if (!res.ok) return;
       const ticket = (await res.json()) as SignedTicket;
       await completePairing(g, ticket);
@@ -598,7 +598,7 @@ async function installTo(volume: Volume): Promise<void> {
 
 // ── Market ────────────────────────────────────────────────────
 
-function tradeUrl(action: "list" | "unlist" | "buy", tokenId: string, priceEth?: string): string {
+function tradeUrl(action: "list" | "unlist", tokenId: string, priceEth?: string): string {
   const p = priceEth ? `&price=${encodeURIComponent(priceEth)}` : "";
   return `${MARKETPLACE_URL}/trade?action=${action}&token=${encodeURIComponent(tokenId)}${p}`;
 }
@@ -1510,7 +1510,7 @@ function actionFor(e: OnchainEdition, g: Game | undefined, ownedTok: { tokenId: 
     };
   }
   return {
-    action: `<button class="cta sunset" id="buy-btn">${t("act.buy", { p: formatEth(e.priceWei) })}</button>`,
+    action: `<button class="cta sunset" id="buy-btn" data-buy-edition="${esc(e.editionId)}">${t("act.buy", { p: formatEth(e.priceWei) })}</button>`,
     hint: t("hint.buy"),
   };
 }
@@ -1865,7 +1865,7 @@ function wire(root: HTMLElement): void {
   root.querySelectorAll<HTMLButtonElement>("[data-go]").forEach((b) =>
     b.addEventListener("click", () => go(b.dataset.go as Screen)),
   );
-  root.querySelectorAll<HTMLButtonElement>(".gamecard, [data-edition]:not(.gamecard):not(#home-continue)").forEach((b) =>
+  root.querySelectorAll<HTMLButtonElement>(".gamecard, [data-edition]:not(.gamecard)").forEach((b) =>
     b.addEventListener("click", () => {
       if (!b.dataset.edition) return;
       state.sel = b.dataset.edition;
@@ -1976,9 +1976,11 @@ function wire(root: HTMLElement): void {
     localStorage.setItem("gv-watch", addr);
     void forceRefresh();
   });
-  document.getElementById("buy-btn")?.addEventListener("click", () => {
+  document.getElementById("buy-btn")?.addEventListener("click", (ev) => {
     chimeBuy(); // le moment de gloire
-    void openUrl(MARKETPLACE_URL);
+    // Straight to this game's store page (new copy), not the store root.
+    const ed = (ev.currentTarget as HTMLElement).dataset.buyEdition ?? "";
+    void openUrl(/^\d{1,9}$/.test(ed) ? `${MARKETPLACE_URL}/game/${ed}` : MARKETPLACE_URL);
   });
   document.getElementById("open-pair-url")?.addEventListener("click", () => state.pairing && void openUrl(state.pairing.url));
   document.getElementById("cancel-pairing")?.addEventListener("click", cancelPairing);

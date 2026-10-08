@@ -13,7 +13,8 @@ import { DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
 
 // Second-hand listings — THE thing Steam doesn't have. Read straight from
-// the Marketplace contract: every token whose listing has a seller.
+// the Marketplace contract: every token with a listing that buy() would
+// still accept.
 type Occasion = { tokenId: string; editionId: string; price: bigint; seller: string };
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -27,8 +28,19 @@ async function fetchOccasions(): Promise<Occasion[]> {
   const found: Occasion[] = [];
   for (let i = BigInt(1); i <= next; i++) {
     try {
-      const [seller, price] = await c.readContract({ address: market, abi: MARKETPLACE_ABI, functionName: "listings", args: [i] });
+      const [seller, price, nonce] = await c.readContract({ address: market, abi: MARKETPLACE_ABI, functionName: "listings", args: [i] });
       if (seller.toLowerCase() === ZERO) continue;
+      // Same rules as Marketplace.buy(): the seller still owns the token, it
+      // has not moved since it was listed, and the Marketplace may still
+      // transfer it (approval not revoked).
+      const [owner, moves, approved, operator] = await Promise.all([
+        c.readContract({ address: license, abi: LICENSE_ABI, functionName: "ownerOf", args: [i] }),
+        c.readContract({ address: license, abi: LICENSE_ABI, functionName: "transferCount", args: [i] }),
+        c.readContract({ address: license, abi: LICENSE_ABI, functionName: "getApproved", args: [i] }),
+        c.readContract({ address: license, abi: LICENSE_ABI, functionName: "isApprovedForAll", args: [seller, market] }),
+      ]);
+      if (owner.toLowerCase() !== seller.toLowerCase() || moves !== nonce) continue;
+      if (approved.toLowerCase() !== market.toLowerCase() && !operator) continue;
       const ed = await c.readContract({ address: license, abi: LICENSE_ABI, functionName: "editionOf", args: [i] });
       found.push({ tokenId: i.toString(), editionId: ed.toString(), price, seller });
     } catch {

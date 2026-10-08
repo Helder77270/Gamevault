@@ -8,7 +8,7 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { parseEther, formatEther } from "viem";
-import { useAccount, useReadContract, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
 import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
 import { DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { ConnectButton } from "../components/ConnectButton";
@@ -26,6 +26,7 @@ function TradeInner() {
 
   const { isConnected } = useAccount();
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
   const [status, setStatus] = useState<Status>("idle");
   const [detail, setDetail] = useState("");
 
@@ -50,44 +51,57 @@ function TradeInner() {
     token !== "" &&
     ((action === "list" && priceEth !== "") || action === "unlist" || action === "buy");
 
+  // A transaction only counts once mined: the next step (list after
+  // approve) and the "confirmée" box both wait for the receipt.
+  const confirm = async (hash: `0x${string}`, label: string) => {
+    if (!publicClient) throw new Error("client RPC indisponible");
+    setDetail(`${label} — envoyée, en attente de confirmation…`);
+    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error(`${label} : transaction annulée on-chain`);
+  };
+
   const run = async () => {
     setStatus("working");
     try {
       if (action === "list") {
         if (approved?.toLowerCase() !== MARKET.toLowerCase()) {
           setDetail("1/2 — autorisation du Marketplace…");
-          await writeContractAsync({
+          const approveHash = await writeContractAsync({
             address: LICENSE,
             abi: LICENSE_ABI,
             functionName: "approve",
             args: [MARKET, tokenId],
           });
+          await confirm(approveHash, "1/2 — autorisation");
         }
         setDetail("2/2 — mise en vente…");
-        await writeContractAsync({
+        const listHash = await writeContractAsync({
           address: MARKET,
           abi: MARKETPLACE_ABI,
           functionName: "list",
           args: [tokenId, parseEther(priceEth)],
         });
+        await confirm(listHash, "2/2 — mise en vente");
       } else if (action === "unlist") {
-        await writeContractAsync({
+        const hash = await writeContractAsync({
           address: MARKET,
           abi: MARKETPLACE_ABI,
           functionName: "unlist",
           args: [tokenId],
         });
+        await confirm(hash, "Retrait de la vente");
       } else if (action === "buy") {
         if (!listing || listing[0] === "0x0000000000000000000000000000000000000000") {
           throw new Error("cette licence n'est pas (ou plus) en vente");
         }
-        await writeContractAsync({
+        const hash = await writeContractAsync({
           address: MARKET,
           abi: MARKETPLACE_ABI,
           functionName: "buy",
           args: [tokenId],
           value: listing[1],
         });
+        await confirm(hash, "Achat");
       }
       setStatus("done");
     } catch (e) {
