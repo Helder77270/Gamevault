@@ -13,9 +13,14 @@
     "withGlobalTauri": false,
     "windows": [
       {
-        "title": "GameVault Launcher",
-        "width": 800,
-        "height": 600
+        "label": "main",
+        "title": "AURA-64 · GameVault",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 680,
+        "center": true,
+        "decorations": false
       }
     ],
     "security": {

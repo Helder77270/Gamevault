@@ -293,17 +293,62 @@ fn write_ticket(mount_point: String, ticket_json: String) -> Result<(), String> 
     std::fs::write(&path, ticket_json).map_err(|e| format!("écriture ticket: {e}"))
 }
 
+/// Bring the launcher back from the notification area.
+fn show_main(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(GameSession(Mutex::new(None)))
         .manage(NativeSession(Arc::new(Mutex::new(None))))
-        .setup(|_app| {
+        .setup(|app| {
             // Sweep run dirs orphaned by a previous crash — plaintext must
             // never outlive its process.
             let _ = std::fs::remove_dir_all(run_root());
+
+            // Steam-like: closing the window keeps AURA-64 alive in the
+            // notification area (friends, presence, downloads go on); it
+            // really quits only from the tray menu.
+            let open = tauri::menu::MenuItem::with_id(app, "open", "Ouvrir AURA-64", true, None::<&str>)?;
+            let quit = tauri::menu::MenuItem::with_id(app, "quit", "Quitter AURA-64", true, None::<&str>)?;
+            let menu = tauri::menu::Menu::with_items(app, &[&open, &quit])?;
+            let mut tray = tauri::tray::TrayIconBuilder::with_id("main")
+                .tooltip("AURA-64 · GameVault")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, e| match e.id.as_ref() {
+                    "open" => show_main(app),
+                    "quit" => app.exit(0), // RunEvent::Exit then ends any native game
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, e| {
+                    if let tauri::tray::TrayIconEvent::Click {
+                        button: tauri::tray::MouseButton::Left,
+                        button_state: tauri::tray::MouseButtonState::Up,
+                        ..
+                    } = e
+                    {
+                        show_main(tray.app_handle());
+                    }
+                });
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            tray.build(app)?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
         })
         .register_uri_scheme_protocol("game", |ctx, _request| {
             let state = ctx.app_handle().state::<GameSession>();

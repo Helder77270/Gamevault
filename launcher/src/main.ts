@@ -4,6 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import QRCode from "qrcode";
 import { createPublicClient, http } from "viem";
@@ -2064,6 +2065,43 @@ function applyStaticI18n(): void {
   }
   const store = document.getElementById("store-btn");
   if (store) store.title = t("top.store.title");
+  const win = (id: string, text: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.title = text;
+      el.setAttribute("aria-label", text);
+    }
+  };
+  win("win-min", t("win.min"));
+  win("win-max", t(maximized ? "win.restore" : "win.max"));
+  win("win-close", t("win.close"));
+}
+
+// Window chrome is ours (decorations off): minimize, maximize/restore, and
+// close — which, Steam-like, only hides the launcher in the notification
+// area (the Rust side intercepts it); Quit lives in the tray menu.
+let maximized = false;
+const MAX_ICON = `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="2" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`;
+const RESTORE_ICON = `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="4" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.5 2.5h4a1 1 0 0 1 1 1v4" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>`;
+
+async function syncMaximized(): Promise<void> {
+  try {
+    maximized = await getCurrentWindow().isMaximized();
+  } catch {
+    return; // not running inside Tauri
+  }
+  const btn = document.getElementById("win-max");
+  if (btn) btn.innerHTML = maximized ? RESTORE_ICON : MAX_ICON;
+  applyStaticI18n();
+}
+
+function wireWindowControls(): void {
+  const w = getCurrentWindow();
+  document.getElementById("win-min")?.addEventListener("click", () => void w.minimize());
+  document.getElementById("win-max")?.addEventListener("click", () => void w.toggleMaximize());
+  document.getElementById("win-close")?.addEventListener("click", () => void w.close());
+  void w.onResized(() => void syncMaximized());
+  void syncMaximized();
 }
 
 function renderChrome(): void {
@@ -2637,14 +2675,14 @@ function veilleView(): string {
     <div class="vl-horizon" aria-hidden="true"><div class="vl-grid"></div></div>
     <div class="vl-brand"><span class="logo-chip"></span>AURA-64</div>
     <div class="vl-cluster">
-      <div class="big-clock">
-        <div class="big-time" id="veille-time">${hh}<span class="big-colon">:</span>${mm}</div>
-        <div class="big-side">
-          <div class="big-sec" id="veille-sec">${ss}</div>
-          <div class="big-date" id="veille-date">${esc(date)}</div>
+      <div class="vl-time"><div class="big-time" id="veille-time">${hh}<span class="big-colon">:</span>${mm}</div></div>
+      <div class="vl-under">
+        <div class="vl-meta">
+          <span class="big-sec" id="veille-sec">${ss}</span>
+          <span class="big-date" id="veille-date">${esc(date)}</span>
         </div>
+        ${below}
       </div>
-      ${below}
     </div>
     <div class="vl-marquee"><div class="vl-track">${veilleTicker()}</div></div>
     <div class="vl-hint">${esc(t("veille.hint"))}</div>`;
@@ -2710,6 +2748,7 @@ window.addEventListener("keydown", (e) => {
 window.addEventListener("DOMContentLoaded", () => {
   applySettings();
   applyStaticI18n();
+  wireWindowControls();
   loadSession();
   document.getElementById("restart-btn")?.addEventListener("click", () => void runBoot());
   document.getElementById("store-btn")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));

@@ -817,7 +817,12 @@ button { font-family: inherit; }
 .vl-horizon::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent, rgba(4,5,11,0.85) 70%); }
 @keyframes vlGrid { from { background-position: 0 0; } to { background-position: 0 64px; } }
 .vl-brand { position: absolute; left: 36px; top: 30px; display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: 0.24em; font-size: 12px; opacity: 0.6; }
-.vl-cluster { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-58%); display: flex; flex-direction: column; align-items: center; gap: 34px; animation: vlDrift 60s ease-in-out infinite; }
+/* the time sits exactly on the orb's centre (homebg: 50 % / 52 %) */
+.vl-cluster { position: absolute; inset: 0; animation: vlDrift 60s ease-in-out infinite; }
+.vl-time { position: absolute; left: 0; right: 0; top: 52%; transform: translateY(-50%); display: flex; justify-content: center; }
+.vl-under { position: absolute; left: 0; right: 0; top: calc(52% + clamp(52px, 7.5vw, 84px)); display: flex; flex-direction: column; align-items: center; gap: 22px; }
+.vl-meta { display: flex; align-items: baseline; gap: 18px; }
+.vl-meta .big-date { margin-top: 0; }
 @keyframes vlDrift { 0%, 100% { translate: 0 0; } 25% { translate: 14px -8px; } 50% { translate: -10px 10px; } 75% { translate: -14px -6px; } }
 .vl-insert { font-size: 26px; font-weight: 700; letter-spacing: 0.16em; animation: auraBlink 2.4s steps(1, end) infinite; text-shadow: 0 0 24px oklch(0.8 0.1 200 / 0.55); }
 .vl-card { display: flex; align-items: center; gap: 16px; padding: 12px 22px 12px 12px; border-radius: 999px; border: 1px solid rgba(200,225,255,0.22); background: rgba(5,6,13,0.5); }
@@ -831,3 +836,14 @@ button { font-family: inherit; }
 .vl-dot.ok { color: oklch(0.85 0.13 160); } .vl-dot.cy { color: var(--cyan); } .vl-dot.vi { color: oklch(0.85 0.09 310); }
 .vl-hint { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.3em; color: rgba(214,230,255,0.45); }
 @media (prefers-reduced-motion: reduce) { .vl-grid, .vl-cluster, .vl-track, .vl-insert { animation: none; } }
+
+/* ── Window chrome (decorations off, 2026-10-09): our own minimize /
+   maximize / close, in the console's glass language. Close = to tray. */
+.topbar { -webkit-user-select: none; user-select: none; }
+.winctl { display: flex; align-items: center; gap: 6px; margin-left: 6px; padding-left: 12px; border-left: 1px solid var(--line-soft); }
+.winbtn {
+  cursor: pointer; width: 28px; height: 28px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--dim); border: 1px solid var(--line); background: rgba(226,240,255,0.05); transition: all 0.15s;
+}
+.winbtn:hover, .winbtn:focus-visible { color: var(--ink); background: rgba(226,240,255,0.14); outline: none; }
+.winbtn.close:hover, .winbtn.close:focus-visible { color: #fff; border-color: oklch(0.7 0.16 25 / 0.8); background: oklch(0.6 0.17 25 / 0.75); box-shadow: 0 0 14px oklch(0.6 0.17 25 / 0.6); }

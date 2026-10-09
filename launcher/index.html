@@ -14,7 +14,7 @@
   </head>
   <body>
     <div class="console">
-      <div class="topbar">
+      <div class="topbar" data-tauri-drag-region>
         <div class="brandrow">
           <div class="logo-chip"></div>
           <div class="logo-text">AURA&#8209;64</div>
@@ -34,6 +34,17 @@
           <div class="led" id="led-chain" title="Chaîne (Base Sepolia)"></div>
           <div class="led" id="led-ticketd" title="ticketd"></div>
           <div class="led" id="led-card" title="Cartouche"></div>
+          <div class="winctl">
+            <button class="winbtn" id="win-min" aria-label="Réduire" title="Réduire">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6.5h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+            <button class="winbtn" id="win-max" aria-label="Agrandir" title="Agrandir">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="2" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+            </button>
+            <button class="winbtn close" id="win-close" aria-label="Fermer" title="Fermer">
+              <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            </button>
+          </div>
         </div>
       </div>
       <div id="screen"></div>
