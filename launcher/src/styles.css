@@ -804,3 +804,30 @@ button { font-family: inherit; }
 .lc-toast { position: fixed; left: 50%; bottom: 56px; transform: translateX(-50%); padding: 10px 18px; border-radius: 999px; background: rgba(5,6,13,0.9); border: 1px solid oklch(0.75 0.14 35 / 0.6); color: var(--ink); font-size: 13px; z-index: 50; }
 @keyframes lcIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .reduced-motion .lc-bubble { animation: none; }
+
+/* ── Veille (screensaver, validated 2026-10-09): the home's own orbital
+   clock and big clock, untouched, over an outrun horizon and a marquee. */
+#veille, #veille-out { position: fixed; inset: 0; z-index: 9000; overflow: hidden; cursor: none; background: radial-gradient(ellipse at 50% 40%, oklch(0.2 0.07 275), oklch(0.09 0.035 268) 60%, #04050b 100%); animation: auraIn 0.6s ease both; }
+#veille-out.out { animation: vlOut 0.6s ease both; pointer-events: none; }
+@keyframes vlOut { to { opacity: 0; } }
+#veille .homebg, #veille-out .homebg { opacity: 0.9; }
+.vl-horizon { position: absolute; left: 0; right: 0; top: 76%; bottom: 0; }
+.vl-horizon::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: oklch(0.8 0.15 330 / 0.85); box-shadow: 0 0 22px oklch(0.75 0.17 330); }
+.vl-grid { position: absolute; left: -20%; right: -20%; top: 1px; height: 460px; transform-origin: top center; transform: perspective(480px) rotateX(66deg); background-image: repeating-linear-gradient(90deg, oklch(0.72 0.15 300 / 0.5) 0 2px, transparent 2px 90px), repeating-linear-gradient(180deg, oklch(0.72 0.15 300 / 0.5) 0 2px, transparent 2px 64px); animation: vlGrid 3.6s linear infinite; }
+.vl-horizon::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent, rgba(4,5,11,0.85) 70%); }
+@keyframes vlGrid { from { background-position: 0 0; } to { background-position: 0 64px; } }
+.vl-brand { position: absolute; left: 36px; top: 30px; display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: 0.24em; font-size: 12px; opacity: 0.6; }
+.vl-cluster { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-58%); display: flex; flex-direction: column; align-items: center; gap: 34px; animation: vlDrift 60s ease-in-out infinite; }
+@keyframes vlDrift { 0%, 100% { translate: 0 0; } 25% { translate: 14px -8px; } 50% { translate: -10px 10px; } 75% { translate: -14px -6px; } }
+.vl-insert { font-size: 26px; font-weight: 700; letter-spacing: 0.16em; animation: auraBlink 2.4s steps(1, end) infinite; text-shadow: 0 0 24px oklch(0.8 0.1 200 / 0.55); }
+.vl-card { display: flex; align-items: center; gap: 16px; padding: 12px 22px 12px 12px; border-radius: 999px; border: 1px solid rgba(200,225,255,0.22); background: rgba(5,6,13,0.5); }
+.vl-card-art { width: 46px; height: 46px; border-radius: 50%; flex: none; background-size: cover !important; background-position: center !important; box-shadow: 0 0 18px oklch(0.7 0.14 300 / 0.7); }
+.vl-card-title { display: block; font-size: 19px; font-weight: 700; }
+.vl-card-sub { display: block; margin-top: 2px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.18em; color: oklch(0.85 0.13 160); }
+.vl-card-sub.warn { color: oklch(0.86 0.12 85); }
+.vl-marquee { position: absolute; left: 0; right: 0; bottom: 54px; height: 40px; overflow: hidden; border-top: 1px solid rgba(200,225,255,0.12); border-bottom: 1px solid rgba(200,225,255,0.12); background: rgba(5,6,13,0.55); }
+.vl-track { display: flex; gap: 46px; width: max-content; white-space: nowrap; padding: 12px 23px 0; font-family: var(--mono); font-size: 11px; letter-spacing: 0.2em; color: rgba(214,230,255,0.75); animation: vlTicker 40s linear infinite; }
+@keyframes vlTicker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.vl-dot.ok { color: oklch(0.85 0.13 160); } .vl-dot.cy { color: var(--cyan); } .vl-dot.vi { color: oklch(0.85 0.09 310); }
+.vl-hint { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.3em; color: rgba(214,230,255,0.45); }
+@media (prefers-reduced-motion: reduce) { .vl-grid, .vl-cluster, .vl-track, .vl-insert { animation: none; } }

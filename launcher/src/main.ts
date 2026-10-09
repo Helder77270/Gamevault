@@ -71,9 +71,11 @@ interface Settings {
   volume: number; // 0..1
   reducedMotion: boolean;
   dev: boolean;
+  veilleMin: number; // idle minutes before the screensaver, 0 = never
 }
 
-const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true };
+const VEILLE_CHOICES = [1, 3, 5, 10, 0];
+const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3 };
 
 function loadSettings(): Settings {
   try {
@@ -81,6 +83,7 @@ function loadSettings(): Settings {
     const s = { ...SETTINGS_DEFAULT, ...raw };
     if (!["midnight", "sunset", "crt"].includes(s.skin)) s.skin = "midnight";
     s.volume = Math.min(1, Math.max(0, Number(s.volume) || 0));
+    if (!VEILLE_CHOICES.includes(Number(s.veilleMin))) s.veilleMin = SETTINGS_DEFAULT.veilleMin;
     return s;
   } catch {
     return { ...SETTINGS_DEFAULT };
@@ -1794,6 +1797,14 @@ function settingsView(): string {
           </div>
           ${toggle("set-motion", settings.reducedMotion, t("set.motion"), t("set.motionSub"))}
           ${toggle("set-dev", settings.dev, t("set.dev"), t("set.devSub"))}
+          <div class="set-row">
+            <div><div class="set-label">${esc(t("set.veille"))}</div><div class="set-sub">${esc(t("set.veilleSub"))}</div></div>
+            <div class="seg">
+              ${VEILLE_CHOICES.map(
+                (m) => `<button class="seg-btn ${settings.veilleMin === m ? "on" : ""}" data-setveille="${m}">${m ? `${m} MIN` : esc(t("set.never"))}</button>`,
+              ).join("")}
+            </div>
+          </div>
         </section>
         <div class="set-sub" style="text-align:center;margin-top:4px">${esc(t("set.about"))}</div>
       </div>
@@ -2108,6 +2119,13 @@ function renderChrome(): void {
   if (homeSec) homeSec.textContent = String(now.getSeconds()).padStart(2, "0");
   const homeDate = document.getElementById("home-date");
   if (homeDate) homeDate.textContent = dateStr;
+  const vTime = document.getElementById("veille-time");
+  if (vTime) vTime.innerHTML = `${hh}<span class="big-colon">:</span>${mm}`;
+  const vSec = document.getElementById("veille-sec");
+  if (vSec) vSec.textContent = String(now.getSeconds()).padStart(2, "0");
+  const vDate = document.getElementById("veille-date");
+  if (vDate) vDate.textContent = dateStr;
+  checkVeille();
   // Relative "il y a…" labels tick surgically (kept OUT of sigOf on purpose)
   document.querySelectorAll<HTMLElement>("[data-ago]").forEach((el) => {
     el.textContent = fmtAgo(Number(el.dataset.ts));
@@ -2292,6 +2310,13 @@ function wire(root: HTMLElement): void {
   flip("set-sound", "sound");
   flip("set-motion", "reducedMotion");
   flip("set-dev", "dev");
+  root.querySelectorAll<HTMLButtonElement>("[data-setveille]").forEach((b) =>
+    b.addEventListener("click", () => {
+      settings.veilleMin = Number(b.dataset.setveille);
+      saveSettings();
+      render();
+    }),
+  );
   document.getElementById("set-volume")?.addEventListener("change", (ev) => {
     settings.volume = Number((ev.target as HTMLInputElement).value) / 100;
     saveSettings();
@@ -2501,7 +2526,13 @@ async function refresh(): Promise<void> {
       const cur = new Set(newGames.map((g) => g.cartridge.mount_point));
       newGames
         .filter((g) => !prev.has(g.cartridge.mount_point))
-        .forEach((g) => cardToast("in", g.meta.title ?? g.cartridge.volume_label ?? "CARD"));
+        .forEach((g) => {
+          if (veilleOn) {
+            hideVeille();
+            sfxInsert();
+          }
+          cardToast("in", g.meta.title ?? g.cartridge.volume_label ?? "CARD");
+        });
       state.games
         .filter((g) => !cur.has(g.cartridge.mount_point))
         .forEach((g) => cardToast("out", g.meta.title ?? g.cartridge.volume_label ?? "CARD"));
@@ -2528,6 +2559,134 @@ async function refresh(): Promise<void> {
   const typing = document.activeElement?.tagName === "INPUT";
   if (!typing && sigOf() !== lastSig) render();
   else renderChrome();
+}
+
+// ── Veille (screensaver, validated 2026-10-09) ──────────────────────────
+// After settings.veilleMin minutes without mouse or keyboard — never during
+// a session, a pairing or an install — the console chrome gives way to the
+// home's own orbital clock, the outrun horizon and a marquee of what the
+// network is doing. Any input, or a card inserted, wakes it; the waking
+// input does not also act on the screen behind.
+let veilleOn = false;
+let lastActivity = Date.now();
+
+function canSleep(): boolean {
+  return (
+    settings.veilleMin > 0 &&
+    !state.playing &&
+    !state.nativeRun &&
+    state.screen !== "boot" &&
+    !state.pairing &&
+    !state.installing
+  );
+}
+
+function checkVeille(): void {
+  if (!veilleOn && canSleep() && Date.now() - lastActivity >= settings.veilleMin * 60_000) showVeille();
+}
+
+function veilleTicker(): string {
+  const items: string[] = [];
+  const titleOf = (id?: string | null) => state.catalog.find((e) => e.editionId === id)?.title;
+  for (const f of state.friends) {
+    const who = (f.name ?? short(f.addr, 4)).toUpperCase();
+    if (f.presence?.state === "playing") {
+      const g = titleOf(f.presence.editionId);
+      items.push(`<span class="vl-dot ok">●</span> ${esc(t("veille.playing", { who, game: (g ?? "").toUpperCase() }))}`);
+    } else if (f.presence?.state === "online") items.push(`<span class="vl-dot ok">●</span> ${esc(t("veille.online", { who }))}`);
+  }
+  const offers = Object.values(state.market).filter((m) => m.seller.toLowerCase() !== ZERO_ADDR && m.seller.toLowerCase() === m.owner.toLowerCase()).length;
+  if (offers) items.push(`<span class="vl-dot cy">▲</span> ${esc(t("veille.offers", { n: offers }))}`);
+  const newest = state.catalog[state.catalog.length - 1];
+  if (newest) items.push(`<span class="vl-dot vi">◆</span> STORE · ${esc(newest.title.toUpperCase())} · ${esc(formatEth(newest.priceWei))} ETH`);
+  if (!items.length) items.push(`<span class="vl-dot cy">▲</span> AURA-64 · GAMEVAULT`);
+  // twice: the marquee loops seamlessly by sliding exactly one copy
+  const run = items.map((i) => `<span>${i}</span>`).join("");
+  return run + run;
+}
+
+function veilleView(): string {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  const ss = String(now.getSeconds()).padStart(2, "0");
+  const date = now.toLocaleDateString(locale(), { weekday: "short", day: "2-digit", month: "short" }).toUpperCase();
+  const seated = state.games[0];
+  let below = `<div class="vl-insert">INSERT SD CARD TO PLAY</div>`;
+  if (seated) {
+    const ed = editionFor(seated);
+    const log = ed ? readLog()[ed.editionId] : undefined;
+    const ready = ed ? playableNow(ed) : false;
+    const title = seated.meta.title ?? ed?.title ?? "GAME";
+    const status = [
+      "SLOT A",
+      ready ? t("veille.ready") : t("veille.check"),
+      log ? `${t("sx.last")} ${fmtAgo(log.lastPlayedAt)}` : "",
+    ].filter(Boolean).join(" · ");
+    below = `
+      <div class="vl-card">
+        <span class="vl-card-art" style="${artFor(ed?.editionId ?? seated.meta.edition ?? "1")}"></span>
+        <span style="min-width:0">
+          <span class="vl-card-title">${esc(title)}</span>
+          <span class="vl-card-sub ${ready ? "" : "warn"}">● ${esc(status)}</span>
+        </span>
+      </div>`;
+  }
+  return `
+    ${homeBg()}
+    <div class="vl-horizon" aria-hidden="true"><div class="vl-grid"></div></div>
+    <div class="vl-brand"><span class="logo-chip"></span>AURA-64</div>
+    <div class="vl-cluster">
+      <div class="big-clock">
+        <div class="big-time" id="veille-time">${hh}<span class="big-colon">:</span>${mm}</div>
+        <div class="big-side">
+          <div class="big-sec" id="veille-sec">${ss}</div>
+          <div class="big-date" id="veille-date">${esc(date)}</div>
+        </div>
+      </div>
+      ${below}
+    </div>
+    <div class="vl-marquee"><div class="vl-track">${veilleTicker()}</div></div>
+    <div class="vl-hint">${esc(t("veille.hint"))}</div>`;
+}
+
+function showVeille(): void {
+  if (veilleOn) return;
+  veilleOn = true;
+  const el = document.createElement("div");
+  el.id = "veille";
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-label", t("veille.hint"));
+  el.innerHTML = veilleView();
+  document.body.appendChild(el);
+}
+
+function hideVeille(): void {
+  if (!veilleOn) return;
+  veilleOn = false;
+  lastActivity = Date.now();
+  const el = document.getElementById("veille");
+  if (!el) return;
+  el.id = "veille-out"; // its clock ids stop ticking at once
+  el.classList.add("out");
+  window.setTimeout(() => el.remove(), 600);
+}
+
+for (const type of ["mousemove", "mousedown", "keydown", "wheel", "touchstart"]) {
+  window.addEventListener(
+    type,
+    (e) => {
+      lastActivity = Date.now();
+      if (!veilleOn) return;
+      // the input that wakes the launcher must not also click or type behind
+      if (type !== "mousemove") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+      hideVeille();
+    },
+    { capture: true, passive: false },
+  );
 }
 
 // Seated home shortcuts (shown in the rail header): Enter = the primary
