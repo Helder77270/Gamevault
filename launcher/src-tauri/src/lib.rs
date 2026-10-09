@@ -1,4 +1,5 @@
 mod crypto;
+mod download;
 mod media;
 mod ticket;
 
@@ -69,14 +70,13 @@ fn play_game(
     state: tauri::State<GameSession>,
     native: tauri::State<NativeSession>,
     mount_point: String,
+    build_path: Option<String>,
 ) -> Result<Value, String> {
     known_mount(&mount_point)?;
     let gv = Path::new(&mount_point).join("gamevault");
 
-    let ticket: Value = serde_json::from_str(
-        &std::fs::read_to_string(gv.join("ticket.json")).map_err(|e| format!("ticket.json: {e}"))?,
-    )
-    .map_err(|e| format!("ticket.json invalide: {e}"))?;
+    let ticket: Value = serde_json::from_str(&media::ticket_for_this_device(&gv).ok_or("ticket.json introuvable")?)
+        .map_err(|e| format!("ticket.json invalide: {e}"))?;
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -88,7 +88,21 @@ fn play_game(
     let content_key = crypto::ecies_unwrap(&verified.wrapped_content_key, &device_priv)
         .map_err(|e| format!("clé d'appareil refusée: {e}"))?;
 
-    let enc = std::fs::read(gv.join("build.enc")).map_err(|e| format!("build.enc: {e}"))?;
+    // The card is the key; the game itself may live on the card or in a
+    // library folder of this PC (<dir>/gamevault-library/<cid>/build.enc).
+    let on_card = gv.join("build.enc");
+    let build = if on_card.is_file() {
+        on_card
+    } else {
+        let p = PathBuf::from(build_path.ok_or("jeu absent de la carte et de la bibliothèque")?);
+        let in_library = p.file_name().is_some_and(|n| n == "build.enc")
+            && p.parent().and_then(|c| c.parent()).and_then(|l| l.file_name()).is_some_and(|n| n == "gamevault-library");
+        if !in_library || !p.is_file() {
+            return Err("chemin de jeu refusé".into());
+        }
+        p
+    };
+    let enc = std::fs::read(&build).map_err(|e| format!("build.enc: {e}"))?;
     let plain = crypto::decrypt_build(&enc, &content_key)
         .map_err(|e| format!("déchiffrement du build: {e}"))?;
 
@@ -251,15 +265,19 @@ fn install_cartridge(
 ) -> Result<(), String> {
     use base64::Engine;
     known_mount(&mount_point)?;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(data_b64)
-        .map_err(|e| format!("base64: {e}"))?;
     serde_json::from_str::<Value>(&meta_json).map_err(|e| format!("meta invalide: {e}"))?;
     serde_json::from_str::<Value>(&ticket_json).map_err(|e| format!("ticket invalide: {e}"))?;
 
     let gv = Path::new(&mount_point).join("gamevault");
     std::fs::create_dir_all(&gv).map_err(|e| format!("création dossier: {e}"))?;
-    std::fs::write(gv.join("build.enc"), bytes).map_err(|e| format!("build.enc: {e}"))?;
+    // Empty data = a key-only card (the game lives on this PC or comes later
+    // through the download manager).
+    if !data_b64.is_empty() {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(data_b64)
+            .map_err(|e| format!("base64: {e}"))?;
+        std::fs::write(gv.join("build.enc"), bytes).map_err(|e| format!("build.enc: {e}"))?;
+    }
     std::fs::write(gv.join("meta.json"), meta_json).map_err(|e| format!("meta.json: {e}"))?;
     std::fs::write(gv.join("ticket.json"), ticket_json).map_err(|e| format!("ticket.json: {e}"))?;
     Ok(())
@@ -288,9 +306,78 @@ fn write_ticket(mount_point: String, ticket_json: String) -> Result<(), String> 
     known_mount(&mount_point)?;
     // Only a genuine ticket sealed for THIS machine ever reaches a card
     let parsed = serde_json::from_str::<Value>(&ticket_json).map_err(|e| format!("ticket invalide: {e}"))?;
-    ticket::verify_for_write(&parsed, ticket::licence_contract(), &crypto::device_pubkey_hex()?)?;
-    let path = Path::new(&mount_point).join("gamevault").join("ticket.json");
-    std::fs::write(&path, ticket_json).map_err(|e| format!("écriture ticket: {e}"))
+    let device = crypto::device_pubkey_hex()?;
+    ticket::verify_for_write(&parsed, ticket::licence_contract(), &device)?;
+    // one ticket per paired machine, 2 kept (the account's device limit)
+    media::store_ticket(&Path::new(&mount_point).join("gamevault"), &device, &ticket_json, 2)
+}
+
+// ── Download manager (download.rs) ───────────────────────────────────────
+
+/// Where a download lands: a detected card (its /gamevault/) or a library
+/// folder of this PC. The full path is always built on this side.
+fn dl_target(dest_kind: &str, dest: &str, cid: &str) -> Result<PathBuf, String> {
+    match dest_kind {
+        "card" => {
+            known_mount(dest)?;
+            Ok(Path::new(dest).join("gamevault").join("build.enc"))
+        }
+        "library" => download::library_target(dest, cid),
+        _ => Err("destination inconnue".into()),
+    }
+}
+
+#[tauri::command]
+fn dl_start(
+    app: AppHandle,
+    dl: tauri::State<Arc<download::Downloads>>,
+    id: String,
+    cid: String,
+    sha256: String,
+    dest_kind: String,
+    dest: String,
+) -> Result<String, String> {
+    let target = dl_target(&dest_kind, &dest, &cid)?;
+    download::start(app, Arc::clone(&dl), id, cid, sha256, target.clone())?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn dl_repair(
+    app: AppHandle,
+    dl: tauri::State<Arc<download::Downloads>>,
+    id: String,
+    cid: String,
+    sha256: String,
+    dest_kind: String,
+    dest: String,
+) -> Result<(), String> {
+    let target = dl_target(&dest_kind, &dest, &cid)?;
+    if !target.is_file() {
+        return Err("aucun jeu installé à réparer ici".into());
+    }
+    download::repair(app, Arc::clone(&dl), id, cid, sha256, target)
+}
+
+#[tauri::command]
+fn dl_pause(dl: tauri::State<Arc<download::Downloads>>, id: String) {
+    download::pause(&dl, &id);
+}
+
+#[tauri::command]
+fn dl_cancel(dl: tauri::State<Arc<download::Downloads>>, id: String) {
+    download::cancel(&dl, &id);
+}
+
+/// Free / total bytes for a card or a library folder.
+#[tauri::command]
+fn disk_space(path: String) -> Option<(u64, u64)> {
+    download::disk_space(&path)
+}
+
+#[tauri::command]
+fn library_scan(dirs: Vec<String>) -> Vec<download::LibraryEntry> {
+    download::scan_library(&dirs)
 }
 
 /// Bring the launcher back from the notification area.
@@ -306,6 +393,8 @@ fn show_main(app: &tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(Arc::new(download::Downloads::default()))
         .manage(GameSession(Mutex::new(None)))
         .manage(NativeSession(Arc::new(Mutex::new(None))))
         .setup(|app| {
@@ -374,7 +463,13 @@ pub fn run() {
             write_ticket,
             write_build,
             list_removable_volumes,
-            install_cartridge
+            install_cartridge,
+            dl_start,
+            dl_repair,
+            dl_pause,
+            dl_cancel,
+            disk_space,
+            library_scan
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

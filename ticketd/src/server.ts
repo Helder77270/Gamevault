@@ -11,6 +11,7 @@ import {
   devicesOf,
   deviceStatus,
   getBuild,
+  getBuildManifest,
   issueTicket,
   revokeDevice,
   takePendingTicket,
@@ -118,6 +119,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   const path = qi < 0 ? raw : raw.slice(0, qi);
   const query = new URLSearchParams(qi < 0 ? "" : raw.slice(qi + 1));
   const GET = req.method === "GET";
+  const HEAD = req.method === "HEAD";
   const POST = req.method === "POST";
   const match = (re: string) => path.match(new RegExp(`^${re}$`));
   const session = () => authWallet(req.headers.authorization);
@@ -338,12 +340,42 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
 
   // Build distribution: local cache first, IPFS gateways as backup.
   // The client still verifies sha256 against the on-chain hash.
-  const buildMatch = GET && match("/build/([A-Za-z0-9]{10,100})");
+  // Chunk list for the launcher's download manager (verified chunks, repair).
+  const manifestMatch = GET && match("/build/([A-Za-z0-9]{10,100})/manifest");
+  if (manifestMatch) {
+    try {
+      return send(200, await getBuildManifest(manifestMatch[1]));
+    } catch (e) {
+      return fail(404, `manifest ${manifestMatch[1]}`, e);
+    }
+  }
+  // HTTP ranges (one "bytes=a-b" range): resumable, parallel chunk downloads.
+  const buildMatch = (GET || HEAD) && match("/build/([A-Za-z0-9]{10,100})");
   if (buildMatch) {
     try {
       const bytes = await getBuild(buildMatch[1]);
-      res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": bytes.length, ...cors });
-      res.end(Buffer.from(bytes));
+      const total = bytes.length;
+      const range = /^bytes=(\d+)-(\d*)$/.exec(String(req.headers.range ?? ""));
+      if (range) {
+        const start = Number(range[1]);
+        const end = Math.min(range[2] === "" ? total - 1 : Number(range[2]), total - 1);
+        if (start > end || start >= total) {
+          res.writeHead(416, { "Content-Range": `bytes */${total}`, ...cors });
+          res.end();
+          return;
+        }
+        res.writeHead(206, {
+          "Content-Type": "application/octet-stream",
+          "Content-Length": end - start + 1,
+          "Content-Range": `bytes ${start}-${end}/${total}`,
+          "Accept-Ranges": "bytes",
+          ...cors,
+        });
+        res.end(HEAD ? undefined : Buffer.from(bytes.subarray(start, end + 1)));
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": total, "Accept-Ranges": "bytes", ...cors });
+      res.end(HEAD ? undefined : Buffer.from(bytes));
       return;
     } catch (e) {
       return fail(404, `build ${buildMatch[1]}`, e);

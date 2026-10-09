@@ -11,7 +11,6 @@ import { createPublicClient, http } from "viem";
 import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/shared";
 import { fetchOnchainCatalog, BLURBS, GENRES, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
-import { fetchBuild, GATEWAYS } from "@gamevault/shared/storage";
 import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
 import { getLang, locale, setLang, t, type Lang } from "./i18n";
 
@@ -20,7 +19,6 @@ const TICKETD_URL = "http://localhost:8787";
 const GAME_URL = navigator.userAgent.includes("Windows") ? "http://game.localhost/" : "game://localhost/";
 // Builds come from ticketd (local cache, no CORS); IPFS gateways are the
 // backup. Integrity is checked HERE against the on-chain sha256 either way.
-const BUILD_MIRRORS = [`${TICKETD_URL}/build/`, ...GATEWAYS];
 
 // Ticket-signer public keys embedded in the launcher. The ticket key is
 // DEDICATED (audit K1, rotated 2026-10-07 — the previous platform key had
@@ -62,7 +60,7 @@ interface Pairing {
   error?: string;
 }
 
-type Screen = "boot" | "home" | "shelf" | "detail" | "insert" | "friends" | "settings" | "error";
+type Screen = "boot" | "home" | "shelf" | "detail" | "insert" | "friends" | "settings" | "downloads" | "error";
 
 // ── Settings (per machine, localStorage) ─────────────────────
 type Skin = "midnight" | "sunset" | "crt";
@@ -73,10 +71,11 @@ interface Settings {
   reducedMotion: boolean;
   dev: boolean;
   veilleMin: number; // idle minutes before the screensaver, 0 = never
+  libraries: string[]; // download folders on this PC (the card stays the key)
 }
 
 const VEILLE_CHOICES = [1, 3, 5, 10, 0];
-const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3 };
+const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3, libraries: [] };
 
 function loadSettings(): Settings {
   try {
@@ -85,6 +84,7 @@ function loadSettings(): Settings {
     if (!["midnight", "sunset", "crt"].includes(s.skin)) s.skin = "midnight";
     s.volume = Math.min(1, Math.max(0, Number(s.volume) || 0));
     if (!VEILLE_CHOICES.includes(Number(s.veilleMin))) s.veilleMin = SETTINGS_DEFAULT.veilleMin;
+    s.libraries = Array.isArray(s.libraries) ? s.libraries.filter((x) => typeof x === "string" && x.length > 2).slice(0, 8) : [];
     return s;
   } catch {
     return { ...SETTINGS_DEFAULT };
@@ -718,24 +718,6 @@ function editionFor(g: Game): OnchainEdition | undefined {
   );
 }
 
-async function downloadBuild(g: Game): Promise<void> {
-  const ed = editionFor(g);
-  if (!ed?.buildCid) return;
-  const mount = g.cartridge.mount_point;
-  state.dlStatus[mount] = "FETCH + VERIFY…";
-  render();
-  try {
-    const bytes = await fetchBuild(ed.buildCid, ed.buildSha256, BUILD_MIRRORS);
-    let bin = "";
-    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    await invoke("write_build", { mountPoint: mount, dataB64: btoa(bin) });
-    delete state.dlStatus[mount];
-  } catch (e) {
-    state.dlStatus[mount] = t("dl.failed", { e: String(e) });
-  }
-  await refresh();
-}
-
 async function openInstall(edition: OnchainEdition, prefillTokenId = ""): Promise<void> {
   const volumes = await invoke<Volume[]>("list_removable_volumes");
   state.installing = { edition, volumes, status: "", tokenId: prefillTokenId, stage: 0 };
@@ -775,11 +757,10 @@ async function installTo(volume: Volume): Promise<void> {
   inst.status = "";
   render();
   try {
-    const bytes = await fetchBuild(inst.edition.buildCid, inst.edition.buildSha256, BUILD_MIRRORS);
+    // The card is the KEY: meta + ticket only. The game itself downloads to
+    // this PC (or to the card, by choice) through the download manager.
     inst.stage = 2;
     render();
-    let bin = "";
-    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     const meta = { title: inst.edition.title, studio: inst.edition.studio, edition: inst.edition.editionId, version: "0.1.0" };
     const placeholder = {
       tokenId,
@@ -796,7 +777,7 @@ async function installTo(volume: Volume): Promise<void> {
       mountPoint: volume.mount_point,
       metaJson: JSON.stringify(meta, null, 2),
       ticketJson: JSON.stringify(placeholder, null, 2),
-      dataB64: btoa(bin),
+      dataB64: "",
     });
     inst.stage = 3;
     render();
@@ -902,7 +883,10 @@ async function play(g: Game): Promise<void> {
     let launched: { kind: string; pid?: number };
     try {
       launched = await minMs(
-        invoke<{ kind: string; pid?: number }>("play_game", { mountPoint: g.cartridge.mount_point }),
+        invoke<{ kind: string; pid?: number }>("play_game", {
+          mountPoint: g.cartridge.mount_point,
+          buildPath: g.cartridge.has_build ? null : (libraryBuildFor(editionFor(g))?.path ?? null),
+        }),
         900,
       );
     } catch (e) {
@@ -1151,7 +1135,7 @@ function cardForEdition(editionId: string): Game | undefined {
 
 function playableNow(e: OnchainEdition): boolean {
   const g = cardForEdition(e.editionId);
-  return Boolean(g && g.verdict === "authentic" && g.cartridge.has_build && isOurs(g));
+  return Boolean(g && g.verdict === "authentic" && isOurs(g) && (g.cartridge.has_build || libraryBuildFor(e)));
 }
 
 // ── Screens ───────────────────────────────────────────────────
@@ -1349,7 +1333,7 @@ function homeView(): string {
       ? "pair"
       : seated.verdict === "expired"
         ? "renew"
-        : !seated.cartridge.has_build
+        : !seated.cartridge.has_build && !libraryBuildFor(ed)
           ? "fetch"
           : "sheet";
   const warn = action !== "play";
@@ -1470,10 +1454,10 @@ function shelfStatus(e: OnchainEdition, g: Game | undefined, ownedTok: { tokenId
   if (g) {
     if (g.verdict === "unpaired" || !isOurs(g)) return { label: "PAIR CARD", cls: "warn" };
     if (g.verdict === "expired") return { label: "RENEW", cls: "warn" };
-    if (!g.cartridge.has_build) return { label: "NO BUILD", cls: "warn" };
+    if (!g.cartridge.has_build && !libraryBuildFor(e)) return { label: t("dl.toDownload"), cls: "warn" };
     return { label: "CHECK CARD", cls: "warn" };
   }
-  if (ownedTok.length) return { label: "AWAITING CARD", cls: "warn" };
+  if (ownedTok.length) return { label: libraryBuildFor(e) ? "AWAITING CARD" : t("dl.toDownload"), cls: "warn" };
   return { label: `${formatEth(e.priceWei)} ETH`, cls: "buy" };
 }
 
@@ -1799,6 +1783,12 @@ function settingsView(): string {
           ${toggle("set-motion", settings.reducedMotion, t("set.motion"), t("set.motionSub"))}
           ${toggle("set-dev", settings.dev, t("set.dev"), t("set.devSub"))}
           <div class="set-row">
+            <div><div class="set-label">${esc(t("set.libraries"))}</div><div class="set-sub">${esc(t("set.librariesSub"))}</div>
+              ${settings.libraries.map((d, i) => `<div class="set-lib"><code>${esc(d)}</code><button class="pillbtn" data-rmlib="${i}">${esc(t("set.removeLib"))}</button></div>`).join("")}
+            </div>
+            <button class="pillbtn" id="dl-addlib">${esc(t("dl.addDir"))}</button>
+          </div>
+          <div class="set-row">
             <div><div class="set-label">${esc(t("set.veille"))}</div><div class="set-sub">${esc(t("set.veilleSub"))}</div></div>
             <div class="seg">
               ${VEILLE_CHOICES.map(
@@ -1833,10 +1823,18 @@ function actionFor(e: OnchainEdition, g: Game | undefined, ownedTok: { tokenId: 
       hint: t("hint.renew"),
     };
   }
-  if (g && !g.cartridge.has_build) {
+  const job = jobFor(e);
+  if (job && job.kind === "download" && job.phase !== "done") {
     return {
-      action: `<button class="cta violet" data-dl="${esc(g.cartridge.mount_point)}">${t("act.fetch")}</button>`,
-      hint: state.dlStatus[g.cartridge.mount_point] ?? t("hint.fetch"),
+      action: `<button class="cta" data-go="downloads">${t("dl.inProgress", { p: dlPercent(job) })}</button>`,
+      hint: t("dl.hintProgress"),
+    };
+  }
+  const hasBuild = Boolean(g?.cartridge.has_build || libraryBuildFor(e));
+  if ((g || ownedTok.length) && !hasBuild) {
+    return {
+      action: `<button class="cta" data-dlopen="${esc(e.editionId)}">${t("dl.btn")}</button>`,
+      hint: t("dl.hintDownload"),
     };
   }
   if (ownedTok.length) {
@@ -1912,7 +1910,7 @@ function detailView(): string {
         <div class="detail-actions">
           ${action}
           <div class="detail-hint">${esc(hint)}</div>
-          <div style="flex-basis:100%;display:flex;gap:8px;flex-wrap:wrap">${marketRow}${provRow}</div>
+          <div style="flex-basis:100%;display:flex;gap:8px;flex-wrap:wrap">${marketRow}${provRow}${g?.cartridge.has_build || libraryBuildFor(e) ? `<button class="pillbtn" data-repair="${esc(e.editionId)}">${t("dl.verify")}</button>` : ""}</div>
         </div>
       </div>
     </div>`;
@@ -1936,8 +1934,8 @@ function insertView(): string {
     sub = t("ins.writeSub");
     steps = [
       { label: "DETECT CARD", st: inst.stage >= 1 ? "ok" : "run", note: inst.stage >= 1 ? "SELECTED" : "CHOOSE BELOW" },
-      { label: "FETCH BUILD · IPFS", st: inst.stage === 1 ? "run" : inst.stage > 1 ? "ok" : "idle", note: inst.stage > 1 ? "VERIFIED" : inst.stage === 1 ? "…" : "—" },
-      { label: "WRITE CARD", st: inst.stage === 2 ? "run" : inst.stage > 2 ? "ok" : "idle", note: inst.stage > 2 ? "DONE" : inst.stage === 2 ? "…" : "—" },
+      { label: "CHECK LICENCE", st: inst.stage === 1 ? "run" : inst.stage > 1 ? "ok" : "idle", note: inst.stage > 1 ? "OK" : inst.stage === 1 ? "…" : "—" },
+      { label: "WRITE KEY", st: inst.stage === 2 ? "run" : inst.stage > 2 ? "ok" : "idle", note: inst.stage > 2 ? "DONE" : inst.stage === 2 ? "…" : "—" },
       { label: "PAIR MACHINE", st: inst.stage >= 3 ? "run" : "idle", note: inst.stage >= 3 ? "NEXT" : "—" },
     ];
     if (inst.stage === 0) {
@@ -2046,6 +2044,7 @@ const SCREENS: Record<Screen, () => string> = {
   insert: insertView,
   friends: friendsView,
   settings: settingsView,
+  downloads: downloadsView,
   error: errorView,
 };
 
@@ -2058,6 +2057,7 @@ function applyStaticI18n(): void {
   label("nav-home", t("nav.home"));
   label("nav-shelf", t("nav.shelf"));
   label("nav-friends", t("nav.friends"));
+  label("nav-downloads", t("nav.downloads"));
   const gear = document.getElementById("nav-settings");
   if (gear) {
     gear.setAttribute("aria-label", t("nav.settings"));
@@ -2110,8 +2110,12 @@ function renderChrome(): void {
     "nav-home": ["home"],
     "nav-shelf": ["shelf", "detail", "insert"],
     "nav-friends": ["friends"],
+    "nav-downloads": ["downloads"],
     "nav-settings": ["settings"],
   };
+  const aj = activeJob();
+  const barDl = document.getElementById("bar-dl");
+  if (barDl) barDl.textContent = aj ? `↓ ${aj.title.toUpperCase()} ${dlPercent(aj)} % · ${fmtRate(aj.netBps)}` : "";
   for (const [id, screens] of Object.entries(navMap)) {
     document.getElementById(id)?.classList.toggle("active", screens.includes(state.screen));
   }
@@ -2210,6 +2214,10 @@ function sigOf(): string {
     m: Object.entries(state.market).map(([k, v]) => [k, v.owner, v.seller, String(v.price)]),
     o: state.owned,
     dl: state.dlStatus,
+    dj: Object.values(dl.jobs).map((j) => [j.id, j.phase, j.kind]),
+    dli: dl.library.map((l) => l.cid + l.status + l.dir),
+    dp: dl.picker ? [dl.picker.editionId, dl.picker.choice, dl.picker.options.length] : null,
+    dr: dl.repair,
     p: state.pairing?.status ?? null,
     i: state.installing ? [state.installing.stage, state.installing.status, state.installing.volumes.length] : null,
     a: libraryAddress(),
@@ -2245,7 +2253,7 @@ function render(): void {
     lastSig = sigOf();
     return;
   }
-  root.innerHTML = SCREENS[state.screen]();
+  root.innerHTML = SCREENS[state.screen]() + pickerView() + repairView();
   wire(root);
   lastSig = sigOf();
 }
@@ -2303,7 +2311,8 @@ function wire(root: HTMLElement): void {
     if (ed && playableNow(ed)) void play(g);
     // pairing and renewal are the same flow (a fresh ticket for this machine)
     else if (g.verdict === "unpaired" || g.verdict === "expired" || !isOurs(g)) void startPairing(g);
-    else go("detail"); // no build: the game page fetches it
+    else if (ed && !g.cartridge.has_build && !libraryBuildFor(ed)) void openDownload(ed.editionId);
+    else go("detail");
   });
   document.getElementById("home-lend")?.addEventListener("click", () => void openUrl(`${MARKETPLACE_URL}/friends`));
   document.getElementById("view-grid")?.addEventListener("click", () => {
@@ -2348,6 +2357,13 @@ function wire(root: HTMLElement): void {
   flip("set-sound", "sound");
   flip("set-motion", "reducedMotion");
   flip("set-dev", "dev");
+  root.querySelectorAll<HTMLButtonElement>("[data-rmlib]").forEach((b) =>
+    b.addEventListener("click", () => {
+      settings.libraries.splice(Number(b.dataset.rmlib), 1);
+      saveSettings();
+      void refreshLibrary().then(render);
+    }),
+  );
   root.querySelectorAll<HTMLButtonElement>("[data-setveille]").forEach((b) =>
     b.addEventListener("click", () => {
       settings.veilleMin = Number(b.dataset.setveille);
@@ -2417,12 +2433,7 @@ function wire(root: HTMLElement): void {
       if (g) void startPairing(g);
     }),
   );
-  root.querySelectorAll<HTMLButtonElement>("[data-dl]").forEach((b) =>
-    b.addEventListener("click", () => {
-      const g = state.games.find((x) => x.cartridge.mount_point === b.dataset.dl);
-      if (g) void downloadBuild(g);
-    }),
-  );
+  wireDownloads(root);
   root.querySelectorAll<HTMLButtonElement>("[data-install]").forEach((b) =>
     b.addEventListener("click", () => {
       const e = state.catalog.find((x) => x.editionId === b.dataset.install);
@@ -2585,6 +2596,7 @@ async function refresh(): Promise<void> {
         .catch(() => {});
       void fetchFriends();
     }
+    if (scanCount % 5 === 0) void refreshLibrary();
     if (scanCount++ % 5 === 0) {
       await fetchMarketState();
       await fetchOwned();
@@ -2598,6 +2610,492 @@ async function refresh(): Promise<void> {
   if (!typing && sigOf() !== lastSig) render();
   else renderChrome();
 }
+
+// ── Download manager (UI side of src-tauri/src/download.rs) ───────────────
+// The card is the key; the game lives on this PC (library folders, default)
+// or on the card if it has room. Downloads run in Rust (parallel ranges,
+// verified chunks, server first then IPFS mirrors, resumable); this side
+// queues them, shows progress and repairs.
+interface DlJob {
+  id: string; // = cid
+  kind: "download" | "repair";
+  editionId: string;
+  title: string;
+  cid: string;
+  sha256: string;
+  destKind: "library" | "card";
+  dest: string;
+  phase: string; // queued | prepare | download | read | fetch | final | paused | done | error | cancelled
+  done: number;
+  total: number;
+  netBps: number;
+  diskBps: number;
+  chunks: string;
+  source: string;
+  mirrorChunks: number;
+  error: string;
+  log: string[];
+  netHist: number[];
+  diskHist: number[];
+}
+interface LibraryEntry {
+  dir: string;
+  cid: string;
+  path: string;
+  size: number;
+  status: "installed" | "partial";
+}
+interface DestOption {
+  kind: "library" | "card";
+  dest: string;
+  label: string;
+  free: number | null;
+  total: number | null;
+}
+const ACTIVE_PHASES = ["prepare", "download", "read", "fetch", "final"];
+const dl = {
+  jobs: {} as Record<string, DlJob>,
+  library: [] as LibraryEntry[],
+  picker: null as null | { editionId: string; size: number | null; options: DestOption[]; choice: string },
+  repair: null as string | null,
+};
+
+const fmtBytes = (n: number): string =>
+  n >= 1e9 ? `${(n / 1e9).toFixed(2).replace(".", ",")} GO` : n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(".", ",")} MO` : `${Math.max(1, Math.round(n / 1e3))} KO`;
+const fmtRate = (bps: number): string => `${fmtBytes(bps)}/S`;
+
+function libraryBuildFor(e: OnchainEdition | undefined): LibraryEntry | undefined {
+  return e ? dl.library.find((l) => l.cid === e.buildCid && l.status === "installed") : undefined;
+}
+
+async function refreshLibrary(): Promise<void> {
+  try {
+    dl.library = await invoke<LibraryEntry[]>("library_scan", { dirs: settings.libraries });
+  } catch {
+    dl.library = [];
+  }
+  // A part file left by a pause or a restart = a resumable job.
+  for (const l of dl.library.filter((x) => x.status === "partial")) {
+    if (dl.jobs[l.cid]) continue;
+    const e = state.catalog.find((c) => c.buildCid === l.cid);
+    if (!e) continue;
+    dl.jobs[l.cid] = newJob(e, "download", "library", l.dir, "paused");
+  }
+}
+
+function newJob(e: OnchainEdition, kind: DlJob["kind"], destKind: DlJob["destKind"], dest: string, phase = "queued"): DlJob {
+  return {
+    id: e.buildCid, kind, editionId: e.editionId, title: e.title, cid: e.buildCid, sha256: e.buildSha256, destKind, dest, phase,
+    done: 0, total: 0, netBps: 0, diskBps: 0, chunks: "", source: "", mirrorChunks: 0, error: "", log: [], netHist: [], diskHist: [],
+  };
+}
+
+const activeJob = (): DlJob | undefined => Object.values(dl.jobs).find((j) => ACTIVE_PHASES.includes(j.phase));
+const jobFor = (e: OnchainEdition | undefined): DlJob | undefined => (e ? dl.jobs[e.buildCid] : undefined);
+
+/** One job at a time: the next queued one starts when the line is free. */
+function pump(): void {
+  if (activeJob()) return;
+  const next = Object.values(dl.jobs).find((j) => j.phase === "queued");
+  if (!next) return;
+  next.phase = "prepare";
+  next.error = "";
+  const cmd = next.kind === "repair" ? "dl_repair" : "dl_start";
+  invoke(cmd, { id: next.id, cid: next.cid, sha256: next.sha256, destKind: next.destKind, dest: next.dest }).catch((err) => {
+    next.phase = "error";
+    next.error = String(err);
+    render();
+    pump();
+  });
+  render();
+}
+
+async function openDownload(editionId: string): Promise<void> {
+  const e = state.catalog.find((c) => c.editionId === editionId);
+  if (!e) return;
+  let size: number | null = null;
+  try {
+    const r = await fetch(`${TICKETD_URL}/build/${e.buildCid}/manifest`);
+    if (r.ok) size = Number(((await r.json()) as { size: number }).size) || null;
+  } catch {
+    /* size unknown: the Rust side still checks the space */
+  }
+  const space = async (p: string) => {
+    try {
+      return await invoke<[number, number] | null>("disk_space", { path: p });
+    } catch {
+      return null;
+    }
+  };
+  const options: DestOption[] = [];
+  for (const dir of settings.libraries) {
+    const s = await space(dir);
+    options.push({ kind: "library", dest: dir, label: dir, free: s?.[0] ?? null, total: s?.[1] ?? null });
+  }
+  const card = cardForEdition(editionId);
+  if (card) {
+    const s = await space(card.cartridge.mount_point);
+    options.push({ kind: "card", dest: card.cartridge.mount_point, label: card.cartridge.mount_point, free: s?.[0] ?? null, total: s?.[1] ?? null });
+  }
+  const fits = (o: DestOption) => size === null || o.free === null || o.free >= size * 1.01;
+  const first = options.find(fits);
+  dl.picker = { editionId, size, options, choice: first ? `${first.kind}|${first.dest}` : "" };
+  render();
+}
+
+async function addLibraryFolder(): Promise<void> {
+  try {
+    const picked = await invoke<string | null>("plugin:dialog|open", { options: { directory: true, multiple: false, title: t("dl.pickTitle") } });
+    if (picked && !settings.libraries.includes(picked)) {
+      settings.libraries.push(picked);
+      saveSettings();
+      await refreshLibrary();
+    }
+  } catch (err) {
+    toast(String(err));
+  }
+  if (dl.picker) await openDownload(dl.picker.editionId);
+  else render();
+}
+
+function confirmDownload(): void {
+  const p = dl.picker;
+  const e = p ? state.catalog.find((c) => c.editionId === p.editionId) : undefined;
+  if (!p || !e || !p.choice) return;
+  const [kind, ...rest] = p.choice.split("|");
+  dl.jobs[e.buildCid] = newJob(e, "download", kind as DlJob["destKind"], rest.join("|"));
+  dl.picker = null;
+  state.screen = "downloads";
+  pump();
+  render();
+}
+
+function startRepair(editionId: string): void {
+  const e = state.catalog.find((c) => c.editionId === editionId);
+  if (!e) return;
+  const card = cardForEdition(editionId);
+  const lib = libraryBuildFor(e);
+  if (card?.cartridge.has_build) dl.jobs[e.buildCid] = newJob(e, "repair", "card", card.cartridge.mount_point);
+  else if (lib) dl.jobs[e.buildCid] = newJob(e, "repair", "library", lib.dir);
+  else return;
+  dl.repair = e.buildCid;
+  pump();
+  render();
+}
+
+function pauseJob(id: string): void {
+  void invoke("dl_pause", { id });
+}
+
+function resumeJob(id: string): void {
+  const j = dl.jobs[id];
+  if (!j) return;
+  j.phase = "queued";
+  pump();
+  render();
+}
+
+function cancelJob(id: string): void {
+  const j = dl.jobs[id];
+  if (!j) return;
+  if (ACTIVE_PHASES.includes(j.phase)) {
+    void invoke("dl_cancel", { id });
+    return;
+  }
+  if (j.phase === "paused" && j.destKind === "library") {
+    // the part file must go too: a short start the cancel flag stops at once
+    j.phase = "prepare";
+    void invoke("dl_start", { id, cid: j.cid, sha256: j.sha256, destKind: j.destKind, dest: j.dest }).then(() => invoke("dl_cancel", { id }));
+    return;
+  }
+  delete dl.jobs[id];
+  render();
+}
+
+function chunkMap(chunks: string, id: string): string {
+  return `<div class="dlm" id="dl-map-${id}">${[...chunks].map((c) => `<i class="c-${c}"></i>`).join("")}</div>`;
+}
+
+function speedGraph(j: DlJob): string {
+  const W = 246, H = 62;
+  const hist = (h: number[]) => {
+    const max = Math.max(1, ...j.netHist, ...j.diskHist);
+    const pts = h.slice(-60);
+    return pts.map((v, i) => `${((i / Math.max(1, pts.length - 1)) * W).toFixed(1)},${(H - 2 - (v / max) * (H - 8)).toFixed(1)}`).join(" ");
+  };
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-label="${esc(t("dl.graph"))}">
+    <path d="M0 ${H - 0.5}H${W}" stroke="rgba(200,225,255,0.12)"></path>
+    <polyline points="${hist(j.netHist)}" fill="none" stroke="oklch(0.86 0.1 200)" stroke-width="2"></polyline>
+    <polyline points="${hist(j.diskHist)}" fill="none" stroke="oklch(0.85 0.11 310)" stroke-width="1.6" stroke-dasharray="4 3"></polyline>
+  </svg>`;
+}
+
+function dlPercent(j: DlJob): number {
+  return j.total ? Math.min(100, Math.floor((j.done / j.total) * 100)) : 0;
+}
+
+function phaseLabel(j: DlJob): string {
+  return t(`dl.ph.${j.phase}` as "dl.ph.download");
+}
+
+function dlCard(j: DlJob): string {
+  const pct = dlPercent(j);
+  const remain = j.netBps > 0 ? Math.ceil((j.total - j.done) / j.netBps) : 0;
+  const active = ACTIVE_PHASES.includes(j.phase);
+  const verified = [...j.chunks].filter((c) => c === "v" || c === "m").length;
+  return `
+    <section class="dl-card ${active ? "on" : ""}">
+      <div class="dl-row">
+        <div class="dl-art" style="${artFor(j.editionId)}"></div>
+        <div class="dl-main">
+          <div class="dl-head">
+            <div style="min-width:0">
+              <div class="dl-title">${esc(j.title)}</div>
+              <div class="dl-sub">${esc(j.destKind === "card" ? t("dl.toCard", { d: j.dest }) : t("dl.toDir", { d: j.dest }))} · ${esc(phaseLabel(j))}</div>
+            </div>
+            <div class="dl-btns">
+              ${active ? `<button class="sx-btn" data-dlpause="${j.id}">${t("dl.pause")}</button>` : j.phase === "paused" || j.phase === "error" ? `<button class="sx-btn primary" data-dlresume="${j.id}">${t("dl.resume")}</button>` : ""}
+              ${j.phase === "done" ? `<button class="sx-btn" data-repair="${esc(j.editionId)}">${t("dl.verify")}</button>` : `<button class="sx-btn ghost" data-dlcancel="${j.id}">${t("dl.cancel")}</button>`}
+            </div>
+          </div>
+          <div class="dl-line">
+            <span class="dl-pct" id="dl-pct-${j.id}">${pct} %</span>
+            <span class="dl-bytes" id="dl-bytes-${j.id}">${j.total ? `${fmtBytes(j.done)} / ${fmtBytes(j.total)}` : "…"}${remain ? ` · ${t("dl.remaining", { s: remain })}` : ""}</span>
+          </div>
+          <div class="dl-bar"><span id="dl-bar-${j.id}" style="width:${pct}%"></span>${active ? `<i class="dl-sheen"></i>` : ""}</div>
+          <div class="dl-chips">
+            ${j.source ? `<span class="dl-chip ok" id="dl-src-${j.id}">● ${esc(j.source)}</span>` : `<span class="dl-chip" id="dl-src-${j.id}">${t("dl.srcOrder")}</span>`}
+            ${j.mirrorChunks ? `<span class="dl-chip vi">◆ ${t("dl.mirrorChunks", { n: j.mirrorChunks })}</span>` : ""}
+            ${j.error ? `<span class="dl-chip bad">${esc(j.error)}</span>` : ""}
+          </div>
+        </div>
+        <div class="dl-speed">
+          <div class="dl-speed-top">
+            <div><div class="dl-k">${t("dl.net")}</div><div class="dl-v cy" id="dl-net-${j.id}">${fmtRate(j.netBps)}</div></div>
+            <div style="text-align:right"><div class="dl-k">${t("dl.disk")}</div><div class="dl-v vi" id="dl-disk-${j.id}">${fmtRate(j.diskBps)}</div></div>
+          </div>
+          <div id="dl-graph-${j.id}">${speedGraph(j)}</div>
+        </div>
+      </div>
+      ${j.chunks ? `<div class="dl-maphead"><span class="mono-label">${t("dl.chunks", { a: verified, b: j.chunks.length })}</span>
+        <span class="dl-legend"><span><i class="c-v"></i>${t("dl.lgV")}</span><span><i class="c-a"></i>${t("dl.lgA")}</span><span><i class="c-m"></i>${t("dl.lgM")}</span><span><i class="c-p"></i>${t("dl.lgP")}</span></span></div>
+        ${chunkMap(j.chunks, j.id)}` : ""}
+    </section>`;
+}
+
+function downloadsView(): string {
+  const jobs = Object.values(dl.jobs).filter((j) => j.kind === "download");
+  const live = jobs.filter((j) => ACTIVE_PHASES.includes(j.phase) || j.phase === "paused" || j.phase === "error");
+  const queued = jobs.filter((j) => j.phase === "queued");
+  const doneIds = new Set(jobs.filter((j) => j.phase === "done").map((j) => j.cid));
+  const installed = [
+    ...jobs.filter((j) => j.phase === "done").map((j) => ({ e: state.catalog.find((c) => c.editionId === j.editionId), where: j.destKind === "card" ? j.dest : j.dest })),
+    ...dl.library.filter((l) => l.status === "installed" && !doneIds.has(l.cid)).map((l) => ({ e: state.catalog.find((c) => c.buildCid === l.cid), where: l.dir })),
+    ...state.games.filter((g) => g.cartridge.has_build).map((g) => ({ e: editionFor(g), where: g.cartridge.mount_point })),
+  ].filter((x): x is { e: OnchainEdition; where: string } => Boolean(x.e));
+  const a = activeJob();
+  return `
+    <div class="shelf dl-screen">
+      <div class="shelf-head">
+        <div>
+          <div class="mono-label">${t("dl.manager")}</div>
+          <div class="shelf-title">${t("dl.title")}</div>
+        </div>
+        <div class="dl-totals">
+          ${a ? `<span>${t("dl.net")} <b class="cy" id="dl-tot-net">${fmtRate(a.netBps)}</b> · ${t("dl.disk")} <b class="vi" id="dl-tot-disk">${fmtRate(a.diskBps)}</b></span>` : ""}
+          <button class="pillbtn" id="dl-addlib">${t("dl.add")}</button>
+        </div>
+      </div>
+      <div class="dl-list">
+        ${live.length ? live.map(dlCard).join("") : `<div class="dl-empty">${t("dl.empty")}</div>`}
+        ${queued.length ? `<div class="mono-label dl-sec">${t("dl.queued", { n: queued.length })}</div>` + queued.map((j) => `
+          <div class="dl-item">
+            <div class="dl-thumb" style="${artFor(j.editionId)}"></div>
+            <div style="flex:1;min-width:0"><div class="dl-item-t">${esc(j.title)}</div><div class="dl-sub">${esc(j.destKind === "card" ? t("dl.toCard", { d: j.dest }) : t("dl.toDir", { d: j.dest }))}</div></div>
+            <button class="sx-btn ghost" data-dlcancel="${j.id}" aria-label="${esc(t("dl.cancel"))}">✕</button>
+          </div>`).join("") : ""}
+        ${installed.length ? `<div class="mono-label dl-sec">${t("dl.done")}</div>` + installed.map((x) => `
+          <div class="dl-item">
+            <div class="dl-thumb" style="${artFor(x.e.editionId)}"></div>
+            <div style="flex:1;min-width:0"><div class="dl-item-t">${esc(x.e.title)}</div><div class="dl-sub ok">${esc(t("dl.installedAt", { d: x.where }))}</div></div>
+            <button class="sx-btn" data-repair="${esc(x.e.editionId)}">${t("dl.verify")}</button>
+          </div>`).join("") : ""}
+      </div>
+    </div>`;
+}
+
+function pickerView(): string {
+  const p = dl.picker;
+  if (!p) return "";
+  const e = state.catalog.find((c) => c.editionId === p.editionId);
+  const need = p.size;
+  const opt = (o: DestOption, i: number) => {
+    const key = `${o.kind}|${o.dest}`;
+    const lacks = need !== null && o.free !== null && o.free < need * 1.01 ? need * 1.01 - o.free : 0;
+    const used = o.free !== null && o.total ? Math.round(((o.total - o.free) / o.total) * 100) : 0;
+    const badge = o.kind === "library" && i === 0 ? `<span class="dp-badge">${t("dl.default")}</span>` : o.kind === "card" ? `<span class="dp-badge vi">${t("dl.option")}</span>` : "";
+    return `
+      <label class="dp-opt ${p.choice === key ? "on" : ""} ${lacks ? "bad" : ""}">
+        <input type="radio" name="dp" value="${esc(key)}" ${p.choice === key ? "checked" : ""} ${lacks ? "disabled" : ""} data-dpchoice="${esc(key)}" />
+        <span class="dp-body">
+          <span class="dp-name">${o.kind === "card" ? t("dl.cardName", { d: o.label }) : t("dl.dirName", { d: o.label })} ${badge}</span>
+          <span class="dp-sub ${lacks ? "bad" : ""}">${lacks ? t("dl.lacks", { n: fmtBytes(lacks) }) : o.kind === "card" ? t("dl.cardSub") : t("dl.libSub")}</span>
+          <span class="dp-gauge"><i style="width:${used}%"></i></span>
+        </span>
+        <span class="dp-free">${o.free !== null ? `${t("dl.free", { n: fmtBytes(o.free) })}<br><span>${t("dl.of", { n: fmtBytes(o.total ?? 0) })}</span>` : ""}</span>
+      </label>`;
+  };
+  const chosen = p.options.find((o) => `${o.kind}|${o.dest}` === p.choice);
+  return `
+    <div class="dp-scrim" id="dp-scrim"></div>
+    <div class="dp" role="dialog" aria-labelledby="dp-title">
+      <div class="mono-label">${t("dl.btn")}</div>
+      <h2 id="dp-title">${esc(t("dl.where", { t: e?.title ?? "" }))}</h2>
+      <p>${need !== null ? esc(t("dl.whereSub", { n: fmtBytes(need) })) : esc(t("dl.whereSubUnknown"))}</p>
+      <div class="dp-opts">
+        ${p.options.length ? p.options.map(opt).join("") : `<div class="dp-none">${t("dl.noLib")}</div>`}
+        <button class="dp-add" id="dp-add">${t("dl.addDir")}</button>
+      </div>
+      <div class="dp-rules">${t("dl.sources")}<br>${t("dl.verifyRule")}</div>
+      <div class="dp-actions">
+        <button class="sx-btn ghost" id="dp-cancel">${t("dl.cancel")}</button>
+        <button class="sx-play dp-go" id="dp-go" ${chosen ? "" : "disabled"}>${chosen ? esc(t("dl.go", { d: chosen.label })) : esc(t("dl.chooseFirst"))}</button>
+      </div>
+    </div>`;
+}
+
+function repairView(): string {
+  const j = dl.repair ? dl.jobs[dl.repair] : undefined;
+  if (!j) return "";
+  const order = ["read", "fetch", "final", "done"];
+  const at = j.phase === "prepare" ? 0 : Math.max(0, order.indexOf(j.phase));
+  const bad = [...j.chunks].filter((c) => c === "x").length;
+  const step = (i: number, label: string, sub: string) =>
+    `<li class="${j.phase === "done" || i < at ? "ok" : i === at ? "on" : ""}"><div class="rp-k">${i < at || j.phase === "done" ? "✓" : i === at ? "●" : ""} ${i + 1} · ${label}</div><div class="rp-s">${sub}</div></li>`;
+  return `
+    <div class="dp-scrim"></div>
+    <div class="dp rp" role="dialog" aria-labelledby="rp-title">
+      <div class="rp-head">
+        <div>
+          <div class="mono-label">${t("rp.kicker")}</div>
+          <h2 id="rp-title">${esc(j.title)}</h2>
+          <p>${esc(j.destKind === "card" ? t("dl.toCard", { d: j.dest }) : t("dl.toDir", { d: j.dest }))}</p>
+        </div>
+        <div class="rp-status ${j.phase === "done" ? "ok" : j.phase === "error" ? "bad" : ""}">${esc(phaseLabel(j))}</div>
+      </div>
+      <ol class="rp-steps">
+        ${step(0, t("rp.s1"), t("rp.s1sub", { n: j.chunks.length || 0 }))}
+        ${step(1, t("rp.s2"), bad ? t("rp.s2bad", { n: bad }) : t("rp.s2ok"))}
+        ${step(2, t("rp.s3"), t("rp.s3sub"))}
+        ${step(3, t("rp.s4"), `0x${j.sha256.replace(/^0x/, "").slice(0, 4)}…${j.sha256.slice(-4)}`)}
+      </ol>
+      ${j.chunks ? chunkMap(j.chunks, j.id) : ""}
+      <div class="rp-log" id="rp-log">${j.log.slice(-40).map((l) => `<div>&gt; ${esc(l)}</div>`).join("")}</div>
+      ${j.error ? `<div class="dl-chip bad" style="margin-top:10px">${esc(j.error)}</div>` : ""}
+      <div class="dp-actions">
+        ${ACTIVE_PHASES.includes(j.phase) ? `<button class="sx-btn ghost" data-dlcancel="${j.id}">${t("rp.stop")}</button>` : `<button class="sx-btn primary" id="rp-close">${t("rp.close")}</button>`}
+      </div>
+    </div>`;
+}
+
+/** Surgical progress update (no rebuild: animations and scroll stay put). */
+function patchDl(j: DlJob): void {
+  const set = (id: string, v: string, html = false) => {
+    const el = document.getElementById(id);
+    if (el) html ? (el.innerHTML = v) : (el.textContent = v);
+  };
+  const pct = dlPercent(j);
+  set(`dl-pct-${j.id}`, `${pct} %`);
+  const remain = j.netBps > 0 ? Math.ceil((j.total - j.done) / j.netBps) : 0;
+  set(`dl-bytes-${j.id}`, `${j.total ? `${fmtBytes(j.done)} / ${fmtBytes(j.total)}` : "…"}${remain ? ` · ${t("dl.remaining", { s: remain })}` : ""}`);
+  const bar = document.getElementById(`dl-bar-${j.id}`);
+  if (bar) bar.style.width = `${pct}%`;
+  set(`dl-net-${j.id}`, fmtRate(j.netBps));
+  set(`dl-disk-${j.id}`, fmtRate(j.diskBps));
+  set("dl-tot-net", fmtRate(j.netBps));
+  set("dl-tot-disk", fmtRate(j.diskBps));
+  if (j.source) set(`dl-src-${j.id}`, `● ${j.source}`);
+  set(`dl-graph-${j.id}`, speedGraph(j), true);
+  const map = document.getElementById(`dl-map-${j.id}`);
+  if (map) map.outerHTML = chunkMap(j.chunks, j.id);
+}
+
+function wireDownloads(root: HTMLElement): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-dlopen]").forEach((b) => b.addEventListener("click", () => void openDownload(b.dataset.dlopen!)));
+  root.querySelectorAll<HTMLButtonElement>("[data-repair]").forEach((b) => b.addEventListener("click", () => startRepair(b.dataset.repair!)));
+  root.querySelectorAll<HTMLButtonElement>("[data-dlpause]").forEach((b) => b.addEventListener("click", () => pauseJob(b.dataset.dlpause!)));
+  root.querySelectorAll<HTMLButtonElement>("[data-dlresume]").forEach((b) => b.addEventListener("click", () => resumeJob(b.dataset.dlresume!)));
+  root.querySelectorAll<HTMLButtonElement>("[data-dlcancel]").forEach((b) => b.addEventListener("click", () => cancelJob(b.dataset.dlcancel!)));
+  root.querySelectorAll<HTMLInputElement>("[data-dpchoice]").forEach((r) =>
+    r.addEventListener("change", () => {
+      if (dl.picker) dl.picker.choice = r.dataset.dpchoice!;
+      render();
+    }),
+  );
+  document.getElementById("dp-add")?.addEventListener("click", () => void addLibraryFolder());
+  document.getElementById("dl-addlib")?.addEventListener("click", () => void addLibraryFolder());
+  document.getElementById("dp-go")?.addEventListener("click", confirmDownload);
+  const closePicker = () => {
+    dl.picker = null;
+    render();
+  };
+  document.getElementById("dp-cancel")?.addEventListener("click", closePicker);
+  document.getElementById("dp-scrim")?.addEventListener("click", closePicker);
+  document.getElementById("rp-close")?.addEventListener("click", () => {
+    if (dl.repair && dl.jobs[dl.repair]?.kind === "repair" && !ACTIVE_PHASES.includes(dl.jobs[dl.repair].phase)) delete dl.jobs[dl.repair];
+    dl.repair = null;
+    render();
+  });
+}
+
+void listen<{ id: string; phase: string; done?: number; total?: number; net_bps?: number; disk_bps?: number; chunks?: string; source?: string; mirror_chunks?: number; error?: string | null }>(
+  "dl-progress",
+  (ev) => {
+    const p = ev.payload;
+    const j = dl.jobs[p.id];
+    if (!j) return;
+    const before = j.phase;
+    j.phase = p.phase;
+    if (p.done !== undefined) j.done = p.done;
+    if (p.total !== undefined) j.total = p.total;
+    if (p.net_bps !== undefined) j.netBps = p.net_bps;
+    if (p.disk_bps !== undefined) j.diskBps = p.disk_bps;
+    if (p.chunks !== undefined) j.chunks = p.chunks;
+    if (p.source) j.source = p.source;
+    if (p.mirror_chunks !== undefined) j.mirrorChunks = p.mirror_chunks;
+    if (p.error) j.error = p.error;
+    if (ACTIVE_PHASES.includes(p.phase)) {
+      j.netHist.push(j.netBps);
+      j.diskHist.push(j.diskBps);
+      if (j.netHist.length > 120) j.netHist.shift(), j.diskHist.shift();
+    }
+    if (["done", "error", "paused", "cancelled"].includes(p.phase)) {
+      j.netBps = 0;
+      j.diskBps = 0;
+      if (p.phase === "done") beep([660, 880, 1320], 0.12);
+      if (p.phase === "cancelled") delete dl.jobs[p.id];
+      void refreshLibrary().then(() => {
+        render();
+        pump();
+      });
+      return;
+    }
+    if (before !== p.phase) render();
+    else patchDl(j);
+  },
+);
+
+void listen<{ id: string; line: string }>("dl-log", (ev) => {
+  const j = dl.jobs[ev.payload.id];
+  if (!j) return;
+  j.log.push(ev.payload.line);
+  if (j.log.length > 200) j.log.shift();
+  const box = document.getElementById("rp-log");
+  if (box && dl.repair === j.id) {
+    box.insertAdjacentHTML("beforeend", `<div>&gt; ${esc(ev.payload.line)}</div>`);
+    box.scrollTop = box.scrollHeight;
+  }
+});
 
 // ── Veille (screensaver, validated 2026-10-09) ──────────────────────────
 // After settings.veilleMin minutes without mouse or keyboard — never during
@@ -2749,6 +3247,7 @@ window.addEventListener("DOMContentLoaded", () => {
   applySettings();
   applyStaticI18n();
   wireWindowControls();
+  void refreshLibrary();
   loadSession();
   document.getElementById("restart-btn")?.addEventListener("click", () => void runBoot());
   document.getElementById("store-btn")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));

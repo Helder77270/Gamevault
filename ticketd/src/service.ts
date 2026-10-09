@@ -211,6 +211,43 @@ export async function getBuild(cid: string): Promise<Uint8Array> {
   return bytes;
 }
 
+// ── Chunk manifest (download manager, 2026-10-10) ───────────────────────
+// The launcher downloads a build in 4 MiB chunks (parallel HTTP ranges,
+// resumable) and verifies each chunk against this list as it lands; a
+// repair re-fetches only the chunks that fail. The list is an ACCELERATOR,
+// not the root of trust: the whole file must still match the on-chain
+// sha256, so a lying manifest is always caught at the end.
+export const CHUNK_SIZE = 4 * 1024 * 1024;
+
+export interface BuildManifest {
+  cid: string;
+  size: number;
+  chunkSize: number;
+  sha256: string; // whole file, 0x-hex — equals the edition's buildHash
+  chunks: string[]; // sha256 of each chunk, hex
+}
+
+const manifests = new Map<string, BuildManifest>();
+
+export async function getBuildManifest(cid: string): Promise<BuildManifest> {
+  const hit = manifests.get(cid);
+  if (hit) return hit;
+  const bytes = await getBuild(cid);
+  const chunks: string[] = [];
+  for (let off = 0; off < bytes.length; off += CHUNK_SIZE) {
+    chunks.push(createHash("sha256").update(bytes.subarray(off, off + CHUNK_SIZE)).digest("hex"));
+  }
+  const m: BuildManifest = {
+    cid,
+    size: bytes.length,
+    chunkSize: CHUNK_SIZE,
+    sha256: `0x${createHash("sha256").update(bytes).digest("hex")}`,
+    chunks,
+  };
+  manifests.set(cid, m);
+  return m;
+}
+
 // ── Lending attestation ─────────────────────────────────────────────────
 // Friendship lives in the DB (social.ts). The contract keeps its guard: at
 // lend time the platform signs an ATTESTATION "owner and borrower friends

@@ -37,7 +37,16 @@ vehicle, the blockchain is the lock."
   write-once, so ticket renewal had nowhere to write the refreshed ticket.
   On USB/SD the launcher rewrites `ticket.json` in place — renewal works.
 - Media convention: a `/gamevault/` folder at the volume root containing
-  `build.enc`, `ticket.json`, `meta.json`, and launcher binaries.
+  `ticket.json`, `meta.json`, optionally `build.enc`, and launcher binaries.
+  Since 2026-10-10 the card is the KEY: one ticket per paired machine in
+  `/gamevault/tickets/<device pubkey>.json` (2 kept, the device limit;
+  `ticket.json` = last written). The game itself downloads to a library
+  folder on the PC by default (`<dir>/gamevault-library/<cid>/build.enc`),
+  or to the card if it has room — no play without the card inserted.
+- Downloads: Rust download manager (download.rs) — 4 MiB chunks over HTTP
+  ranges, ticketd first then IPFS mirrors per chunk, each chunk checked
+  against ticketd's `/build/<cid>/manifest`, the whole file against the
+  on-chain sha256 (root of trust). Resumable; repair re-fetches bad chunks.
 - Launcher media detection: scan mounted removable volumes for
   `/gamevault/ticket.json` (Rust `sysinfo`, no OS-specific device APIs).
 - Cartridges are written by the LAUNCHER itself (WRITE TO CARD: fetch +
