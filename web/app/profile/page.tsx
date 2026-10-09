@@ -8,7 +8,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAccount, useSignMessage } from "wagmi";
-import { fetchOnchainCatalog, type OnchainEdition } from "@gamevault/shared/registryCatalog";
+import { fetchOnchainCatalog, hueOf, type OnchainEdition } from "@gamevault/shared/registryCatalog";
+import { Avatar, shortAddr } from "../components/Avatar";
 import { ConnectButton } from "../components/ConnectButton";
 import { PendingPayout } from "../components/PendingPayout";
 import { TICKETD_URL, useTicketd } from "../lib/ticketd";
@@ -21,8 +22,6 @@ type ProfileData = {
   favorites: string[];
   topPlayed: { editionId: string; seconds: number }[];
 };
-
-const fmtDur = (s: number): string => (s < 60 ? "< 1 min" : s < 3600 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${String(Math.round((s % 3600) / 60)).padStart(2, "0")}`);
 
 /** Redimensionne l'image au canvas : carré 256 px, webp q0.85 → ~10-40 Ko. */
 async function shrinkAvatar(file: File): Promise<{ b64: string }> {
@@ -60,6 +59,8 @@ export default function ProfilePage() {
   const [avatarBust, setAvatarBust] = useState(0);
   const [devices, setDevices] = useState<{ max: number; devices: { pubkey: string; pairedAt: number; lastSeen: number }[] } | null>(null);
   const [revoking, setRevoking] = useState("");
+  const [copied, setCopied] = useState(false);
+  const addrRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     if (!address) return;
@@ -138,6 +139,7 @@ export default function ProfilePage() {
       setPreview(null);
       setAvatarBust(Date.now());
       setSaved(true);
+      window.setTimeout(() => setSaved(false), 3000);
       await refresh();
     } catch (e) {
       setError(String(e instanceof Error ? ((e as Error & { shortMessage?: string }).shortMessage ?? e.message) : e));
@@ -148,146 +150,325 @@ export default function ProfilePage() {
   const toggleFav = (id: string) =>
     setFavorites((f) => (f.includes(id) ? f.filter((x) => x !== id) : f.length < 12 ? [...f, id] : f));
 
-  const titleOf = (id: string): string => catalog.find((e) => e.editionId === id)?.title ?? `Édition #${id}`;
+  const editionOf = (id: string): OnchainEdition | undefined => catalog.find((e) => e.editionId === id);
   const avatarUrl = preview ?? (profile?.hasAvatar && pendingAvatar !== "none" ? `${TICKETD_URL}/profile/avatar/${address}?t=${avatarBust}` : null);
-  const dirty =
-    name.trim() !== (profile?.name ?? "") ||
-    bio !== (profile?.bio ?? "") ||
-    pendingAvatar !== null ||
-    favorites.join(",") !== (profile?.favorites ?? []).join(",");
+  const trimmed = name.trim();
+  const nameOk = trimmed.length >= 2 && trimmed.length <= 24;
+  const changes = [
+    trimmed !== (profile?.name ?? "") && "pseudo",
+    bio !== (profile?.bio ?? "") && "bio",
+    pendingAvatar !== null && "image",
+    favorites.join(",") !== (profile?.favorites ?? []).join(",") && "vitrine",
+  ].filter(Boolean) as string[];
+  const dirty = changes.length > 0;
+
+  const cancel = () => {
+    setName(profile?.name ?? "");
+    setBio(profile?.bio ?? "");
+    setFavorites(profile?.favorites ?? []);
+    setPendingAvatar(null);
+    setPreview(null);
+    setError("");
+  };
+
+  const copyAddr = async () => {
+    if (!address) return;
+    try {
+      await navigator.clipboard.writeText(address);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      addrRef.current?.select();
+    }
+  };
+
+  const artOf = (id: string) => ({
+    background: `linear-gradient(140deg, oklch(0.58 0.12 ${hueOf(id)}), oklch(0.3 0.08 ${hueOf(id) + 40}))`,
+  });
+
+  if (!isConnected || !address) {
+    return (
+      <div className="pe">
+        <header className="pe-head">
+          <div>
+            <div className="pe-eyebrow">PROFIL · ÉDITION</div>
+            <h1>Modifier mon profil</h1>
+            <p>Connectez votre wallet pour modifier votre pseudo, votre bio, votre image et votre vitrine.</p>
+          </div>
+        </header>
+        <section className="pe-card">
+          <ConnectButton />
+        </section>
+      </div>
+    );
+  }
+
+  const devCount = devices?.devices.length ?? 0;
+  const devMax = devices?.max ?? 2;
 
   return (
-    <div className="pane" style={{ maxWidth: "44rem" }}>
-      <h1>Mon profil</h1>
-      <p>
-        Pseudo, bio, avatar et vitrine, modifiables quand vous voulez — <b>zéro transaction</b>. Vos amis vous
-        trouvent par pseudo <em>ou</em> par adresse (les pseudos ne sont pas uniques : l&apos;adresse départage).
-        {address && (
-          <>
-            {" "}
-            <Link href={`/u/${address}`}>Voir mon profil public →</Link>
-          </>
-        )}
-      </p>
-      {!isConnected && <ConnectButton />}
+    <div className="pe">
+      <header className="pe-head">
+        <div>
+          <div className="pe-eyebrow">PROFIL · ÉDITION</div>
+          <h1>Modifier mon profil</h1>
+          <p>Votre profil est public. Tout se modifie sans transaction : la plateforme l&apos;enregistre, lié à votre adresse.</p>
+        </div>
+        <Link className="pe-public" href={`/u/${address}`}>
+          Voir mon profil public ↗
+        </Link>
+      </header>
 
-      {isConnected && address && (
-        <>
-          <div style={{ display: "flex", gap: "1.4rem", alignItems: "center", margin: "1.2rem 0" }}>
-            <div
-              style={{
-                width: 96,
-                height: 96,
-                borderRadius: 20,
-                flex: "none",
-                overflow: "hidden",
-                border: "1px solid var(--line)",
-                background: "linear-gradient(150deg, oklch(0.5 0.1 250), oklch(0.3 0.08 290))",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
+      <div className="pe-grid">
+        <nav className="pe-nav" aria-label="Sections du profil">
+          <a href="#identite">
+            Identité <span className={nameOk ? "ok" : "warn"}>{nameOk ? "✓" : "!"}</span>
+          </a>
+          <a href="#apropos">
+            À propos <span>{bio.length}/500</span>
+          </a>
+          <a href="#vitrine">
+            Vitrine <span>{favorites.length}/12</span>
+          </a>
+          <a href="#appareils">
+            Appareils <span className={devCount >= devMax ? "warn" : ""}>{devCount}/{devMax}</span>
+          </a>
+          <a href="#gains">Gains en attente</a>
+        </nav>
+
+        <div className="pe-form">
+          {/* 1 · identity */}
+          <section className="pe-card" id="identite">
+            <h2>Identité</h2>
+            <p className="pe-help">Ce que les autres joueurs voient en premier.</p>
+            <div className="pe-avatar-row">
               {avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={avatarUrl} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <span className="av-ring" style={{ borderRadius: 26, padding: 3 }}>
+                  <span className="av" style={{ width: 98, height: 98, borderRadius: 22 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={avatarUrl} alt="Votre image de profil" />
+                  </span>
+                </span>
               ) : (
-                <span className="addr" style={{ fontSize: "1.6rem" }}>?</span>
+                <Avatar addr={address} name={trimmed || null} size={98} ring />
               )}
+              <div className="pe-avatar-actions">
+                <div className="pe-row">
+                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => void pickAvatar(e.target.files?.[0])} />
+                  <button className="btn ghost" onClick={() => fileRef.current?.click()}>
+                    Changer l&apos;image
+                  </button>
+                  {(profile?.hasAvatar || preview) && pendingAvatar !== "none" && (
+                    <button
+                      className="pe-text-btn"
+                      onClick={() => {
+                        setPendingAvatar("none");
+                        setPreview(null);
+                      }}
+                    >
+                      Retirer
+                    </button>
+                  )}
+                </div>
+                <span className="pe-help">JPG, PNG ou WebP. Recadrée en carré 256 × 256.</span>
+              </div>
             </div>
-            <div>
-              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => void pickAvatar(e.target.files?.[0])} />
-              <button className="btn ghost" onClick={() => fileRef.current?.click()}>Changer l&apos;image</button>{" "}
-              {(profile?.hasAvatar || preview) && (
-                <button className="btn ghost" onClick={() => { setPendingAvatar("none"); setPreview(null); }}>Retirer</button>
-              )}
-              <p className="addr" style={{ margin: "0.5rem 0 0" }}>Recadrée en 256×256 automatiquement.</p>
+
+            <div className="pe-fields">
+              <div>
+                <label htmlFor="pf-name">Pseudo</label>
+                <div className="pe-input-wrap">
+                  <input
+                    id="pf-name"
+                    className={`pe-input ${!nameOk && trimmed !== (profile?.name ?? "") ? "invalid" : ""}`}
+                    maxLength={24}
+                    placeholder="ex. Picsou"
+                    value={name}
+                    aria-describedby="pf-name-help"
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                  <span className="pe-count">{trimmed.length}/24</span>
+                </div>
+                <p className="pe-help" id="pf-name-help">
+                  {!nameOk && trimmed !== (profile?.name ?? "")
+                    ? "Le pseudo doit faire entre 2 et 24 caractères."
+                    : "2 à 24 caractères. Deux joueurs peuvent porter le même pseudo : l'adresse les départage."}
+                </p>
+              </div>
+              <div>
+                <label htmlFor="pf-addr">Adresse du wallet</label>
+                <div className="pe-row">
+                  <input id="pf-addr" ref={addrRef} className="pe-input mono" readOnly value={address} />
+                  <button className="pe-icon-btn" aria-label="Copier l'adresse" onClick={() => void copyAddr()}>
+                    {copied ? (
+                      "✓"
+                    ) : (
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <rect x="9" y="9" width="12" height="12" rx="2" />
+                        <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <p className="pe-help">Votre identité sur GameVault. Elle ne se modifie pas.</p>
+              </div>
             </div>
-          </div>
+          </section>
 
-          <p>
-            Pseudo{" "}
-            <input style={{ width: "16rem" }} maxLength={24} placeholder="ex. Picsou" value={name} onChange={(e) => setName(e.target.value)} />
-            <span className="addr"> ({address.slice(0, 6)}…{address.slice(-4)})</span>
-          </p>
+          {/* 2 · about */}
+          <section className="pe-card" id="apropos">
+            <h2>À propos</h2>
+            <p className="pe-help">Ce que vous aimez jouer, quand vous êtes disponible pour un prêt.</p>
+            <label htmlFor="pf-bio" style={{ marginTop: "1.1rem" }}>
+              Bio
+            </label>
+            <textarea
+              id="pf-bio"
+              className="pe-input"
+              value={bio}
+              maxLength={500}
+              rows={4}
+              placeholder="Ce que vous aimez jouer, vos disponibilités pour les prêts…"
+              onChange={(e) => setBio(e.target.value)}
+            />
+            <div className="pe-foot">
+              <span className="pe-help">Texte simple, sans mise en forme.</span>
+              <span className="pe-count static">{bio.length}/500</span>
+            </div>
+          </section>
 
-          <h2 className="section">À propos ({bio.length}/500)</h2>
-          <textarea
-            value={bio}
-            maxLength={500}
-            rows={4}
-            placeholder="Ce que vous aimez jouer, vos disponibilités pour les prêts…"
-            onChange={(e) => setBio(e.target.value)}
-            style={{ width: "100%", boxSizing: "border-box", resize: "vertical", font: "inherit" }}
-          />
+          {/* 3 · showcase */}
+          <section className="pe-card" id="vitrine">
+            <div className="pe-title-row">
+              <h2>Vitrine</h2>
+              <span className="pe-eyebrow">{favorites.length} ÉPINGLÉ{favorites.length > 1 ? "S" : ""} SUR 12</span>
+            </div>
+            <p className="pe-help">Les jeux mis en avant sur votre profil, dans l&apos;ordre où vous les épinglez.</p>
+            {catalog.length ? (
+              <div className="pe-tiles">
+                {catalog.map((e) => {
+                  const rank = favorites.indexOf(e.editionId);
+                  const on = rank >= 0;
+                  const full = !on && favorites.length >= 12;
+                  return (
+                    <button key={e.editionId} className={`pe-tile ${on ? "on" : ""}`} aria-pressed={on} disabled={full} onClick={() => toggleFav(e.editionId)}>
+                      <span className="pe-tile-art" style={artOf(e.editionId)} />
+                      {on && <span className="pe-rank">{rank + 1}</span>}
+                      <span className="pe-tile-body">
+                        <span className="pe-tile-title">{e.title}</span>
+                        <span className="pe-tile-sub">{on ? "★ ÉPINGLÉ" : full ? "VITRINE PLEINE" : "＋ ÉPINGLER"} · {e.studio.toUpperCase()}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="pe-help">Lecture du catalogue on-chain…</p>
+            )}
+          </section>
 
-          <h2 className="section">Favoris ({favorites.length}/12)</h2>
-          <p className="addr">Cliquez pour épingler vos jeux préférés sur votre profil.</p>
-          <p>
-            {catalog.map((e) => (
-              <button
-                key={e.editionId}
-                className={`btn ${favorites.includes(e.editionId) ? "" : "ghost"}`}
-                style={{ marginRight: "0.5rem", marginBottom: "0.5rem" }}
-                onClick={() => toggleFav(e.editionId)}
-              >
-                {favorites.includes(e.editionId) ? "★ " : "☆ "}
-                {e.title}
-              </button>
-            ))}
-          </p>
+          {/* 4 · devices */}
+          <section className="pe-card" id="appareils">
+            <div className="pe-title-row">
+              <h2>Appareils</h2>
+              <span className={`pe-eyebrow ${devCount >= devMax ? "warn" : ""}`}>
+                {devCount} SUR {devMax}
+                {devCount >= devMax ? " · COMPLET" : ""}
+              </span>
+            </div>
+            <p className="pe-help">
+              Votre compte peut être actif sur {devMax} machines. En appairer une de plus déconnecte la moins utilisée. Libérer une place demande une signature, sans transaction.
+            </p>
+            {devices?.devices.length ? (
+              <div className="pe-list">
+                {devices.devices.map((d) => (
+                  <div className="pe-device" key={d.pubkey}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                      <rect x="3" y="4" width="18" height="12" rx="2" />
+                      <path d="M8 20h8M12 16v4" />
+                    </svg>
+                    <div className="pe-device-body">
+                      <code>
+                        {d.pubkey.slice(0, 6)}…{d.pubkey.slice(-4)}
+                      </code>
+                      <span className="pe-help">
+                        Appairée le {new Date(d.pairedAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} · vue le{" "}
+                        {new Date(d.lastSeen).toLocaleString("fr-FR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </div>
+                    <button className="pe-danger" disabled={!!revoking} onClick={() => void revoke(d.pubkey)}>
+                      {revoking === d.pubkey ? "Signature…" : "Déconnecter"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="pe-help pe-empty">Aucun appareil actif. Appairez une machine depuis le launcher.</p>
+            )}
+          </section>
 
-          <p>
-            <button className="btn" disabled={busy || !dirty || name.trim().length < 2 || name.trim().length > 24} onClick={() => void save()}>
-              {busy ? "Enregistrement…" : "Enregistrer le profil"}
-            </button>{" "}
-            {saved && <span style={{ color: "var(--ok)" }}>✔ enregistré</span>}
-          </p>
-
-          <h2 className="section">Les plus joués</h2>
-          {profile?.topPlayed.length ? (
-            profile.topPlayed.map((t) => (
-              <p key={t.editionId} style={{ margin: "0.25rem 0" }}>
-                <b>{titleOf(t.editionId)}</b> <span className="addr">· {fmtDur(t.seconds)}</span>
-              </p>
-            ))
-          ) : (
-            <p className="addr">Rien encore — le launcher remplit cette liste à chaque session de jeu.</p>
-          )}
-
-          <h2 className="section">
-            Mes appareils ({devices?.devices.length ?? 0}/{devices?.max ?? 2})
-          </h2>
-          <p className="addr">
-            Votre compte peut être actif sur {devices?.max ?? 2} machines en même temps (chez vous + chez un ami par
-            exemple). Appairer une machine de plus déconnecte la moins utilisée ; vous pouvez aussi libérer une place
-            ici — une signature, zéro transaction.
-          </p>
-          {devices?.devices.length ? (
-            devices.devices.map((d) => (
-              <p key={d.pubkey} style={{ margin: "0.3rem 0" }}>
-                <code>
-                  {d.pubkey.slice(0, 10)}…{d.pubkey.slice(-6)}
-                </code>{" "}
-                <span className="addr">
-                  · appairé le {new Date(d.pairedAt).toLocaleDateString()} · vu le {new Date(d.lastSeen).toLocaleString()}
-                </span>{" "}
-                <button className="btn ghost" disabled={!!revoking} onClick={() => void revoke(d.pubkey)}>
-                  {revoking === d.pubkey ? "Signature…" : "Déconnecter"}
-                </button>
-              </p>
-            ))
-          ) : (
-            <p className="addr">Aucun appareil actif — appairez une machine depuis le launcher.</p>
-          )}
-
-          {address && <PendingPayout address={address} />}
-
-          <h2 className="section">Succès</h2>
-          <p className="addr">Bientôt — les hauts faits de vos licences (premier prêt, revente, collection complète…).</p>
+          {/* 5 · pending payouts */}
+          <section className="pe-card" id="gains">
+            <PendingPayout address={address} variant="card" />
+          </section>
 
           {error && <p className="error-box">{error}</p>}
-        </>
+        </div>
+
+        <aside className="pe-preview" aria-label="Aperçu du profil public">
+          <div className="pe-eyebrow">APERÇU PUBLIC · EN DIRECT</div>
+          <div className="pe-pcard">
+            <div className="pe-pbanner" />
+            <div className="pe-pbody">
+              <div className="pe-pavatar">
+                {avatarUrl ? (
+                  <span className="av-ring" style={{ borderRadius: 18, padding: 3 }}>
+                    <span className="av" style={{ width: 62, height: 62, borderRadius: 15 }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={avatarUrl} alt="" />
+                    </span>
+                  </span>
+                ) : (
+                  <Avatar addr={address} name={trimmed || null} size={62} ring />
+                )}
+              </div>
+              <div className="pe-pname">{trimmed || "Sans pseudo"}</div>
+              <div className="pe-paddr">{shortAddr(address).toUpperCase()}</div>
+              {bio.trim() && <p className="pe-pbio">{bio.trim().length > 170 ? `${bio.trim().slice(0, 170)}…` : bio.trim()}</p>}
+              {favorites.length > 0 && (
+                <div className="pe-pfavs">
+                  {favorites.slice(0, 4).map((id) => (
+                    <span key={id} className="pe-pfav" style={artOf(id)} title={editionOf(id)?.title ?? `Édition #${id}`} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <p className="pe-help">L&apos;aperçu suit vos modifications avant l&apos;enregistrement.</p>
+        </aside>
+      </div>
+
+      {(dirty || saved) && (
+        <div className={`pe-savebar ${dirty ? "" : "done"}`} role="status">
+          {dirty ? (
+            <>
+              <span className="pe-savebar-msg">
+                <span className="pe-dot" />
+                {changes.length} modification{changes.length > 1 ? "s" : ""} non enregistrée{changes.length > 1 ? "s" : ""} · {changes.join(", ")}
+              </span>
+              <span className="pe-row">
+                <button className="btn ghost" disabled={busy} onClick={cancel}>
+                  Annuler
+                </button>
+                <button className="btn" disabled={busy || !nameOk} onClick={() => void save()}>
+                  {busy ? "Enregistrement…" : "Enregistrer"}
+                </button>
+              </span>
+            </>
+          ) : (
+            <span className="pe-savebar-msg">✓ Profil enregistré</span>
+          )}
+        </div>
       )}
     </div>
   );

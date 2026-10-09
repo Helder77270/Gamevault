@@ -8,7 +8,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import QRCode from "qrcode";
 import { createPublicClient, http } from "viem";
 import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/shared";
-import { fetchOnchainCatalog, BLURBS, type OnchainEdition } from "@gamevault/shared/registryCatalog";
+import { fetchOnchainCatalog, BLURBS, GENRES, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
 import { fetchBuild, GATEWAYS } from "@gamevault/shared/storage";
 import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
@@ -1331,41 +1331,92 @@ function homeView(): string {
       </div>`;
   }
 
-  // ── PISTE B — card seated: hero continue + card widget ───────
+  // ── PISTE B — card seated: the game takes the whole screen (SteamOS-like,
+  // validated 2026-10-09). Same stage for every card state; only the primary
+  // action changes: PLAY, PAIR (also RENEW: same flow), or FETCH the build.
   const ed = editionFor(seated);
+  const editionId = ed?.editionId ?? seated.meta.edition ?? "1";
   const log = ed ? readLog()[ed.editionId] : undefined;
   const can = ed ? playableNow(ed) : false;
   const title = seated.meta.title ?? ed?.title ?? "GAME";
+  const action: "play" | "pair" | "renew" | "fetch" | "sheet" = can
+    ? "play"
+    : seated.verdict === "unpaired" || !isOurs(seated)
+      ? "pair"
+      : seated.verdict === "expired"
+        ? "renew"
+        : !seated.cartridge.has_build
+          ? "fetch"
+          : "sheet";
+  const warn = action !== "play";
   const vState = can
     ? { label: "READY · TICKET " + ticketDaysLeft(seated), cls: "" }
-    : seated.verdict === "unpaired" || !isOurs(seated)
+    : action === "pair"
       ? { label: "PAIR THIS MACHINE", cls: "warn" }
-      : seated.verdict === "expired"
+      : action === "renew"
         ? { label: t("home.ticketExpired"), cls: "warn" }
-        : !seated.cartridge.has_build
+        : action === "fetch"
           ? { label: "NO BUILD — FETCH IPFS", cls: "warn" }
           : { label: seated.verdict.toUpperCase(), cls: "warn" };
-  const stats = log
-    ? `▶ ×${log.playCount} · ${fmtDur(log.totalSeconds)} · <span data-ago data-ts="${log.lastPlayedAt}">${fmtAgo(log.lastPlayedAt)}</span>`
-    : t("home.firstPlay");
+  const tokenId = seated.ticket?.tokenId;
+  const kicker = [
+    can ? t("sx.continue") : t("sx.inserted"),
+    t("pv.ed", { id: esc(editionId) }),
+    tokenId ? `LICENCE #${esc(tokenId)}` : "",
+  ].filter(Boolean).join(" · ");
+  const sub = [ed?.studio, GENRES[editionId] ?? "INDIE"].filter(Boolean).map((x) => esc(String(x).toUpperCase())).join(" · ");
+  const chips = can
+    ? [
+        log ? `▶ ${t("sx.plays", { n: log.playCount })}` : t("home.firstPlay"),
+        log ? t("sx.played", { d: fmtDur(log.totalSeconds) }) : "",
+        log ? `${t("sx.last")} · <span data-ago data-ts="${log.lastPlayedAt}">${fmtAgo(log.lastPlayedAt)}</span>` : "",
+      ]
+        .filter(Boolean)
+        .map((c) => `<span class="sx-chip">${c}</span>`)
+        .join("") + `<span class="sx-chip ok">${t("sx.offline", { d: ticketDaysLeft(seated) })}</span>`
+    : "";
+  const why = warn ? `<p class="sx-why">${t(`sx.why.${action}` as "sx.why.pair")}</p>` : "";
+  const primaryLabel = t(`sx.act.${action}` as "sx.act.play");
+  const icon = {
+    play: `<span class="sx-key" aria-hidden="true">↵</span>`,
+    pair: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"></path></svg>`,
+    renew: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"></path></svg>`,
+    fetch: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>`,
+    sheet: "",
+  }[action];
+  const friendHere = state.friends.find((f) => f.presence?.state === "playing");
+  const friendChip = friendHere
+    ? `<div class="sx-friend">
+        <span class="lc-dot playing">${avatarHtml(friendHere, 34)}</span>
+        <div style="min-width:0;flex:1">
+          <div class="sx-friend-name">${esc(friendHere.name ?? short(friendHere.addr, 4))}</div>
+          <div class="sx-friend-sub">${esc(presenceLabel(friendHere.presence))}</div>
+        </div>
+        <button class="sx-link" data-chat="${esc(friendHere.addr)}">CHAT ↗</button>
+      </div>`
+    : "";
+  // Library rail: the seated game first, then what this machine can play,
+  // then the rest of the catalog (peeking off the right edge, iiSU-style).
+  const railEds = [
+    ...state.catalog.filter((e) => e.editionId === editionId),
+    ...state.catalog.filter((e) => e.editionId !== editionId && playableNow(e)),
+    ...state.catalog.filter((e) => e.editionId !== editionId && !playableNow(e)),
+  ];
+  const rail = railEds
+    .map(
+      (e) => `
+      <button class="sx-tile ${e.editionId === editionId ? "on" : ""}" data-edition="${esc(e.editionId)}" style="${artFor(e.editionId)}" aria-label="${esc(e.title)}">
+        <span class="sx-tile-t">${esc(e.title)}</span>
+      </button>`,
+    )
+    .join("");
 
   return `
-    ${homeBg()}
-    <div class="home">
-      ${top}
-      <div class="heroB">
-        <button class="home-hero" id="home-hero" style="${artFor(ed?.editionId ?? "1")}">
-          <span class="sheen"></span>
-          <span class="hh-kicker">${can ? "CONTINUE" : "INSERTED"} · ${t("pv.ed", { id: esc(ed?.editionId ?? "?") })}${seated.ticket ? ` · LICENCE #${esc(seated.ticket.tokenId)}` : ""}</span>
-          <span class="hh-bottom">
-            <span style="min-width:0">
-              <span class="hh-title">${esc(title)}</span>
-              <span class="hh-stats">${stats}</span>
-            </span>
-            <span class="hh-play ${can ? "" : "ghost"}">${can ? "▶ PLAY" : t("home.openSheet")}</span>
-          </span>
-        </button>
-        <div class="card-widget">
+    <div class="sx">
+      <div class="sx-art ${warn ? "held" : ""}" style="${artFor(editionId)}"></div>
+      <div class="sx-scrim-l"></div><div class="sx-scrim-b"></div>
+      <div class="sx-side">
+        <div class="card-widget sx-glass ${warn ? "warn" : ""}">
           <div class="mono-label" style="font-size:10px;letter-spacing:0.26em">SLOT A · CARD SEATED</div>
           <div class="cw-row">
             <span class="atk-slotwrap" aria-hidden="true">
@@ -1375,12 +1426,34 @@ function homeView(): string {
             <div style="min-width:0">
               <div class="cw-title">${esc(title)}</div>
               <div class="cw-state ${vState.cls}"><span class="cw-led"></span>${esc(vState.label)}</div>
-              <div class="cw-dim">${esc(seated.cartridge.mount_point)} · ${seated.cartridge.has_build ? "BUILD OK" : "NO BUILD"}${addr ? " · OWNER ✔" : ""}</div>
+              <div class="cw-dim">${esc(seated.cartridge.mount_point)} · ${seated.cartridge.has_build ? "BUILD OK" : "NO BUILD"}${addr && !warn ? " · OWNER ✔" : ""}</div>
             </div>
           </div>
-          <div class="cw-pills">
-            <button class="pillbtn" data-go="shelf">GAME SHELF · ${playable}/${state.catalog.length}</button>
-            <button class="pillbtn violet" id="home-insert">${t("home.cardPair")}</button>
+        </div>
+        ${friendChip}
+      </div>
+      <div class="sx-content">
+        <div class="sx-main">
+          <span class="sx-kicker ${warn ? "warn" : ""}">${kicker}</span>
+          <h1 class="sx-title">${esc(title)}</h1>
+          <div class="sx-sub">${sub}</div>
+          ${chips ? `<div class="sx-chips">${chips}</div>` : ""}
+          ${why}
+          <div class="sx-actions">
+            <button class="sx-play ${warn ? "warn" : ""}" id="home-hero">${icon}${esc(primaryLabel)}</button>
+            ${action !== "sheet" ? `<button class="sx-btn" data-edition="${esc(editionId)}">${t("sx.sheet")}</button>` : ""}
+            ${tokenId && /^\d{1,12}$/.test(tokenId) ? `<button class="sx-btn" data-prov="${esc(tokenId)}">${t("sx.prov")}</button>` : ""}
+            ${can ? `<button class="sx-btn violet" id="home-lend">${t("sx.lend")}</button>` : ""}
+          </div>
+        </div>
+        <div class="sx-rail">
+          <div class="sx-rail-head">
+            <span class="mono-label">${t("sx.library", { n: playable })}</span>
+            <span class="sx-keys" aria-hidden="true"><span class="sx-kc">↵</span>${esc(primaryLabel)}<span class="sx-kc">F</span>${t("sx.sheet")}</span>
+          </div>
+          <div class="sx-tiles">
+            ${rail}
+            <button class="sx-tile store" id="home-store">+ STORE</button>
           </div>
         </div>
       </div>
@@ -2172,8 +2245,11 @@ function wire(root: HTMLElement): void {
     const ed = editionFor(g);
     state.sel = ed?.editionId ?? null;
     if (ed && playableNow(ed)) void play(g);
-    else go("detail");
+    // pairing and renewal are the same flow (a fresh ticket for this machine)
+    else if (g.verdict === "unpaired" || g.verdict === "expired" || !isOurs(g)) void startPairing(g);
+    else go("detail"); // no build: the game page fetches it
   });
+  document.getElementById("home-lend")?.addEventListener("click", () => void openUrl(`${MARKETPLACE_URL}/friends`));
   document.getElementById("view-grid")?.addEventListener("click", () => {
     state.shelfMode = "grid";
     localStorage.setItem("gv-shelfmode", "grid");
@@ -2453,6 +2529,24 @@ async function refresh(): Promise<void> {
   if (!typing && sigOf() !== lastSig) render();
   else renderChrome();
 }
+
+// Seated home shortcuts (shown in the rail header): Enter = the primary
+// action, F = the game page. Never while typing or during a session.
+window.addEventListener("keydown", (e) => {
+  if (state.screen !== "home" || state.playing || state.nativeRun || !state.games[0]) return;
+  const tag = (document.activeElement as HTMLElement | null)?.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === "Enter" && tag !== "BUTTON") {
+    e.preventDefault();
+    document.getElementById("home-hero")?.click();
+  } else if (e.key === "f" || e.key === "F") {
+    const ed = editionFor(state.games[0]);
+    if (ed) {
+      state.sel = ed.editionId;
+      go("detail");
+    }
+  }
+});
 
 window.addEventListener("DOMContentLoaded", () => {
   applySettings();

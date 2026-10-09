@@ -606,30 +606,67 @@ button { font-family: inherit; }
 .atk-sub { display: block; margin-top: 8px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.26em; color: var(--dim); }
 
 /* ── Home v2 : hero continue + card widget (card seated) ─────── */
-.heroB { flex: 1; min-height: 0; display: flex; gap: 16px; align-items: stretch; margin-top: 16px; position: relative; z-index: 1; }
-.home-hero {
-  position: relative; overflow: hidden; flex: 1.5; min-width: 0; cursor: pointer; text-align: left;
-  border-radius: 18px; border: 1px solid rgba(200,225,255,0.25); color: var(--ink); padding: 0;
-  box-shadow: 0 28px 60px -30px oklch(0.6 0.13 290 / 0.8), 0 1px 0 rgba(255,255,255,0.25) inset;
-  transition: border-color 0.18s;
+/* ── Home with a card seated: the game takes the whole screen (SteamOS-like,
+   validated 2026-10-09). Art full-bleed, scrims for legibility, the card
+   widget kept as glass on the right, library rail peeking at the bottom. */
+.sx { position: absolute; inset: 0; overflow: hidden; animation: auraIn 0.5s ease both; }
+.sx-art { position: absolute; inset: -2%; background-size: cover !important; background-position: center !important; transform: scale(1.02); animation: sxKen 40s ease-in-out infinite alternate; }
+.sx-art::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.05) 0 10px, transparent 10px 22px); }
+.sx-art.held { filter: saturate(0.35) brightness(0.72); }
+@keyframes sxKen { from { transform: scale(1.02) translate(0, 0); } to { transform: scale(1.08) translate(-1.5%, -1%); } }
+.sx-scrim-l { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(5,6,13,0.94) 0%, rgba(5,6,13,0.78) 34%, rgba(5,6,13,0.14) 66%, rgba(5,6,13,0.38) 100%); }
+.sx-scrim-b { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5,6,13,0.45) 0%, transparent 20%, transparent 55%, rgba(5,6,13,0.92) 88%); }
+
+.sx-side { position: absolute; right: 28px; top: 24px; z-index: 2; width: 330px; display: flex; flex-direction: column; gap: 12px; }
+.card-widget.sx-glass { width: auto; background: rgba(8,11,24,0.58); backdrop-filter: blur(14px); border-color: rgba(200,225,255,0.22); }
+.card-widget.sx-glass.warn { border-color: oklch(0.82 0.12 85 / 0.4); }
+.sx-friend { display: flex; align-items: center; gap: 11px; padding: 11px 14px; border-radius: 14px; border: 1px solid rgba(200,225,255,0.16); background: rgba(8,11,24,0.5); backdrop-filter: blur(14px); }
+.sx-friend-name { font-size: 13px; font-weight: 600; }
+.sx-friend-sub { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.12em; color: oklch(0.85 0.13 160); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sx-link { cursor: pointer; border: none; background: none; color: var(--cyan); font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; padding: 6px; }
+.sx-link:hover { color: var(--ink); }
+
+.sx-content { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: 22px; padding: 24px 0 18px 52px; }
+.sx-main { max-width: min(660px, calc(100% - 420px)); min-width: 360px; }
+.sx-kicker { display: inline-block; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.22em; color: rgba(235,245,255,0.85); padding: 6px 11px; border-radius: 999px; border: 1px solid rgba(200,225,255,0.25); background: rgba(5,6,13,0.45); }
+.sx-kicker.warn { color: oklch(0.88 0.1 85); border-color: oklch(0.82 0.12 85 / 0.45); background: oklch(0.82 0.12 85 / 0.1); }
+.sx-title { margin: 14px 0 0; font-size: clamp(44px, 6.4vw, 84px); line-height: 0.94; font-weight: 700; letter-spacing: -0.01em; text-shadow: 0 6px 34px rgba(0,0,0,0.65); text-wrap: balance; }
+.sx-sub { margin-top: 12px; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.2em; color: rgba(214,230,255,0.72); }
+.sx-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.sx-chip { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; padding: 6px 11px; border-radius: 999px; background: rgba(226,240,255,0.08); border: 1px solid rgba(200,225,255,0.18); }
+.sx-chip.ok { color: oklch(0.86 0.12 160); background: oklch(0.8 0.14 160 / 0.1); border-color: oklch(0.8 0.14 160 / 0.35); }
+.sx-why { margin: 14px 0 0; max-width: 520px; font-size: 14.5px; line-height: 1.55; color: rgba(222,236,255,0.85); }
+.sx-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 22px; }
+.sx-play {
+  cursor: pointer; display: inline-flex; align-items: center; gap: 13px; padding: 17px 42px 17px 26px; border-radius: 999px; border: none;
+  font-family: var(--sans); font-size: 21px; font-weight: 700; letter-spacing: 0.1em; color: #0a1020;
+  background: linear-gradient(180deg, #f6fbff, oklch(0.84 0.09 205)); animation: sxGlow 2.6s ease-in-out infinite; transition: transform 0.15s;
 }
-.home-hero:hover { border-color: oklch(0.8 0.1 200 / 0.7); }
-.home-hero::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(135deg, rgba(255,255,255,0.08) 0 10px, transparent 10px 22px); }
-.home-hero .sheen { position: absolute; top: 0; left: 0; width: 34%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.14), transparent); animation: auraSheen 6.5s ease-in-out infinite; }
-.hh-kicker {
-  position: absolute; top: 16px; left: 18px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.2em;
-  color: rgba(255,255,255,0.7); background: rgba(5,6,13,0.45); padding: 4px 10px; border-radius: 999px;
+.sx-play:hover { transform: translateY(-1px); }
+.sx-play:focus-visible { outline: 3px solid var(--cyan); outline-offset: 4px; }
+.sx-play.warn { color: #1d1404; background: linear-gradient(180deg, oklch(0.95 0.06 90), oklch(0.82 0.12 85)); animation: none; box-shadow: 0 0 0 1px rgba(255,255,255,0.5), 0 18px 46px -14px oklch(0.82 0.12 85 / 0.8); }
+@keyframes sxGlow { 0%, 100% { box-shadow: 0 0 0 1px rgba(255,255,255,0.55), 0 18px 46px -14px oklch(0.78 0.13 205 / 0.9); } 50% { box-shadow: 0 0 0 1px rgba(255,255,255,0.75), 0 18px 58px -10px oklch(0.82 0.14 205); } }
+.sx-key { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; color: var(--ink); background: #0a1020; }
+.sx-btn { cursor: pointer; padding: 14px 20px; border-radius: 999px; font-family: var(--sans); font-size: 14px; font-weight: 600; color: var(--ink); border: 1px solid rgba(200,225,255,0.3); background: rgba(5,6,13,0.5); backdrop-filter: blur(8px); transition: background 0.15s; }
+.sx-btn:hover { background: rgba(226,240,255,0.14); }
+.sx-btn.violet { color: #f6efff; border-color: oklch(0.8 0.11 310 / 0.55); background: oklch(0.45 0.12 310 / 0.4); }
+
+.sx-rail { flex-shrink: 0; }
+.sx-rail-head { display: flex; align-items: center; justify-content: space-between; padding-right: 28px; }
+.sx-rail-head .mono-label { font-size: 9.5px; letter-spacing: 0.24em; color: rgba(214,230,255,0.62); }
+.sx-keys { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; color: rgba(214,230,255,0.6); }
+.sx-kc { min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(214,230,255,0.5); color: var(--ink); margin-left: 10px; }
+.sx-tiles { display: flex; gap: 14px; margin-top: 10px; overflow: hidden; }
+.sx-tile {
+  cursor: pointer; flex-shrink: 0; width: 176px; height: 92px; border-radius: 12px; padding: 0; position: relative; overflow: hidden;
+  border: 1px solid rgba(200,225,255,0.18); background-size: cover !important; background-position: center !important; opacity: 0.85; transition: opacity 0.15s, transform 0.15s;
 }
-.hh-bottom { position: absolute; left: 22px; right: 22px; bottom: 20px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
-.hh-title { display: block; font-size: 30px; font-weight: 700; line-height: 1.05; text-shadow: 0 4px 22px rgba(0,0,0,0.6); }
-.hh-stats { display: block; margin-top: 7px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; color: rgba(235,245,255,0.8); }
-.hh-play {
-  flex: none; padding: 14px 30px; border-radius: 999px; font-size: 15px; font-weight: 700; letter-spacing: 0.06em;
-  color: #0a1020; border: 1px solid rgba(255,255,255,0.55);
-  background: linear-gradient(180deg, #f2f8ff, oklch(0.82 0.08 205));
-  box-shadow: 0 14px 34px -14px oklch(0.75 0.12 210);
-}
-.hh-play.ghost { color: var(--ink); border-color: rgba(200,225,255,0.3); background: rgba(10,14,26,0.6); box-shadow: none; }
+.sx-tile:hover, .sx-tile:focus-visible { opacity: 1; transform: translateY(-2px); outline: none; }
+.sx-tile.on { opacity: 1; border: 2px solid oklch(0.88 0.1 200); box-shadow: 0 0 0 4px oklch(0.8 0.1 200 / 0.25), 0 0 26px oklch(0.8 0.12 200 / 0.6); }
+.sx-tile-t { position: absolute; left: 10px; right: 10px; bottom: 8px; text-align: left; font-family: var(--sans); font-size: 12.5px; font-weight: 600; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sx-tile.store { border-style: dashed; border-color: rgba(200,225,255,0.3); background: rgba(5,6,13,0.4) !important; color: rgba(214,230,255,0.75); font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.18em; opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .sx-art, .sx-play { animation: none; } }
+
 .card-widget {
   width: 330px; flex: none; border-radius: 16px; border: 1px solid var(--line);
   background: rgba(10,14,26,0.55); backdrop-filter: blur(3px); padding: 18px;
@@ -642,7 +679,6 @@ button { font-family: inherit; }
 .cw-state.warn { color: oklch(0.82 0.12 85); }
 .cw-state.warn .cw-led { background: oklch(0.82 0.12 85); box-shadow: 0 0 8px oklch(0.82 0.12 85 / 0.8); }
 .cw-dim { margin-top: 4px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; color: var(--dim); }
-.cw-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
 
 /* ── Shelf : view toggle + list mode + preview pane ──────────── */
 .view-toggle { display: flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
