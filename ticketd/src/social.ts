@@ -30,6 +30,7 @@ import {
   sessions,
   studioPages,
   tx,
+  wishlist,
   type ChatMessage,
   type StudioPage,
 } from "./db.ts";
@@ -353,6 +354,42 @@ export function addPlaystat(wallet: string, editionId: string, seconds: number):
   if (!Number.isFinite(s) || s <= 0 || s > 24 * 3600) throw new Error("durée invalide");
   playstats.add(wallet, editionId, s);
   activity.add(wallet, "played", { editionId, seconds: s });
+  return { ok: true };
+}
+
+// ── Wishlist (private) ─────────────────────────────────────────────────
+// The primary price is fixed on-chain, so a "price drop" is a second-hand
+// copy listed below the price the owner last saw. The clients (launcher,
+// web) read the listings and report what they showed with /wishlist/seen.
+
+const WISH_MAX = 50;
+const EDITION_RE = /^\d{1,6}$/;
+const WEI_RE = /^\d{1,40}$/;
+
+export function wishlistOf(me: string) {
+  return wishlist.list(me);
+}
+
+export function setWish(me: string, body: { editionId?: unknown; on?: unknown; priceWei?: unknown }) {
+  const editionId = String(body.editionId ?? "");
+  if (!EDITION_RE.test(editionId)) throw new Error("édition invalide");
+  if (body.on === false) {
+    wishlist.remove(me, editionId);
+  } else {
+    const priceWei = String(body.priceWei ?? "");
+    if (!WEI_RE.test(priceWei)) throw new Error("prix invalide");
+    const already = wishlist.list(me).some((w) => w.editionId === editionId);
+    if (!already && wishlist.count(me) >= WISH_MAX) throw new Error(`liste de souhaits pleine (${WISH_MAX} jeux max)`);
+    wishlist.put(me, editionId, priceWei);
+  }
+  return wishlist.list(me);
+}
+
+export function markWishSeen(me: string, body: { editionId?: unknown; priceWei?: unknown }): { ok: true } {
+  const editionId = String(body.editionId ?? "");
+  const priceWei = String(body.priceWei ?? "");
+  if (!EDITION_RE.test(editionId) || !WEI_RE.test(priceWei)) throw new Error("souhait invalide");
+  wishlist.seen(me, editionId, priceWei);
   return { ok: true };
 }
 

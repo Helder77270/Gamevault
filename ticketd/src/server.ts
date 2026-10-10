@@ -40,6 +40,9 @@ import {
   setPresence,
   studioAccount,
   subscribe,
+  markWishSeen,
+  setWish,
+  wishlistOf,
 } from "./social.ts";
 
 const MAX_UPLOAD = 100 * 1024 * 1024; // 100 MB (studio builds)
@@ -229,6 +232,23 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return send(200, setPresence(session().wallet, playing == null ? null : String(playing)));
     } catch (e) {
       return fail(403, "présence", e);
+    }
+  }
+
+  // ── Wishlist (session, private to its owner) ─────────────────────────
+  if (path === "/wishlist" && (GET || POST)) {
+    try {
+      const me = session().wallet;
+      return send(200, GET ? wishlistOf(me) : setWish(me, await readJson(req)));
+    } catch (e) {
+      return fail(403, "souhaits", e);
+    }
+  }
+  if (POST && path === "/wishlist/seen") {
+    try {
+      return send(200, markWishSeen(session().wallet, await readJson(req)));
+    } catch (e) {
+      return fail(403, "souhaits", e);
     }
   }
 

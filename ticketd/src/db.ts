@@ -100,6 +100,16 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS messages_conv ON messages (conv, id);
 CREATE INDEX IF NOT EXISTS messages_unread ON messages (to_addr, read_at);
+-- Wishlist (P7 B, 2026-10-10): private to its owner. seen_wei = the lowest
+-- price the owner was last shown — a cheaper copy (resale listing) than
+-- that is a price drop worth an alert.
+CREATE TABLE IF NOT EXISTS wishlist (
+  addr TEXT NOT NULL,
+  edition_id TEXT NOT NULL,
+  seen_wei TEXT NOT NULL,         -- decimal wei
+  at INTEGER NOT NULL,            -- ms
+  PRIMARY KEY (addr, edition_id)
+);
 `;
 
 /** Additive column migrations for tables created by an earlier schema. */
@@ -326,6 +336,39 @@ export const playstats = {
       edition_id: string;
       seconds: number;
     }[]).map((r) => ({ editionId: r.edition_id, seconds: r.seconds }));
+  },
+};
+
+// ── Wishlist ───────────────────────────────────────────────────────────
+
+export interface WishRow {
+  editionId: string;
+  seenWei: string;
+  at: number;
+}
+
+export const wishlist = {
+  list(addr: string): WishRow[] {
+    return (db().prepare("SELECT edition_id, seen_wei, at FROM wishlist WHERE addr = ? ORDER BY at DESC").all(addr.toLowerCase()) as {
+      edition_id: string;
+      seen_wei: string;
+      at: number;
+    }[]).map((r) => ({ editionId: r.edition_id, seenWei: r.seen_wei, at: r.at }));
+  },
+  count(addr: string): number {
+    return Number((db().prepare("SELECT COUNT(*) AS n FROM wishlist WHERE addr = ?").get(addr.toLowerCase()) as { n: number }).n);
+  },
+  /** Adding again keeps the original date; the seen price is refreshed. */
+  put(addr: string, editionId: string, seenWei: string): void {
+    db()
+      .prepare("INSERT INTO wishlist (addr, edition_id, seen_wei, at) VALUES (?, ?, ?, ?) ON CONFLICT (addr, edition_id) DO UPDATE SET seen_wei = excluded.seen_wei")
+      .run(addr.toLowerCase(), editionId, seenWei, Date.now());
+  },
+  remove(addr: string, editionId: string): void {
+    db().prepare("DELETE FROM wishlist WHERE addr = ? AND edition_id = ?").run(addr.toLowerCase(), editionId);
+  },
+  seen(addr: string, editionId: string, seenWei: string): void {
+    db().prepare("UPDATE wishlist SET seen_wei = ? WHERE addr = ? AND edition_id = ?").run(seenWei, addr.toLowerCase(), editionId);
   },
 };
 

@@ -13,6 +13,8 @@ import { Avatar, shortAddr } from "../components/Avatar";
 import { ConnectButton } from "../components/ConnectButton";
 import { PendingPayout } from "../components/PendingPayout";
 import { TICKETD_URL, useTicketd } from "../lib/ticketd";
+import { fetchOccasions, type Occasion } from "../lib/occasions";
+import { WishlistCard } from "../components/Wishlist";
 
 
 type ProfileData = {
@@ -48,6 +50,12 @@ export default function ProfilePage() {
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [catalog, setCatalog] = useState<OnchainEdition[]>([]);
+  const [occasions, setOccasions] = useState<Occasion[]>([]);
+  useEffect(() => {
+    fetchOccasions()
+      .then(setOccasions)
+      .catch(() => setOccasions([]));
+  }, []);
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -407,7 +415,12 @@ export default function ProfilePage() {
             )}
           </section>
 
-          {/* 5 · pending payouts */}
+          {/* 5 · wishlist (private) */}
+          <section className="pe-card" id="souhaits">
+            <WishlistCard catalog={catalog} occasions={occasions} />
+          </section>
+
+          {/* 6 · pending payouts */}
           <section className="pe-card" id="gains">
             <PendingPayout address={address} variant="card" />
           </section>

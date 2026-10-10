@@ -1007,3 +1007,9 @@ button { font-family: inherit; }
 
 /* per-category volume rows (P7 B) sit under the master volume */
 .set-row.sub { padding-left: 18px; }
+
+/* wishlist (P7 B): violet = commerce; the sunset stays for the purchase */
+.wish-btn svg { vertical-align: -2px; margin-right: 4px; }
+.wish-btn.on { color: oklch(0.85 0.09 310); border-color: oklch(0.7 0.12 310 / 0.6); }
+.gamecard .wishdot { position: absolute; top: 7px; left: 8px; color: oklch(0.85 0.1 310); filter: drop-shadow(0 0 6px oklch(0.7 0.14 310 / 0.8)); }
+.deal-btn { font-weight: 700; }

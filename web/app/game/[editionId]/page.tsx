@@ -12,6 +12,8 @@ import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import { fetchOnchainCatalog, BLURBS, GENRES, hueOf, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { LICENSE_ABI } from "@gamevault/shared/abi";
 import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
+import { fetchOccasions, type Occasion } from "../../lib/occasions";
+import { WishButton, bestDeal } from "../../components/Wishlist";
 
 const LICENSE = DEPLOYMENTS.gameLicense as `0x${string}`;
 const BASESCAN = "https://sepolia.basescan.org";
@@ -26,6 +28,12 @@ export default function GamePage() {
   const [buying, setBuying] = useState(false);
   const [mintedToken, setMintedToken] = useState("");
   const [error, setError] = useState("");
+  const [occasions, setOccasions] = useState<Occasion[]>([]);
+  useEffect(() => {
+    fetchOccasions()
+      .then(setOccasions)
+      .catch(() => setOccasions([]));
+  }, []);
 
   const load = () => {
     fetchOnchainCatalog()
@@ -77,6 +85,7 @@ export default function GamePage() {
     );
 
   const soldOut = e.minted >= e.supply;
+  const deal = bestDeal(e, occasions);
   const hue = hueOf(e.editionId);
 
   return (
@@ -145,6 +154,14 @@ export default function GamePage() {
                 <Link href={`/provenance/${mintedToken}`}>provenance de la licence #{mintedToken}</Link>.
               </p>
             )}
+            {deal && (
+              <Link href={`/occasions?sel=${deal.tokenId}`} className="wish-deal">
+                Une occasion à {formatEther(deal.price)} ETH (licence #{deal.tokenId}) — moins chère que le neuf ↗
+              </Link>
+            )}
+            <div>
+              <WishButton edition={e} deal={deal} />
+            </div>
             {error && <p className="error-box">{error}</p>}
             {!isConnected && !mintedToken && (
               <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--dim)" }}>

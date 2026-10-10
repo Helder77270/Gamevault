@@ -432,3 +432,11 @@ textarea.pe-input { resize: vertical; line-height: 1.55; min-height: 7rem; }
   .pe-savebar { border-radius: 18px; }
 }
 @media (prefers-reduced-motion: reduce) { .pe-savebar { animation: none; } }
+
+/* wishlist (P7 B): violet = commerce; the sunset stays for the purchase */
+.wish-btn { display: inline-flex; align-items: center; gap: 0.45rem; }
+.wish-btn.on { color: oklch(0.85 0.09 310); border-color: oklch(0.7 0.12 310 / 0.6); }
+.wish-art { width: 44px; height: 44px; flex: none; border-radius: 10px; border: 1px solid rgba(200,225,255,0.18); }
+.wish-title { color: var(--ink); font-weight: 700; text-decoration: none; }
+.wish-title:hover { text-decoration: underline; }
+.wish-deal { color: oklch(0.85 0.09 310); font-weight: 600; font-size: 0.85rem; }

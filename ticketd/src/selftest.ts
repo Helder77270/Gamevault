@@ -122,5 +122,16 @@ social.setPresence(friend.address, "2");
 check("presence: playing edition #2", social.presenceOf(friend.address).state === "playing");
 check("activity records the friendship", social.getProfile(owner.address).activity.some((a) => a.kind === "friend"));
 
+// Wishlist (private, price drop = cheaper copy than the price last seen)
+social.setWish(owner.address, { editionId: "2", priceWei: "10000000000000000" });
+social.setWish(owner.address, { editionId: "2", priceWei: "10000000000000000" });
+check("wishlist: adding twice keeps one entry", social.wishlistOf(owner.address).length === 1);
+social.markWishSeen(owner.address, { editionId: "2", priceWei: "8000000000000000" });
+check("wishlist: seen price updated after an alert", social.wishlistOf(owner.address)[0]?.seenWei === "8000000000000000");
+check("wishlist: invalid price refused", await refused(() => social.setWish(owner.address, { editionId: "3", priceWei: "-1" })));
+check("wishlist: private to its owner", social.wishlistOf(friend.address).length === 0);
+social.setWish(owner.address, { editionId: "2", on: false });
+check("wishlist: removed", social.wishlistOf(owner.address).length === 0);
+
 console.log(failures === 0 ? "\nAll checks passed — ticketd issuance and social layer are sound." : `\n${failures} check(s) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

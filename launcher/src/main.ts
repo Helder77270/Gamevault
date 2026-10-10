@@ -73,7 +73,7 @@ interface Settings {
   dev: boolean;
   veilleMin: number; // idle minutes before the screensaver, 0 = never
   libraries: string[]; // download folders on this PC (the card stays the key)
-  notif: { download: boolean; message: boolean; card: boolean; security: boolean };
+  notif: { download: boolean; message: boolean; card: boolean; security: boolean; wishlist: boolean };
   startPage: StartPage; // where AURA-64 opens after the boot
   startInTray: boolean; // at Windows startup: stay in the notification area
   localServices: boolean; // POC: start ticketd + the site from the repo when they are down
@@ -103,7 +103,7 @@ type StartPage = (typeof START_PAGES)[number];
 
 const VEILLE_CHOICES = [1, 3, 5, 10, 0];
 const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3, libraries: [],
-  notif: { download: true, message: true, card: true, security: true },
+  notif: { download: true, message: true, card: true, security: true, wishlist: true },
   startPage: "home", startInTray: false, localServices: true, dlLimitMBs: 0, dlDuringPlay: false,
   uiScale: 1, calmFx: false, lowBandwidth: false, cvd: "std",
   vol: { ui: 1, notif: 1, cine: 1 } };
@@ -193,7 +193,12 @@ const state = {
   ticketdOk: false,
   /** selected editionId for detail/insert screens */
   sel: null as string | null,
-  filter: "all" as "all" | "play",
+  filter: "all" as "all" | "play" | "wish",
+  /** Wishlist (ticketd, private to the account): editionId -> lowest price
+   *  last shown, in wei. Empty without a device session. */
+  wish: {} as Record<string, string>,
+  /** cheapest live resale listing of each wished edition */
+  deals: {} as Record<string, { tokenId: string; price: bigint }>,
   /** shelf layout: retro grid, or Steam-style list + preview pane */
   shelfMode: (["list", "storage"].includes(localStorage.getItem("gv-shelfmode") ?? "") ? localStorage.getItem("gv-shelfmode") : "grid") as "grid" | "list" | "storage",
   /** preview pane: technical data accordion (CID/hash/ticket) open? */
@@ -662,6 +667,118 @@ async function fetchMarketState(): Promise<void> {
       /* offline or unknown token */
     }
   }
+}
+
+// ── Wishlist (P7 B) ─────────────────────────────────────────
+// The primary price is fixed on-chain: a price drop is a second-hand copy
+// listed below the lowest price the owner was last shown.
+
+/** Lowest price to get this edition now: new copy, or the cheapest resale. */
+function lowestPrice(e: OnchainEdition): bigint {
+  const deal = state.deals[e.editionId];
+  return deal && deal.price < e.priceWei ? deal.price : e.priceWei;
+}
+
+const owns = (editionId: string): boolean =>
+  state.owned.some((o) => o.editionId === editionId) || state.games.some((g) => g.ticket && isOurs(g) && g.meta.edition === editionId);
+
+async function fetchWishlist(): Promise<void> {
+  const res = await socialFetch("/wishlist");
+  if (!res?.ok) return;
+  const rows = (await res.json()) as { editionId: string; seenWei: string }[];
+  state.wish = Object.fromEntries(rows.map((r) => [r.editionId, r.seenWei]));
+  // bought since: off the list
+  for (const id of Object.keys(state.wish)) if (owns(id)) void setWish(id, false);
+  await scanDeals();
+}
+
+async function setWish(editionId: string, on: boolean): Promise<void> {
+  const e = state.catalog.find((x) => x.editionId === editionId);
+  const res = await socialFetch("/wishlist", { editionId, on, priceWei: e ? lowestPrice(e).toString() : "0" });
+  if (!res?.ok) return;
+  const rows = (await res.json()) as { editionId: string; seenWei: string }[];
+  state.wish = Object.fromEntries(rows.map((r) => [r.editionId, r.seenWei]));
+  if (on) {
+    beep([784, 1047], 0.08, 0.14, "sine", "ui");
+    void scanDeals(editionId).then(() => render()); // just added: a deal found now is no "drop"
+  }
+  render();
+}
+
+/** Live resale listings of the wished editions — same validity rules as
+ *  Marketplace.buy(). A copy cheaper than the price last shown = an alert. */
+async function scanDeals(quiet?: string): Promise<void> {
+  const wished = Object.keys(state.wish);
+  if (!wished.length || !chainClient || !DEPLOYMENTS.gameLicense || !DEPLOYMENTS.marketplace) {
+    state.deals = {};
+    return;
+  }
+  const lic = DEPLOYMENTS.gameLicense as `0x${string}`;
+  const market = DEPLOYMENTS.marketplace as `0x${string}`;
+  const deals: typeof state.deals = {};
+  let complete = true;
+  try {
+    const next = await chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "nextTokenId", args: [] });
+    for (let i = 1n; i <= next; i++) {
+      try {
+        const [seller, price, nonce] = await chainClient.readContract({ address: market, abi: MARKETPLACE_ABI, functionName: "listings", args: [i] });
+        if (seller.toLowerCase() === ZERO_ADDR) continue;
+        const ed = (await chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "editionOf", args: [i] })).toString();
+        if (!wished.includes(ed)) continue;
+        const [owner, moves, approved, operator] = await Promise.all([
+          chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "ownerOf", args: [i] }),
+          chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "transferCount", args: [i] }),
+          chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "getApproved", args: [i] }),
+          chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "isApprovedForAll", args: [seller, market] }),
+        ]);
+        if (owner.toLowerCase() !== seller.toLowerCase() || moves !== nonce) continue;
+        if (approved.toLowerCase() !== market.toLowerCase() && !operator) continue;
+        if (!deals[ed] || price < deals[ed].price) deals[ed] = { tokenId: i.toString(), price };
+      } catch {
+        complete = false; // rpc hiccup: never "raise" a seen price on a partial scan
+      }
+    }
+  } catch {
+    return; // offline — keep last known
+  }
+  state.deals = deals;
+  for (const id of wished) {
+    const e = state.catalog.find((x) => x.editionId === id);
+    if (!e || owns(id)) continue;
+    const low = lowestPrice(e);
+    const seen = BigInt(state.wish[id]);
+    if (low === seen || (low > seen && !complete)) continue;
+    if (low < seen && id !== quiet) {
+      const pct = Math.round(Number(((e.priceWei - low) * 100n) / (e.priceWei || 1n)));
+      void notify({
+        kind: "wishlist",
+        title: t("nt.wishDrop", { t: e.title }),
+        body: t("nt.wishDropBody", { p: formatEth(low), pct }),
+        action: () => {
+          state.sel = id;
+          go("detail");
+        },
+      });
+    }
+    // a lower price seen (or a deal gone): the next drop below it alerts again
+    state.wish[id] = low.toString();
+    void socialFetch("/wishlist/seen", { editionId: id, priceWei: low.toString() });
+  }
+}
+
+/** Heart toggle for an edition you don't own (needs a paired machine). */
+function wishButton(e: OnchainEdition, cls: string): string {
+  if (!state.session || owns(e.editionId)) return "";
+  const on = e.editionId in state.wish;
+  return `<button class="${cls} wish-btn ${on ? "on" : ""}" data-wish="${esc(e.editionId)}" aria-pressed="${on}"><svg width="13" height="13" viewBox="0 0 24 24" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.3 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"></path></svg> ${esc(t(on ? "wish.on" : "wish.add"))}</button>`;
+}
+
+/** The cheapest second-hand copy of a wished edition, if it beats the new price. */
+function dealButton(e: OnchainEdition, cls: string): string {
+  const d = state.deals[e.editionId];
+  if (!d || d.price >= e.priceWei || owns(e.editionId)) return "";
+  const pct = Math.round(Number(((e.priceWei - d.price) * 100n) / (e.priceWei || 1n)));
+  return `<button class="${cls} deal-btn" data-deal="${esc(d.tokenId)}" title="${esc(t("wish.dealTitle", { id: d.tokenId }))}">${esc(t("wish.deal", { p: formatEth(d.price), pct }))} ↗</button>`;
 }
 
 async function fetchOwned(): Promise<void> {
@@ -1530,6 +1647,8 @@ function previewPane(e: OnchainEdition): string {
         <div class="pv-main">
           <div class="glass-menu">
             ${action}
+            ${dealButton(e, "gm-item violet")}
+            ${wishButton(e, "gm-item")}
             <button class="gm-item" data-edition="${esc(e.editionId)}">${t("pv.fullSheet")}</button>
             ${
               g?.ticket && isOurs(g) && g.verdict === "authentic"
@@ -1561,7 +1680,12 @@ function previewPane(e: OnchainEdition): string {
 
 function shelfView(): string {
   const addr = libraryAddress();
-  const list = state.filter === "play" ? state.catalog.filter(playableNow) : state.catalog;
+  const list =
+    state.filter === "play"
+      ? state.catalog.filter(playableNow)
+      : state.filter === "wish"
+        ? state.catalog.filter((e) => e.editionId in state.wish)
+        : state.catalog;
   const unlocked = state.catalog.filter(playableNow).length;
   const isList = state.shelfMode === "list";
   if (state.shelfMode === "storage") void refreshStorageSpace();
@@ -1583,6 +1707,7 @@ function shelfView(): string {
                 <div class="art ${can || ownedTok.length || g ? "" : "locked"}" style="${artFor(e.editionId)}">
                   <div class="artnote">${t("pv.ed", { id: esc(e.editionId) })} · ${esc(e.studio)}</div>
                   <div class="lockdot">${can ? "🟢" : ownedTok.length || g ? "🟡" : "🔒"}</div>
+                  ${e.editionId in state.wish ? `<div class="wishdot" title="${esc(t("wish.on"))}"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.3 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"></path></svg></div>` : ""}
                 </div>
                 <div class="gtitle">${esc(e.title)}</div>
                 <div class="gmeta ${can ? "on" : ""}">${esc(status)} &nbsp;&#183;&nbsp; ${e.minted}/${e.supply}</div>
@@ -1639,6 +1764,7 @@ function shelfView(): string {
         <div style="display:flex;gap:8px;align-items:center">
           <button class="pillbtn ${state.filter === "all" ? "active" : ""}" id="filt-all">ALL</button>
           <button class="pillbtn ${state.filter === "play" ? "active" : ""}" id="filt-play">PLAYABLE</button>
+          ${state.session ? `<button class="pillbtn ${state.filter === "wish" ? "active" : ""}" id="filt-wish">${esc(t("wish.filter"))}${Object.keys(state.wish).length ? ` · ${Object.keys(state.wish).length}` : ""}</button>` : ""}
           <div class="view-toggle">
             <button id="view-grid" class="${isList ? "" : "active"}" aria-label="${t("shelf.gridView")}"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5"></rect><rect x="3" y="13" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg></button>
             <button id="view-list" class="${isList ? "active" : ""}" aria-label="${t("shelf.listView")}"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="4" width="18" height="3.4" rx="1.4"></rect><rect x="3" y="10.3" width="18" height="3.4" rx="1.4"></rect><rect x="3" y="16.6" width="18" height="3.4" rx="1.4"></rect></svg></button>
@@ -1904,6 +2030,7 @@ function settingsView(): string {
           ${toggle("set-nt-message", settings.notif.message, t("set.nt.message"), t("set.nt.messageSub"))}
           ${toggle("set-nt-card", settings.notif.card, t("set.nt.card"), t("set.nt.cardSub"))}
           ${toggle("set-nt-security", settings.notif.security, t("set.nt.security"), t("set.nt.securitySub"))}
+          ${toggle("set-nt-wishlist", settings.notif.wishlist, t("set.nt.wishlist"), t("set.nt.wishlistSub"))}
           <div class="set-row"><div><div class="set-label">${esc(t("set.nt.test"))}</div></div><button class="pillbtn" id="set-nt-test">${esc(t("set.nt.testBtn"))}</button></div>
         </section>
         <div class="set-sub" style="text-align:center;margin-top:4px">${esc(t("set.about"))}</div>
@@ -2019,7 +2146,7 @@ function detailView(): string {
         <div class="detail-actions">
           ${action}
           <div class="detail-hint">${esc(hint)}</div>
-          <div style="flex-basis:100%;display:flex;gap:8px;flex-wrap:wrap">${marketRow}${provRow}${g?.cartridge.has_build || libraryBuildFor(e) ? `<button class="pillbtn" data-repair="${esc(e.editionId)}">${t("dl.verify")}</button>` : ""}</div>
+          <div style="flex-basis:100%;display:flex;gap:8px;flex-wrap:wrap">${dealButton(e, "pillbtn violet")}${wishButton(e, "pillbtn")}${marketRow}${provRow}${g?.cartridge.has_build || libraryBuildFor(e) ? `<button class="pillbtn" data-repair="${esc(e.editionId)}">${t("dl.verify")}</button>` : ""}</div>
         </div>
       </div>
     </div>`;
@@ -2318,6 +2445,8 @@ function sigOf(): string {
     s: state.screen,
     sel: state.sel,
     f: state.filter,
+    w: state.wish,
+    de: Object.entries(state.deals).map(([k, v]) => [k, v.tokenId, String(v.price)]),
     sll: state.selling,
     g: state.games.map((g) => [g.cartridge.mount_point, g.verdict, g.cartridge.has_build, g.ticket?.tokenId, isOurs(g), g.meta.edition]),
     c: state.catalog.map((e) => [e.editionId, e.minted, e.title]),
@@ -2391,6 +2520,10 @@ function wire(root: HTMLElement): void {
   });
   document.getElementById("filt-play")?.addEventListener("click", () => {
     state.filter = "play";
+    render();
+  });
+  document.getElementById("filt-wish")?.addEventListener("click", () => {
+    state.filter = "wish";
     render();
   });
   document.getElementById("refresh-btn")?.addEventListener("click", () => void forceRefresh());
@@ -2481,7 +2614,7 @@ function wire(root: HTMLElement): void {
   flip("set-motion", "reducedMotion");
   flip("set-dev", "dev");
   wireStartup(root);
-  (["download", "message", "card", "security"] as const).forEach((k) =>
+  (["download", "message", "card", "security", "wishlist"] as const).forEach((k) =>
     document.getElementById(`set-nt-${k}`)?.addEventListener("click", () => {
       settings.notif[k] = !settings.notif[k];
       saveSettings();
@@ -2577,6 +2710,7 @@ function wire(root: HTMLElement): void {
     }),
   );
   wireDownloads(root);
+  wireWishlist(root);
   root.querySelectorAll<HTMLButtonElement>("[data-install]").forEach((b) =>
     b.addEventListener("click", () => {
       const e = state.catalog.find((x) => x.editionId === b.dataset.install);
@@ -2672,6 +2806,7 @@ async function runBoot(): Promise<void> {
   await fetchOwned();
   await fetchMarketState();
   void fetchFriends(); // non-blocking: the AMIS screen fills in seconds
+  void fetchWishlist();
   setLine(4, `${state.owned.length} LICENCE${state.owned.length > 1 ? "S" : ""} · ${state.games.length} CARD${state.games.length > 1 ? "S" : ""}`, true);
   scanPrimed = true; // from now on, new mounts are real insertions
 
@@ -2748,6 +2883,7 @@ async function refresh(): Promise<void> {
         })
         .catch(() => {});
       void fetchFriends();
+      void fetchWishlist();
     }
     if (scanCount % 5 === 0) void refreshLibrary();
     if (scanCount++ % (settings.lowBandwidth ? 30 : 5) === 0) {
@@ -3054,7 +3190,7 @@ function wireStartup(root: HTMLElement): void {
 // screen, over every other app (src/toast.ts, sized and placed by Rust).
 // A click brings the launcher back where the toast points. Inside the
 // launcher, a card going in or out plays the SLOT A widget instead.
-type NotifKind = "download" | "message" | "card" | "security";
+type NotifKind = "download" | "message" | "card" | "security" | "wishlist";
 interface Notif {
   kind: NotifKind;
   title: string;
@@ -3694,6 +3830,22 @@ function patchDl(j: DlJob): void {
   set(`dl-graph-${j.id}`, speedGraph(j), true);
   const map = document.getElementById(`dl-map-${j.id}`);
   if (map) map.outerHTML = chunkMap(j.chunks, j.id);
+}
+
+function wireWishlist(root: HTMLElement): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-wish]").forEach((b) =>
+    b.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      void setWish(b.dataset.wish!, !(b.dataset.wish! in state.wish));
+    }),
+  );
+  root.querySelectorAll<HTMLButtonElement>("[data-deal]").forEach((b) =>
+    b.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      const tok = b.dataset.deal!;
+      if (/^\d{1,12}$/.test(tok)) void openUrl(`${MARKETPLACE_URL}/occasions?sel=${tok}`);
+    }),
+  );
 }
 
 function wireDownloads(root: HTMLElement): void {

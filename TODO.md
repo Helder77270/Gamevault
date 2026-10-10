@@ -205,7 +205,10 @@ décision de conception, un redéploiement ou une infra en plus).
       chacun multiplié par le volume global.
 
 ### Magasin
-- [ ] **B** Liste de souhaits (+ alerte de baisse de prix, déjà dans les idées).
+- [x] **B** (2026-10-10) Liste de souhaits, privée (ticketd) : cœur dans le launcher
+      (fiche, aperçu, filtre SOUHAITS du shelf) et sur le web (page du jeu,
+      Mon profil). Le prix neuf est figé on-chain → une « baisse » = une
+      occasion sous le dernier prix vu : toast SOUHAITS dans le launcher.
 - [ ] **C** Filtrage des contenus adultes : il faut d'abord une classification
       déclarée par le studio à la publication (PEGI / âge minimum), stockée
       avec l'édition ; filtre activé par défaut.
@@ -242,5 +245,4 @@ décision de conception, un redéploiement ou une infra en plus).
 
 ## Idées plus tard
 0G storage swap (1 fichier : shared/storage.ts) · World ID gating si besoin
-réel · pochettes SD imprimées · provenance embarquée dans le launcher ·
-wishlist + notifs de baisse de prix sur le store
+réel · pochettes SD imprimées · provenance embarquée dans le launcher
