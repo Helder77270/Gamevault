@@ -833,7 +833,7 @@ button { font-family: inherit; }
 .dl-screen .shelf-head { align-items: flex-end; }
 .dl-totals { display: flex; align-items: center; gap: 16px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; color: var(--dim); }
 .cy { color: oklch(0.86 0.1 200); } .vi { color: oklch(0.85 0.11 310); }
-.dl-list { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px 24px; overflow-y: auto; min-height: 0; }
+.dl-list { display: flex; flex-direction: column; gap: 14px; padding: 18px 40px 24px; overflow-y: auto; min-height: 0; }
 .dl-card { border-radius: 18px; border: 1px solid rgba(200,225,255,0.18); background: rgba(226,240,255,0.04); padding: 18px 20px; }
 .dl-card.on { border-color: oklch(0.8 0.1 200 / 0.35); }
 .dl-row { display: flex; gap: 20px; }

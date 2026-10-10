@@ -92,6 +92,25 @@ vehicle, the blockchain is the lock."
   RoyaltyPayment, Loan, PendingPayout. Feeds /provenance.
 - `shared/` — TypeScript types + ticket signing/verification lib (used by
   web, launcher, ticketd)
+- `k8s/` + `deploy/` — production infra (2026-10-11, docs/infra.md):
+  Dockerfiles (ticketd, web standalone), kustomize manifests, Ansible
+  playbook (k3s, ingress-nginx, cert-manager). ticketd stays ONE replica
+  until SQLite → Postgres + Redis (TODO P9); web scales out (HPA).
+  Offline checks: `kubectl kustomize k8s/base | python deploy/check-manifests.py`.
+
+## Launcher UI conventions (2026-10-11)
+- Shapes = "Style A · Chanfrein" (45° cut corners, no pills) — see the
+  art-direction skill; extend the chamfer block to any new component.
+- Game Shelf shows only the player's games (owned, on a card, lent,
+  borrowed, for sale, wished); the BOUTIQUE tab browses everything and
+  buying / taking an offer opens the web page.
+- No internal/technical explanations on customer screens; they live in
+  Settings › Comment ça marche.
+- Look at the UI without Tauri: `node launcher/dev/make-preview.mjs`, then
+  http://localhost:1420/preview.html during `npm run dev` (mocked core).
+- Heavy test game: edition #4 "Stress Test 500" (480 MiB, 121 chunks),
+  `npm run bigbuild -w @gamevault/ticketd`; live test
+  `cargo test --release -- --ignored download_big_live`.
 
 ## The offline ticket system (core differentiator — do not simplify away)
 - Game build encrypted ONCE with a symmetric AES-256-GCM content key.
