@@ -34,13 +34,16 @@ foreach ($img in "gamevault/ticketd:dev", "gamevault/web:dev") {
 kubectl -n ingress-nginx patch configmap ingress-nginx-controller --type merge -p '{\"data\":{\"limit-req-status-code\":\"429\",\"limit-conn-status-code\":\"429\"}}'
 
 kubectl apply -f "$root\k8s\base\namespace.yaml"
-$hex = { -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) }) }
-kubectl -n gamevault create secret generic gamevault-secrets `
-  --from-literal=TICKET_SIGNER_PRIVKEY="0x$(& $hex)" `
-  --from-literal=ATTEST_SIGNER_PRIVKEY="0x$(& $hex)" `
-  --from-literal=KEYSTORE_MASTER_KEY="$(& $hex)" `
-  --from-literal=PINATA_JWT=test-not-a-real-jwt `
-  --dry-run=client -o yaml | kubectl apply -f -
+# created once: a new KEYSTORE_MASTER_KEY would make stored game keys unreadable
+kubectl -n gamevault get secret gamevault-secrets *> $null
+if ($LASTEXITCODE -ne 0) {
+  $hex = { -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) }) }
+  kubectl -n gamevault create secret generic gamevault-secrets `
+    --from-literal=TICKET_SIGNER_PRIVKEY="0x$(& $hex)" `
+    --from-literal=ATTEST_SIGNER_PRIVKEY="0x$(& $hex)" `
+    --from-literal=KEYSTORE_MASTER_KEY="$(& $hex)" `
+    --from-literal=PINATA_JWT=test-not-a-real-jwt
+}
 kubectl apply -k "$root\k8s\overlays\minikube"
 kubectl -n gamevault rollout status statefulset/ticketd --timeout=180s
 kubectl -n gamevault rollout status deployment/web --timeout=180s
