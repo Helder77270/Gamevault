@@ -956,3 +956,28 @@ button { font-family: inherit; }
 .pillbtn.danger { color: #fff; border-color: oklch(0.7 0.16 25 / 0.8); background: oklch(0.6 0.17 25 / 0.7); }
 .pillbtn.danger:hover { background: oklch(0.65 0.18 25 / 0.85); }
 .dim { opacity: 0.5; }
+
+/* ── Storage (P7 #3): locations, free space, each game's size and place ── */
+.stg-wrap { display: flex; flex-direction: column; gap: 14px; padding: 4px 2px 24px; overflow-y: auto; min-height: 0; flex: 1; }
+.stg-summary { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; color: var(--dim); }
+.stg-summary b { font-family: var(--sans); font-size: 18px; letter-spacing: 0; color: var(--ink); margin-right: 4px; }
+.stg-summary .pillbtn { margin-left: auto; }
+.stg { border-radius: 18px; border: 1px solid rgba(200,225,255,0.16); background: rgba(226,240,255,0.04); padding: 16px 18px; }
+.stg-head { display: flex; align-items: center; gap: 14px; }
+.stg-ico { width: 40px; height: 40px; flex: none; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; color: var(--ink); border: 1px solid rgba(200,225,255,0.22); background: rgba(226,240,255,0.06); }
+.stg-ico.card { color: #06130c; border: none; background: oklch(0.82 0.13 160); }
+.stg-name { flex: 1; min-width: 0; }
+.stg-title { font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.stg-sub { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em; color: var(--dim); margin-top: 3px; }
+.stg-gauge { display: flex; height: 10px; border-radius: 5px; margin-top: 14px; background: rgba(226,240,255,0.08); overflow: hidden; }
+.stg-gauge i { display: block; height: 100%; }
+.stg-gauge i.g, .stg-legend i.g { background: oklch(0.82 0.1 200); box-shadow: 0 0 10px oklch(0.8 0.1 200 / 0.5); }
+.stg-gauge i.o, .stg-legend i.o { background: rgba(200,225,255,0.32); }
+.stg-legend { display: flex; gap: 16px; margin-top: 8px; font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; color: var(--dim); flex-wrap: wrap; }
+.stg-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; background: rgba(226,240,255,0.08); border: 1px solid rgba(200,225,255,0.2); }
+.stg-row { display: flex; align-items: center; gap: 14px; margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(5,6,13,0.35); border: 1px solid rgba(200,225,255,0.1); }
+.stg-rowmain { flex: 1; min-width: 0; }
+.stg-size { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; color: var(--ink); min-width: 70px; text-align: right; }
+.stg-acts { display: flex; gap: 6px; flex: none; }
+.stg-none { margin-top: 12px; font-size: 13px; color: var(--dim); }
+.dl-sub.warn { color: oklch(0.86 0.12 85); }

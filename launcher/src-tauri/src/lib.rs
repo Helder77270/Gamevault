@@ -585,6 +585,28 @@ fn stop_local_services(app: &AppHandle) {
     list.clear();
 }
 
+/// Open a game location in the file explorer — only AURA-64 places: a game
+/// folder (holds gamevault.json), a library (holds game folders) or a
+/// card's /gamevault/. Never an arbitrary path from the webview.
+#[tauri::command]
+fn reveal_folder(path: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if !p.is_absolute() || !p.is_dir() {
+        return Err("dossier introuvable".into());
+    }
+    let game_folder = p.join("gamevault.json").is_file();
+    let library = std::fs::read_dir(&p)
+        .map(|rd| rd.flatten().any(|e| e.path().join("gamevault.json").is_file()))
+        .unwrap_or(false);
+    let card = p.file_name().is_some_and(|n| n == "gamevault")
+        && p.parent().is_some_and(|m| known_mount(&m.to_string_lossy()).is_ok() || known_mount(&format!("{}\\", m.to_string_lossy().trim_end_matches('\\'))).is_ok());
+    if !(game_folder || library || card) {
+        return Err("dossier refusé : pas un emplacement AURA-64".into());
+    }
+    std::process::Command::new("explorer.exe").arg(&p).spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Started by Windows at login (the autostart entry passes --autostart).
 #[tauri::command]
 fn launched_at_startup() -> bool {
@@ -714,7 +736,8 @@ pub fn run() {
             toast_close,
             focus_main,
             launched_at_startup,
-            start_local_services
+            start_local_services,
+            reveal_folder
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

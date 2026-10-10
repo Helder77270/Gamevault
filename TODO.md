@@ -189,7 +189,7 @@ décision de conception, un redéploiement ou une infra en plus).
       mises à jour (seuls les morceaux changés se téléchargent).
 
 ### Game Shelf
-- [ ] **A** Vue Stockage : dossiers de jeux, taille de chaque jeu, où il est
+- [x] **A** (2026-10-10) Vue Stockage : dossiers de jeux, taille de chaque jeu, où il est
       (PC ou carte), espace libre.
 
 ### Accessibilité

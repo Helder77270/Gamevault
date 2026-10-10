@@ -34,6 +34,7 @@ const verifyPlatformSig = (t: SignedTicket): boolean => PLATFORM_PUBS.some((k) =
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
 interface Cartridge {
+  build_size: number;
   mount_point: string;
   volume_label: string;
   ticket_json: string;
@@ -160,7 +161,7 @@ const state = {
   sel: null as string | null,
   filter: "all" as "all" | "play",
   /** shelf layout: retro grid, or Steam-style list + preview pane */
-  shelfMode: (localStorage.getItem("gv-shelfmode") === "list" ? "list" : "grid") as "grid" | "list",
+  shelfMode: (["list", "storage"].includes(localStorage.getItem("gv-shelfmode") ?? "") ? localStorage.getItem("gv-shelfmode") : "grid") as "grid" | "list" | "storage",
   /** preview pane: technical data accordion (CID/hash/ticket) open? */
   techOpen: false,
   fatal: null as { title: string; msg: string; code: string; back: Screen } | null,
@@ -1528,6 +1529,7 @@ function shelfView(): string {
   const list = state.filter === "play" ? state.catalog.filter(playableNow) : state.catalog;
   const unlocked = state.catalog.filter(playableNow).length;
   const isList = state.shelfMode === "list";
+  if (state.shelfMode === "storage") void refreshStorageSpace();
   const selEd = list.find((e) => e.editionId === state.sel) ?? list[0];
 
   const gridBody = `
@@ -1605,6 +1607,7 @@ function shelfView(): string {
           <div class="view-toggle">
             <button id="view-grid" class="${isList ? "" : "active"}" aria-label="${t("shelf.gridView")}"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5"></rect><rect x="3" y="13" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg></button>
             <button id="view-list" class="${isList ? "active" : ""}" aria-label="${t("shelf.listView")}"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="4" width="18" height="3.4" rx="1.4"></rect><rect x="3" y="10.3" width="18" height="3.4" rx="1.4"></rect><rect x="3" y="16.6" width="18" height="3.4" rx="1.4"></rect></svg></button>
+            <button id="view-storage" class="${state.shelfMode === "storage" ? "active" : ""}" aria-label="${t("stg.view")}" title="${t("stg.view")}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.6"></rect><rect x="3" y="13" width="18" height="7" rx="1.6"></rect><path d="M7 7.5h.01M7 16.5h.01"></path></svg></button>
           </div>
           <button class="pillbtn violet" id="home-insert">+ INSERT CARD</button>
           <button class="pillbtn" id="refresh-btn">🔄</button>
@@ -1619,7 +1622,7 @@ function shelfView(): string {
             </div>`
           : ""
       }
-      ${isList ? listBody : gridBody}
+      ${state.shelfMode === "storage" ? storageBody() : isList ? listBody : gridBody}
     </div>`;
 }
 
@@ -2352,6 +2355,14 @@ function wire(root: HTMLElement): void {
     localStorage.setItem("gv-shelfmode", "grid");
     render();
   });
+  document.getElementById("view-storage")?.addEventListener("click", () => {
+    state.shelfMode = "storage";
+    localStorage.setItem("gv-shelfmode", "storage");
+    render();
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-reveal]").forEach((b) =>
+    b.addEventListener("click", () => void invoke("reveal_folder", { path: b.dataset.reveal }).catch((err) => toast(String(err)))),
+  );
   document.getElementById("view-list")?.addEventListener("click", () => {
     state.shelfMode = "list";
     localStorage.setItem("gv-shelfmode", "list");
@@ -2661,6 +2672,119 @@ async function refresh(): Promise<void> {
   const typing = document.activeElement?.tagName === "INPUT";
   if (!typing && sigOf() !== lastSig) render();
   else renderChrome();
+}
+
+// ── Storage (P7 #3, 2026-10-10) ───────────────────────────────────────────
+// Game Shelf › Storage: every place a game can live — library folders on
+// this PC, and the inserted cards — with its free space, and each game's
+// size, state and location. The card is the key: a key-only card says
+// where its game is.
+let storageSpace: Record<string, [number, number] | null> = {};
+
+async function refreshStorageSpace(): Promise<void> {
+  const paths = [...settings.libraries, ...state.games.map((g) => g.cartridge.mount_point)];
+  const next: Record<string, [number, number] | null> = {};
+  for (const p of paths) {
+    try {
+      next[p] = await invoke<[number, number] | null>("disk_space", { path: p });
+    } catch {
+      next[p] = null;
+    }
+  }
+  const changed = JSON.stringify(next) !== JSON.stringify(storageSpace);
+  storageSpace = next;
+  if (changed && state.screen === "shelf" && state.shelfMode === "storage") render();
+}
+
+const ICON_DIR = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"></path></svg>`;
+const ICON_CARD = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"></path><path d="M10 3v4M13 3v4"></path></svg>`;
+
+function storageBody(): string {
+  type Row = { title: string; editionId: string | null; size: number; status: string; cls: string; reveal: string | null; repair: string | null; resume: string | null };
+  const sections: { kind: "dir" | "card"; name: string; path: string; reveal: string | null; rows: Row[] }[] = [];
+
+  for (const dir of settings.libraries) {
+    const rows: Row[] = dl.library
+      .filter((l) => l.dir === dir)
+      .map((l) => {
+        const e = state.catalog.find((c) => c.buildCid === l.cid);
+        const folder = l.path.replace(/[\\/][^\\/]+$/, "");
+        return {
+          title: e?.title ?? t("stg.unknown", { c: l.cid.slice(0, 10) }),
+          editionId: e?.editionId ?? null,
+          size: l.size,
+          status: l.status === "installed" ? t("stg.installed") : t("stg.partial"),
+          cls: l.status === "installed" ? "ok" : "warn",
+          reveal: folder,
+          repair: l.status === "installed" && e ? e.editionId : null,
+          resume: l.status === "partial" && e ? e.buildCid : null,
+        };
+      });
+    sections.push({ kind: "dir", name: t("dl.dirName", { d: dir }), path: dir, reveal: dir, rows });
+  }
+  for (const g of state.games) {
+    const e = editionFor(g);
+    const title = g.meta.title ?? e?.title ?? "GAME";
+    const lib = libraryBuildFor(e);
+    const row: Row = g.cartridge.has_build
+      ? { title, editionId: e?.editionId ?? null, size: g.cartridge.build_size, status: t("stg.onCard"), cls: "ok", reveal: null, repair: e?.editionId ?? null, resume: null }
+      : { title, editionId: e?.editionId ?? null, size: 0, status: lib ? t("stg.keyOnlyPc") : t("stg.keyOnly"), cls: lib ? "" : "warn", reveal: null, repair: null, resume: null };
+    const m = g.cartridge.mount_point;
+    sections.push({ kind: "card", name: t("dl.cardName", { d: m }), path: m, reveal: `${m.replace(/[\\/]$/, "")}\\gamevault`, rows: [row] });
+  }
+
+  const games = sections.flatMap((s) => s.rows).filter((r) => r.size > 0);
+  const total = games.reduce((a, r) => a + r.size, 0);
+  const summary = `<div class="stg-summary">
+      <span><b>${games.length}</b> ${t("stg.games")}</span>
+      <span><b>${games.length ? fmtBytes(total) : "0"}</b> ${t("stg.used")}</span>
+      <span><b>${sections.length}</b> ${t("stg.places")}</span>
+      <button class="pillbtn" id="dl-addlib">${t("dl.addDir")}</button>
+    </div>`;
+  if (!sections.length) {
+    return `<div class="stg-wrap">${summary}<div class="dl-empty">${t("stg.empty")}</div></div>`;
+  }
+  const section = (s: (typeof sections)[number]) => {
+    const sp = storageSpace[s.path];
+    const mine = s.rows.reduce((a, r) => a + r.size, 0);
+    const used = sp ? sp[1] - sp[0] : 0;
+    const pct = (n: number) => (sp && sp[1] ? Math.max(n > 0 ? 0.6 : 0, (n / sp[1]) * 100) : 0);
+    return `
+      <section class="stg">
+        <div class="stg-head">
+          <span class="stg-ico ${s.kind}">${s.kind === "card" ? ICON_CARD : ICON_DIR}</span>
+          <div class="stg-name">
+            <div class="stg-title">${esc(s.name)}</div>
+            <div class="stg-sub">${sp ? esc(t("stg.space", { f: fmtBytes(sp[0]), t: fmtBytes(sp[1]) })) : esc(t("stg.spaceUnknown"))}</div>
+          </div>
+          ${s.reveal ? `<button class="pillbtn" data-reveal="${esc(s.reveal)}">${t("stg.open")}</button>` : ""}
+        </div>
+        <div class="stg-gauge" role="img" aria-label="${esc(sp ? t("stg.space", { f: fmtBytes(sp[0]), t: fmtBytes(sp[1]) }) : "")}">
+          <i class="g" style="width:${pct(mine).toFixed(2)}%"></i><i class="o" style="width:${pct(Math.max(0, used - mine)).toFixed(2)}%"></i>
+        </div>
+        <div class="stg-legend"><span><i class="g"></i>${t("stg.lgGames", { n: fmtBytes(mine || 0) })}</span><span><i class="o"></i>${t("stg.lgOther")}</span><span><i></i>${t("stg.lgFree")}</span></div>
+        ${
+          s.rows.length
+            ? s.rows
+                .map(
+                  (r) => `
+          <div class="stg-row">
+            <div class="dl-thumb" style="${r.editionId ? artFor(r.editionId) : ""}"></div>
+            <div class="stg-rowmain"><div class="dl-item-t">${esc(r.title)}</div><div class="dl-sub ${r.cls}">${esc(r.status)}</div></div>
+            <div class="stg-size">${r.size ? fmtBytes(r.size) : "—"}</div>
+            <div class="stg-acts">
+              ${r.resume ? `<button class="sx-btn primary" data-dlresume="${esc(r.resume)}">${t("dl.resume")}</button>` : ""}
+              ${r.repair ? `<button class="sx-btn" data-repair="${esc(r.repair)}">${t("dl.verify")}</button>` : ""}
+              ${r.reveal ? `<button class="sx-btn ghost" data-reveal="${esc(r.reveal)}" aria-label="${esc(t("stg.openGame"))}">${t("stg.open")}</button>` : ""}
+            </div>
+          </div>`,
+                )
+                .join("")
+            : `<div class="stg-none">${t("stg.noneHere")}</div>`
+        }
+      </section>`;
+  };
+  return `<div class="stg-wrap">${summary}${sections.map(section).join("")}</div>`;
 }
 
 // ── Account & startup (P7 #2, 2026-10-10) ─────────────────────────────────

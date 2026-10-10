@@ -61,6 +61,8 @@ pub struct Cartridge {
     pub meta_json: Option<String>,
     /// Whether /gamevault/build.enc exists alongside the ticket
     pub has_build: bool,
+    /// Size of /gamevault/build.enc in bytes (0 when absent)
+    pub build_size: u64,
 }
 
 fn read_cartridge(root: &Path, label: String) -> Option<Cartridge> {
@@ -76,6 +78,7 @@ fn read_cartridge(root: &Path, label: String) -> Option<Cartridge> {
         ticket_json,
         meta_json: std::fs::read_to_string(gv.join("meta.json")).ok(),
         has_build: gv.join("build.enc").is_file(),
+        build_size: std::fs::metadata(gv.join("build.enc")).map(|m| m.len()).unwrap_or(0),
     })
 }
 
