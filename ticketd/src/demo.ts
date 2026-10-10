@@ -19,7 +19,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { LICENSE_ABI, MARKETPLACE_ABI, REGISTRY_ABI } from "@gamevault/shared/abi";
 import { DEPLOYMENTS, SUBGRAPH_URL } from "@gamevault/shared/deployments";
-import { friends, profiles, studioPages } from "./db.ts";
+import { friends, initDb, profiles, studioPages } from "./db.ts";
+import { closeStore } from "./sql.ts";
 
 // ── Options ───────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -144,6 +145,7 @@ console.log("Santé");
 await health();
 
 const [, , price] = await pub.readContract({ address: REGISTRY, abi: REGISTRY_ABI, functionName: "editions", args: [BigInt(EDITION)] });
+await initDb();
 let tokens = await scan();
 console.log("\nLicences");
 for (const t of tokens) {
@@ -155,9 +157,9 @@ const sellerReady = () => tokens.find((t) => t.owner === SELLER && t.edition ===
 const devListing = () => tokens.find((t) => t.owner === devAddr && t.listed);
 if (!sellerReady()) plan.push(`acheter une licence de l'édition #${EDITION} (${formatEther(price)} ETH) et la transférer à A`);
 if (!devListing()) plan.push(`mettre une licence du wallet dev en vente à ${LIST_PRICE} ETH (marché d'occasion)`);
-if (BUYER && !friends.since(SELLER, BUYER)) plan.push("créer l'amitié A ↔ B, antidatée de 4 jours (prêt possible tout de suite)");
-if (dev && !profiles.get(devAddr)?.name) plan.push("donner un profil au wallet dev (« GameVault Dev »)");
-if (!studioPages.get("1")?.description) plan.push("rédiger la page publique du studio #1");
+if (BUYER && !(await friends.since(SELLER, BUYER))) plan.push("créer l'amitié A ↔ B, antidatée de 4 jours (prêt possible tout de suite)");
+if (dev && !(await profiles.get(devAddr))?.name) plan.push("donner un profil au wallet dev (« GameVault Dev »)");
+if (!(await studioPages.get("1"))?.description) plan.push("rédiger la page publique du studio #1");
 
 console.log("\nPlan");
 if (plan.length === 0) console.log("   rien à faire — la démo est prête");
@@ -208,14 +210,14 @@ if (!APPLY) {
       await send(`mise en vente #${tok.id} à ${LIST_PRICE} ETH`, { address: MARKET, abi: MARKETPLACE_ABI, functionName: "list", args: [tok.id, parseEther(LIST_PRICE)] });
     }
   }
-  if (BUYER && !friends.since(SELLER, BUYER)) {
-    friends.deleteRequest(SELLER, BUYER);
-    friends.deleteRequest(BUYER, SELLER);
-    friends.set(SELLER, BUYER, Math.floor(Date.now() / 1000) - 4 * 86400);
+  if (BUYER && !(await friends.since(SELLER, BUYER))) {
+    await friends.deleteRequest(SELLER, BUYER);
+    await friends.deleteRequest(BUYER, SELLER);
+    await friends.set(SELLER, BUYER, Math.floor(Date.now() / 1000) - 4 * 86400);
     console.log("   ✔ amitié A ↔ B (depuis 4 jours)");
   }
-  if (dev && !profiles.get(devAddr)?.name) {
-    profiles.upsert(devAddr, {
+  if (dev && !(await profiles.get(devAddr))?.name) {
+    await profiles.upsert(devAddr, {
       name: "GameVault Dev",
       avatarType: null,
       favorites: [EDITION],
@@ -224,8 +226,8 @@ if (!APPLY) {
     });
     console.log("   ✔ profil « GameVault Dev »");
   }
-  if (!studioPages.get("1")?.description) {
-    studioPages.put(
+  if (!(await studioPages.get("1"))?.description) {
+    await studioPages.put(
       "1",
       {
         description: "Nous faisons des jeux qu'on possède vraiment : achetés une fois, écrits sur une carte, prêtables à un ami et revendables. Chaque revente nous reverse 10 % automatiquement.",
@@ -249,4 +251,5 @@ console.log(`   3. Navigateur (A) : /trade ou SELL dans le launcher → mise en 
 console.log("   4. Machine de A : la partie se coupe dans les 20 s — ERR 0x52 · RESOLD MID-SESSION");
 console.log("   5. Machine de B : insérer la carte → PAIR avec B → PLAY ; /provenance montre la chaîne des propriétaires");
 console.log("   6. Social : profils /u/…, chat AMIS dans le launcher, prêt A → B depuis /friends\n");
+await closeStore();
 process.exit(0);

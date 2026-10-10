@@ -15,6 +15,7 @@ import { LICENSE_ABI, REGISTRY_ABI } from "@gamevault/shared/abi";
 import { CHAIN, DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { fetchBuild, putBuild, type StoredBuild } from "@gamevault/shared/storage";
 import { consumeNonce, devices, friends, getContentKey, nonceUsed, putContentKey, sessions, tx } from "./db.ts";
+import { live } from "./live.ts";
 
 const TICKET_TTL_SEC = 30 * 24 * 3600; // 30-day offline window
 const MESSAGE_MAX_AGE_MS = 10 * 60 * 1000; // pairing message freshness
@@ -120,7 +121,7 @@ export async function publishBuild(plain: Uint8Array, message: string, signature
 
   const age = Date.now() - Date.parse(f.at);
   if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) throw new Error("message de publication expiré");
-  if (nonceUsed(f.nonce)) throw new Error("nonce déjà utilisé");
+  if (await nonceUsed(f.nonce)) throw new Error("nonce déjà utilisé");
   if (!(await verifyMessage({ address: f.wallet as `0x${string}`, message, signature }))) throw new Error("signature invalide");
   const digest = `0x${createHash("sha256").update(plain).digest("hex")}`;
   if (digest !== f.sha256) throw new Error("le fichier reçu ne correspond pas au fichier signé");
@@ -135,12 +136,12 @@ export async function publishBuild(plain: Uint8Array, message: string, signature
   if (owner.toLowerCase() !== f.wallet.toLowerCase()) {
     throw new Error(`le studio #${f.studioId} n'appartient pas à ce wallet`);
   }
-  consumeNonce(f.nonce, MESSAGE_MAX_AGE_MS * 2);
+  await consumeNonce(f.nonce, MESSAGE_MAX_AGE_MS * 2);
 
   const contentKey = crypto.getRandomValues(new Uint8Array(32));
   const enc = encryptBuild(plain, contentKey);
   const stored = await putBuild(enc, f.name, jwt);
-  putContentKey(stored.cid, contentKey, f.wallet.toLowerCase(), f.studioId);
+  await putContentKey(stored.cid, contentKey, f.wallet.toLowerCase(), f.studioId);
   cacheBuild(stored.cid, enc); // primary distribution — IPFS is the backup
   console.log(`✔ build publié: ${f.name} -> ${stored.cid} (studio #${f.studioId}, ${f.wallet})`);
   return stored;
@@ -289,7 +290,7 @@ export async function attestFriendship(
   // Same address the ownerOf/userOf checks use (honours GAMELICENSE_ADDRESS)
   const license = licenseAddress;
   if (!license) throw new Error("GameLicense non déployé");
-  const since = friends.since(owner, borrower);
+  const since = await friends.since(owner, borrower);
   if (!since) throw new Error("pas amis — la demande doit être acceptée d'abord");
   const deadline = Math.floor(Date.now() / 1000) + ATTEST_TTL_SEC;
   const account = privateKeyToAccount(attestSignerKey());
@@ -328,40 +329,41 @@ const MAX_DEVICES = 2;
 const SEEN_BUMP_MS = 10 * 60 * 1000;
 const DEVICE_RE = /^0x0[23][0-9a-fA-F]{64}$/;
 
-export function devicesOf(wallet: string): { max: number; devices: { pubkey: string; pairedAt: number; lastSeen: number }[] } {
+export async function devicesOf(wallet: string): Promise<{ max: number; devices: { pubkey: string; pairedAt: number; lastSeen: number }[] }> {
   if (!ADDR_RE.test(wallet)) throw new Error("adresse invalide");
-  return { max: MAX_DEVICES, devices: devices.list(wallet) };
+  return { max: MAX_DEVICES, devices: await devices.list(wallet) };
 }
 
 /** Called at ticket issuance: adds or refreshes the device, evicting the
  *  least recently seen one beyond MAX_DEVICES — atomically. Returns the
  *  evicted device. */
-function registerDevice(wallet: string, pubkey: string): { pubkey: string } | null {
-  return tx(() => {
+async function registerDevice(wallet: string, pubkey: string): Promise<{ pubkey: string } | null> {
+  // per-wallet lock: two pairings on two replicas can't exceed MAX_DEVICES
+  return tx(async () => {
     const now = Date.now();
-    const list = devices.list(wallet); // newest first
+    const list = await devices.list(wallet); // newest first
     const known = list.find((d) => d.pubkey === pubkey.toLowerCase());
     if (known) {
-      devices.touch(wallet, pubkey, now);
+      await devices.touch(wallet, pubkey, now);
       return null;
     }
     let evicted: { pubkey: string } | null = null;
     if (list.length >= MAX_DEVICES) {
       const oldest = list[list.length - 1];
-      devices.remove(wallet, oldest.pubkey);
+      await devices.remove(wallet, oldest.pubkey);
       evicted = oldest;
     }
-    devices.upsert(wallet, { pubkey, pairedAt: now, lastSeen: now });
+    await devices.upsert(wallet, { pubkey, pairedAt: now, lastSeen: now });
     return evicted;
-  });
+  }, `devices:${wallet.toLowerCase()}`);
 }
 
 /** Online launch check: is this machine still one of the account's active devices? */
-export function deviceStatus(wallet: string, pubkey: string): { active: boolean } {
+export async function deviceStatus(wallet: string, pubkey: string): Promise<{ active: boolean }> {
   if (!ADDR_RE.test(wallet) || !DEVICE_RE.test(pubkey)) throw new Error("paramètres invalides");
-  const rec = devices.get(wallet, pubkey);
+  const rec = await devices.get(wallet, pubkey);
   if (rec && Date.now() - rec.lastSeen > SEEN_BUMP_MS) {
-    devices.touch(wallet, pubkey, Date.now()); // keeps the machine you actually play on off the eviction list
+    await devices.touch(wallet, pubkey, Date.now()); // keeps the machine you actually play on off the eviction list
   }
   return { active: Boolean(rec) };
 }
@@ -384,23 +386,23 @@ export async function revokeDevice(message: string, signature: `0x${string}`): P
   if (!ADDR_RE.test(f.me) || !DEVICE_RE.test(f.device)) throw new Error("paramètres invalides");
   const age = Date.now() - Date.parse(f.at);
   if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) throw new Error("message expiré");
-  if (nonceUsed(f.nonce)) throw new Error("nonce déjà utilisé");
+  if (await nonceUsed(f.nonce)) throw new Error("nonce déjà utilisé");
   if (!(await verifyMessage({ address: f.me as `0x${string}`, message, signature }))) throw new Error("signature invalide");
-  tx(() => {
-    consumeNonce(f.nonce, NONCE_TTL_MS);
-    devices.remove(f.me, f.device);
-    sessions.removeDevice(f.me, f.device);
-  });
+  await tx(async () => {
+    await consumeNonce(f.nonce, NONCE_TTL_MS);
+    await devices.remove(f.me, f.device);
+    await sessions.removeDevice(f.me, f.device);
+  }, `devices:${f.me.toLowerCase()}`);
   console.log(`✔ appareil ${f.device.slice(0, 12)}… libéré par ${f.me}`);
   return { ok: true };
 }
 
 /** DEV : antidater une amitié pour simuler les 3 jours (ticketd est local). */
-export function backdateFriendship(a: string, b: string, sinceSec: number): { ok: true; since: number } {
+export async function backdateFriendship(a: string, b: string, sinceSec: number): Promise<{ ok: true; since: number }> {
   if (!ADDR_RE.test(a) || !ADDR_RE.test(b)) throw new Error("adresse invalide");
   if (!Number.isFinite(sinceSec) || sinceSec <= 0) throw new Error("since invalide");
-  if (!friends.since(a, b)) throw new Error("pas amis — accepter d'abord, antidater ensuite");
-  friends.set(a, b, Math.floor(sinceSec));
+  if (!(await friends.since(a, b))) throw new Error("pas amis — accepter d'abord, antidater ensuite");
+  await friends.set(a, b, Math.floor(sinceSec));
   console.warn(`⚠ DEV: amitié ${a} <-> ${b} antidatée au ${new Date(sinceSec * 1000).toISOString()}`);
   return { ok: true, since: Math.floor(sinceSec) };
 }
@@ -454,7 +456,7 @@ async function contentKeyFor(tokenId: string): Promise<Uint8Array> {
     if (first && first.editionId !== editionId) {
       throw new Error(`édition #${editionId} réutilise le build de l'édition #${first.editionId} — refusé`);
     }
-    const rec = getContentKey(cid);
+    const rec = await getContentKey(cid);
     if (rec) {
       if (rec.studioId === null) {
         // legacy key (unsigned publish era) — dev only
@@ -480,15 +482,15 @@ async function contentKeyFor(tokenId: string): Promise<Uint8Array> {
 // --- Issuance ---------------------------------------------------------------
 
 // Issued tickets waiting for their launcher (the web page signs, the
-// LAUNCHER needs the ticket). Fetched once by nonce, then dropped.
+// LAUNCHER needs the ticket). Fetched once by nonce, then dropped. In
+// live.ts: Redis when several replicas run (the launcher may poll another
+// replica than the one that issued the ticket).
 const PENDING_TTL_MS = 10 * 60 * 1000;
-const pendingTickets = new Map<string, { ticket: SignedTicket; at: number }>();
 
-export function takePendingTicket(nonce: string): SignedTicket | undefined {
-  for (const [k, v] of pendingTickets) if (Date.now() - v.at > PENDING_TTL_MS) pendingTickets.delete(k);
-  const entry = pendingTickets.get(nonce);
-  if (entry) pendingTickets.delete(nonce);
-  return entry?.ticket;
+export async function takePendingTicket(nonce: string): Promise<SignedTicket | undefined> {
+  if (!/^[\w-]{1,100}$/.test(nonce)) return undefined;
+  const raw = await live().pendingTake(nonce);
+  return raw ? (JSON.parse(raw) as SignedTicket) : undefined;
 }
 
 export interface IssueRequest {
@@ -512,7 +514,7 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
   if (!Number.isFinite(age) || age < -60_000 || age > MESSAGE_MAX_AGE_MS) {
     throw new Error("pairing message expired — retry from the launcher");
   }
-  if (nonceUsed(p.nonce)) throw new Error("nonce already used");
+  if (await nonceUsed(p.nonce)) throw new Error("nonce already used");
 
   // 3. The owner really signed this exact message
   const sigOk = await verifyMessage({ address: p.address as `0x${string}`, message, signature });
@@ -570,7 +572,7 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
     }
   }
 
-  consumeNonce(p.nonce, NONCE_TTL_MS);
+  await consumeNonce(p.nonce, NONCE_TTL_MS);
 
   // 5. Seal the content key to the DEVICE and sign the ticket. A borrower's
   //    ticket dies with the loan: expiresAt = min(TTL, fin du prêt).
@@ -590,12 +592,12 @@ export async function issueTicket({ message, signature }: IssueRequest): Promise
   // 6. Account device slots (registered only once everything succeeded).
   //    Selftest (no chain) does not touch the registry.
   if (!skipOwnerCheck) {
-    const evicted = registerDevice(p.address, p.devicePubKey);
+    const evicted = await registerDevice(p.address, p.devicePubKey);
     if (evicted) {
       console.log(`↺ ${p.address} : ${MAX_DEVICES} appareils max — ${evicted.pubkey.slice(0, 12)}… déconnecté (le moins récemment utilisé)`);
     }
   }
 
-  pendingTickets.set(p.nonce, { ticket: signed, at: Date.now() });
+  await live().pendingPut(p.nonce, JSON.stringify(signed), PENDING_TTL_MS);
   return signed;
 }

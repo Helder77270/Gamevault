@@ -9,10 +9,16 @@
     "backup": "node --env-file-if-exists=.env --experimental-sqlite --experimental-strip-types src/backup.ts",
     "selftest": "node --experimental-sqlite --experimental-strip-types src/selftest.ts",
     "demo": "node --env-file-if-exists=.env --env-file-if-exists=.env.dev --experimental-sqlite --experimental-strip-types src/demo.ts",
-    "bigbuild": "node --env-file-if-exists=.env --experimental-sqlite --experimental-strip-types src/bigbuild.ts"
+    "bigbuild": "node --env-file-if-exists=.env --experimental-sqlite --experimental-strip-types src/bigbuild.ts",
+    "migrate": "node --env-file-if-exists=.env --experimental-sqlite --experimental-strip-types src/migrate.ts"
   },
   "dependencies": {
     "@gamevault/shared": "*",
+    "ioredis": "5.4.1",
+    "pg": "8.13.1",
     "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.11.10"
   }
 }

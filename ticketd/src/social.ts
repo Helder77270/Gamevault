@@ -13,17 +13,20 @@
 // Licence ownership stays public ON-CHAIN whatever is chosen here — only
 // the social layer hides. Chat is between friends only, stored here (not
 // end-to-end).
+//
+// Scale-out (2026-10-11): durable data in db.ts (SQLite or Postgres),
+// presence / events / rate limits in live.ts (memory or Redis). The SSE
+// streams themselves stay in the process that accepted them; events reach
+// them through live().publish, whichever replica produced the event.
 
 import type { ServerResponse } from "node:http";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { verifyMessage } from "viem";
 import { secp256k1 } from "@noble/curves/secp256k1";
 import { sha256 } from "@noble/hashes/sha256";
 import {
-  DATA_DIR,
   activity,
+  avatars,
   consumeNonce,
   devices,
   friends,
@@ -42,6 +45,7 @@ import {
   type ChatMessage,
   type StudioPage,
 } from "./db.ts";
+import { live } from "./live.ts";
 import { studioOwner, studiosOwnedBy } from "./service.ts";
 
 const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -75,10 +79,10 @@ function parseLines(message: string, header: string, keys: string[]): Record<str
   return v;
 }
 
-function issueSession(wallet: string, device: string | null): { token: string; wallet: string; expiresAt: number } {
+async function issueSession(wallet: string, device: string | null): Promise<{ token: string; wallet: string; expiresAt: number }> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = Date.now() + SESSION_TTL_MS;
-  sessions.put(tokenHash(token), wallet, device, expiresAt);
+  await sessions.put(tokenHash(token), wallet, device, expiresAt);
   return { token, wallet: lc(wallet), expiresAt };
 }
 
@@ -89,16 +93,16 @@ export async function openWebSession(message: string, signature: `0x${string}`):
   const f = parseLines(message, "GameVault Session", ["me", "at", "nonce"]);
   if (!ADDR_RE.test(f.me) || !UUID_RE.test(f.nonce)) throw new Error("message invalide");
   fresh(Date.parse(f.at));
-  if (nonceUsed(f.nonce)) throw new Error("nonce déjà utilisé");
+  if (await nonceUsed(f.nonce)) throw new Error("nonce déjà utilisé");
   if (!(await verifyMessage({ address: f.me as `0x${string}`, message, signature }))) throw new Error("signature invalide");
-  consumeNonce(f.nonce, NONCE_TTL_MS);
+  await consumeNonce(f.nonce, NONCE_TTL_MS);
   return issueSession(f.me, null);
 }
 
 /** Launcher: GameVault Device Session\nwallet\ndevice\nat: <ms>\nnonce: <hex>,
  *  signed by the DEVICE key in the Rust core (compact secp256k1 over sha256).
  *  The device must be registered to that wallet (it paired a ticket). */
-export function openDeviceSession(message: string, signatureHex: string): { token: string; wallet: string; expiresAt: number } {
+export async function openDeviceSession(message: string, signatureHex: string): Promise<{ token: string; wallet: string; expiresAt: number }> {
   const f = parseLines(message, "GameVault Device Session", ["wallet", "device", "at", "nonce"]);
   if (!ADDR_RE.test(f.wallet) || !DEVICE_RE.test(f.device) || !/^[0-9a-f]{32}$/.test(f.nonce)) throw new Error("message invalide");
   fresh(Number(f.at));
@@ -109,94 +113,94 @@ export function openDeviceSession(message: string, signatureHex: string): { toke
     Uint8Array.from(Buffer.from(f.device.slice(2), "hex")),
   );
   if (!ok) throw new Error("signature d'appareil invalide");
-  if (!devices.get(f.wallet, f.device)) throw new Error("appareil non appairé à ce compte");
-  if (nonceUsed(f.nonce)) throw new Error("nonce déjà utilisé");
-  consumeNonce(f.nonce, NONCE_TTL_MS);
+  if (!(await devices.get(f.wallet, f.device))) throw new Error("appareil non appairé à ce compte");
+  if (await nonceUsed(f.nonce)) throw new Error("nonce déjà utilisé");
+  await consumeNonce(f.nonce, NONCE_TTL_MS);
   return issueSession(f.wallet, f.device);
 }
 
 export class Unauthorized extends Error {}
 
 /** Wallet behind `Authorization: Bearer <token>` (or ?token= for SSE). */
-export function authWallet(bearer: string | undefined): { wallet: string; device: string | null } {
+export async function authWallet(bearer: string | undefined): Promise<{ wallet: string; device: string | null }> {
   const token = bearer?.startsWith("Bearer ") ? bearer.slice(7) : bearer;
   if (!token) throw new Unauthorized("session requise");
-  const s = sessions.get(tokenHash(token));
+  const s = await sessions.get(tokenHash(token));
   if (!s) throw new Unauthorized("session expirée — reconnectez-vous");
   return { wallet: s.wallet, device: s.device };
 }
 
-export function closeSession(bearer: string | undefined): { ok: true } {
+export async function closeSession(bearer: string | undefined): Promise<{ ok: true }> {
   const token = bearer?.startsWith("Bearer ") ? bearer.slice(7) : bearer;
-  if (token) sessions.remove(tokenHash(token));
+  if (token) await sessions.remove(tokenHash(token));
   return { ok: true };
 }
 
-// ── Presence (memory only: online = heartbeat < 90 s) ───────────────────
+// ── Presence (online = heartbeat < 90 s; live.ts: memory or Redis) ──────
 
 const PRESENCE_TTL_MS = 90_000;
-const presence = new Map<string, { playing: string | null; at: number }>();
+type PresenceState = { state: "offline" | "online" | "playing"; editionId: string | null };
+const OFFLINE: PresenceState = { state: "offline", editionId: null };
+const asPresence = (rec: { playing: string | null } | undefined): PresenceState =>
+  !rec ? OFFLINE : rec.playing ? { state: "playing", editionId: rec.playing } : { state: "online", editionId: null };
 
-export function setPresence(wallet: string, playing: string | null): { ok: true } {
+export async function setPresence(wallet: string, playing: string | null): Promise<{ ok: true }> {
   if (playing !== null && !/^\d{1,6}$/.test(playing)) throw new Error("édition invalide");
-  const prev = presence.get(lc(wallet));
-  presence.set(lc(wallet), { playing, at: Date.now() });
-  if (prev?.playing !== playing && privacy.get(wallet).presence !== "private") {
-    notifyFriends(wallet, "presence", { addr: lc(wallet), ...presenceOf(wallet) });
+  const prev = await live().presenceSet(lc(wallet), { playing }, PRESENCE_TTL_MS);
+  if ((prev === undefined || prev.playing !== playing) && (await privacy.get(wallet)).presence !== "private") {
+    await notifyFriends(wallet, "presence", { addr: lc(wallet), ...asPresence({ playing }) });
   }
   return { ok: true };
 }
 
-const OFFLINE = { state: "offline" as const, editionId: null };
+export async function presenceOf(wallet: string): Promise<PresenceState> {
+  return asPresence((await live().presenceGet([lc(wallet)])).get(lc(wallet)));
+}
 
 /** Presence as `viewer` may see it (hidden = shown offline). */
-export function presenceFor(wallet: string, viewer: string | null): ReturnType<typeof presenceOf> {
-  return canSee(wallet, viewer, privacy.get(wallet).presence) ? presenceOf(wallet) : OFFLINE;
+export async function presenceFor(wallet: string, viewer: string | null): Promise<PresenceState> {
+  return (await canSee(wallet, viewer, (await privacy.get(wallet)).presence)) ? presenceOf(wallet) : OFFLINE;
 }
 
 // ── Privacy ────────────────────────────────────────────────────────────
 
 /** May `viewer` (null = not signed in) see a section `owner` set to `level`? */
-function canSee(owner: string, viewer: string | null, level: PrivacyLevel): boolean {
+async function canSee(owner: string, viewer: string | null, level: PrivacyLevel): Promise<boolean> {
   if (viewer && lc(viewer) === lc(owner)) return true;
   if (level === "public") return true;
-  if (level === "friends") return Boolean(viewer && friends.since(owner, viewer));
+  if (level === "friends") return Boolean(viewer && (await friends.since(owner, viewer)));
   return false;
 }
 
-function visibility(owner: string, viewer: string | null): Record<keyof Privacy, boolean> {
-  const p = privacy.get(owner);
+async function visibility(owner: string, viewer: string | null): Promise<Record<keyof Privacy, boolean>> {
+  const p = await privacy.get(owner);
   const out = {} as Record<keyof Privacy, boolean>;
-  for (const s of PRIVACY_SECTIONS) out[s] = canSee(owner, viewer, p[s]);
+  for (const s of PRIVACY_SECTIONS) out[s] = await canSee(owner, viewer, p[s]);
   return out;
 }
 
-export function privacyOf(me: string): Privacy {
+export async function privacyOf(me: string): Promise<Privacy> {
   return privacy.get(me);
 }
 
-export function setPrivacy(me: string, body: Record<string, unknown>): Privacy {
-  const next = privacy.get(me);
+export async function setPrivacy(me: string, body: Record<string, unknown>): Promise<Privacy> {
+  const next = await privacy.get(me);
   for (const s of PRIVACY_SECTIONS) {
     if (body[s] === undefined) continue;
     const v = String(body[s]);
     if (v !== "public" && v !== "friends" && v !== "private") throw new Error(`niveau invalide pour ${s}`);
     next[s] = v;
   }
-  privacy.set(me, next);
+  await privacy.set(me, next);
   // going invisible: friends see this account offline right away
-  if (next.presence === "private") notifyFriends(me, "presence", { addr: lc(me), ...OFFLINE });
+  if (next.presence === "private") await notifyFriends(me, "presence", { addr: lc(me), ...OFFLINE });
   return next;
 }
 
-export function presenceOf(wallet: string): { state: "offline" | "online" | "playing"; editionId: string | null } {
-  const p = presence.get(lc(wallet));
-  if (!p || Date.now() - p.at > PRESENCE_TTL_MS) return { state: "offline", editionId: null };
-  return p.playing ? { state: "playing", editionId: p.playing } : { state: "online", editionId: null };
-}
-
 // ── Live stream (Server-Sent Events) ───────────────────────────────────
-// One open response per launcher / browser tab. Events: message, presence.
+// One open response per launcher / browser tab, held by THIS process.
+// Events go through live().publish, so the replica that holds the stream
+// delivers them (Redis pub/sub when several replicas run).
 
 const streams = new Map<string, Set<ServerResponse>>();
 
@@ -212,12 +216,36 @@ export function subscribe(wallet: string, res: ServerResponse): void {
   });
 }
 
-function push(wallet: string, event: string, data: unknown): void {
+/** live.ts calls this for every event (local or from another replica). */
+export function deliverLocal(wallet: string, event: string, data: unknown): void {
   for (const res of streams.get(lc(wallet)) ?? []) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-function notifyFriends(wallet: string, event: string, data: unknown): void {
-  for (const f of friends.list(wallet)) push(f.addr, event, data);
+/** Open streams of this process (graceful shutdown, metrics). */
+export function openStreams(): { wallets: number; streams: number; closeAll: () => void } {
+  let n = 0;
+  for (const s of streams.values()) n += s.size;
+  return {
+    wallets: streams.size,
+    streams: n,
+    closeAll: () => {
+      for (const s of streams.values()) for (const res of s) res.end(); // clients (EventSource) reconnect to another replica
+    },
+  };
+}
+
+/** Best effort: a live event that can't be published (Redis down) never
+ *  fails the action itself — the data is saved, clients catch up on reload. */
+async function push(wallet: string, event: string, data: unknown): Promise<void> {
+  try {
+    await live().publish(lc(wallet), event, data);
+  } catch (e) {
+    console.warn(`⚠ événement ${event} non diffusé : ${e instanceof Error ? e.message : e}`);
+  }
+}
+
+async function notifyFriends(wallet: string, event: string, data: unknown): Promise<void> {
+  await Promise.all((await friends.list(wallet)).map((f) => push(f.addr, event, data)));
 }
 
 // ── Friends (session) ──────────────────────────────────────────────────
@@ -241,29 +269,33 @@ export async function friendAction(me: string, action: string, other: string): P
   if (action === "request") await assertMayRequest(me, other);
   const capOf = async (a: string) => ((await studiosOwnedBy(a)).length > 0 ? MAX_FRIENDS_STUDIO : MAX_FRIENDS);
   const [capMe, capOther] = action === "accept" ? await Promise.all([capOf(me), capOf(other)]) : [MAX_FRIENDS, MAX_FRIENDS];
-  tx(() => {
-    if (action === "request") {
-      if (friends.since(me, other)) throw new Error("déjà amis");
-      friends.request(me, other);
-    } else if (action === "accept") {
-      if (!friends.hasRequest(other, me)) throw new Error("aucune demande de cette adresse");
-      // Anti-farm cap (audit T10), raised for studio accounts
-      if (friends.count(me) >= capMe) throw new Error(`limite de ${capMe} amis atteinte`);
-      if (friends.count(other) >= capOther) throw new Error(`cet ami a atteint sa limite de ${capOther} amis`);
-      friends.deleteRequest(other, me);
-      friends.deleteRequest(me, other);
-      friends.set(me, other, Math.floor(Date.now() / 1000));
-      activity.add(me, "friend", { with: lc(other) });
-      activity.add(other, "friend", { with: lc(me) });
-    } else if (action === "decline") {
-      friends.deleteRequest(other, me);
-    } else if (action === "cancel") {
-      friends.deleteRequest(me, other);
-    } else {
-      friends.remove(me, other);
-    }
-  });
-  push(other, "friends", { from: lc(me), action });
+  // the caps count both accounts' friends: serialize on the two wallets
+  await tx(
+    async () => {
+      if (action === "request") {
+        if (await friends.since(me, other)) throw new Error("déjà amis");
+        await friends.request(me, other);
+      } else if (action === "accept") {
+        if (!(await friends.hasRequest(other, me))) throw new Error("aucune demande de cette adresse");
+        // Anti-farm cap (audit T10), raised for studio accounts
+        if ((await friends.count(me)) >= capMe) throw new Error(`limite de ${capMe} amis atteinte`);
+        if ((await friends.count(other)) >= capOther) throw new Error(`cet ami a atteint sa limite de ${capOther} amis`);
+        await friends.deleteRequest(other, me);
+        await friends.deleteRequest(me, other);
+        await friends.set(me, other, Math.floor(Date.now() / 1000));
+        await activity.add(me, "friend", { with: lc(other) });
+        await activity.add(other, "friend", { with: lc(me) });
+      } else if (action === "decline") {
+        await friends.deleteRequest(other, me);
+      } else if (action === "cancel") {
+        await friends.deleteRequest(me, other);
+      } else {
+        await friends.remove(me, other);
+      }
+    },
+    `friends:${[lc(me), lc(other)].sort().join("|")}`,
+  );
+  await push(other, "friends", { from: lc(me), action });
   console.log(`✔ amis: ${action} ${me} <-> ${other}`);
   return { ok: true };
 }
@@ -276,31 +308,29 @@ export async function studioAccount(addr: string): Promise<{ id: string; name: s
   return studiosOwnedBy(addr);
 }
 
-function people(addrs: string[]): Person[] {
-  const names = profiles.names(addrs);
-  return addrs.map((a) => ({ addr: lc(a), name: names[lc(a)] ?? null, hasAvatar: Boolean(profiles.get(a)?.avatarType) }));
+async function people(addrs: string[]): Promise<Person[]> {
+  const known = await profiles.people(addrs);
+  return addrs.map((a) => ({ addr: lc(a), name: known[lc(a)]?.name ?? null, hasAvatar: known[lc(a)]?.hasAvatar ?? false }));
 }
 
-export function friendsOf(addr: string, viewer: string | null = null): {
-  friends: (Person & { since: number; presence: ReturnType<typeof presenceOf> })[];
-  incoming: Person[];
-  outgoing: Person[];
-} {
+export async function friendsOf(
+  addr: string,
+  viewer: string | null = null,
+): Promise<{ friends: (Person & { since: number; presence: PresenceState })[]; incoming: Person[]; outgoing: Person[] }> {
   if (!ADDR_RE.test(addr)) throw new Error("adresse invalide");
   // friends and pending requests belong to the "profile" section
-  if (!canSee(addr, viewer, privacy.get(addr).profile)) return { friends: [], incoming: [], outgoing: [] };
-  const list = friends.list(addr);
-  const info = new Map(people(list.map((f) => f.addr)).map((p) => [p.addr, p]));
+  if (!(await canSee(addr, viewer, (await privacy.get(addr)).profile))) return { friends: [], incoming: [], outgoing: [] };
+  const list = await friends.list(addr);
+  const info = new Map((await people(list.map((f) => f.addr))).map((p) => [p.addr, p]));
   return {
-    friends: list.map((f) => ({ ...info.get(lc(f.addr))!, since: f.since, presence: presenceFor(f.addr, viewer) })),
-    incoming: people(friends.incoming(addr)),
-    outgoing: people(friends.outgoing(addr)),
+    friends: await Promise.all(list.map(async (f) => ({ ...info.get(lc(f.addr))!, since: f.since, presence: await presenceFor(f.addr, viewer) }))),
+    incoming: await people(await friends.incoming(addr)),
+    outgoing: await people(await friends.outgoing(addr)),
   };
 }
 
 // ── Profiles (public read, session write) ──────────────────────────────
 
-const AVATARS_DIR = join(DATA_DIR, "avatars");
 const AVATAR_MAX_BYTES = 300 * 1024;
 const AVATAR_MIN_BYTES = 256;
 const NAME_RE = /^[\p{L}\p{N} _.\-]{2,24}$/u;
@@ -313,8 +343,9 @@ function avatarKind(bytes: Uint8Array): string | null {
   return null;
 }
 
-/** avatar: "keep" | "none" | base64 image (resized client-side to 256 px). */
-export function saveProfile(me: string, body: { name?: unknown; bio?: unknown; favorites?: unknown; avatar?: unknown }): { ok: true } {
+/** avatar: "keep" | "none" | base64 image (resized client-side to 256 px).
+ *  Avatars live in the database (every replica serves them). */
+export async function saveProfile(me: string, body: { name?: unknown; bio?: unknown; favorites?: unknown; avatar?: unknown }): Promise<{ ok: true }> {
   const name = String(body.name ?? "").trim();
   if (!NAME_RE.test(name)) throw new Error("pseudo invalide (2-24 caractères, lettres/chiffres/espaces/-_.)");
   const bio = String(body.bio ?? "").replace(/\r\n/g, "\n").trim();
@@ -325,42 +356,41 @@ export function saveProfile(me: string, body: { name?: unknown; bio?: unknown; f
     .slice(0, 12);
   const avatar = String(body.avatar ?? "keep");
 
-  let avatarType = profiles.get(me)?.avatarType ?? null;
-  if (avatar === "none") {
-    avatarType = null;
-  } else if (avatar !== "keep") {
-    const bytes = Buffer.from(avatar, "base64");
-    if (bytes.length > AVATAR_MAX_BYTES) throw new Error(`avatar trop lourd (max ${AVATAR_MAX_BYTES / 1024} Ko)`);
-    if (bytes.length < AVATAR_MIN_BYTES) throw new Error("avatar trop petit pour être une image");
-    const kind = avatarKind(bytes);
-    if (!kind) throw new Error("avatar: formats acceptés jpeg/png/webp");
-    mkdirSync(AVATARS_DIR, { recursive: true });
-    writeFileSync(join(AVATARS_DIR, lc(me)), bytes);
-    avatarType = kind;
-  }
-  profiles.upsert(me, { name, avatarType, favorites, bio, updatedAt: Date.now() });
+  await tx(async () => {
+    let avatarType = (await profiles.get(me))?.avatarType ?? null;
+    if (avatar === "none") {
+      avatarType = null;
+      await avatars.remove(me);
+    } else if (avatar !== "keep") {
+      const bytes = Buffer.from(avatar, "base64");
+      if (bytes.length > AVATAR_MAX_BYTES) throw new Error(`avatar trop lourd (max ${AVATAR_MAX_BYTES / 1024} Ko)`);
+      if (bytes.length < AVATAR_MIN_BYTES) throw new Error("avatar trop petit pour être une image");
+      const kind = avatarKind(bytes);
+      if (!kind) throw new Error("avatar: formats acceptés jpeg/png/webp");
+      await avatars.put(me, kind, new Uint8Array(bytes));
+      avatarType = kind;
+    }
+    await profiles.upsert(me, { name, avatarType, favorites, bio, updatedAt: Date.now() });
+  }, `profile:${lc(me)}`);
   console.log(`✔ profil: ${me} -> « ${name} »`);
   return { ok: true };
 }
 
-export function getAvatar(addr: string): { bytes: Uint8Array; type: string } | null {
+export async function getAvatar(addr: string): Promise<{ bytes: Uint8Array; type: string } | null> {
   if (!ADDR_RE.test(addr)) return null;
-  const p = profiles.get(addr);
-  const file = join(AVATARS_DIR, lc(addr));
-  if (!p?.avatarType || !existsSync(file)) return null;
-  return { bytes: new Uint8Array(readFileSync(file)), type: p.avatarType };
+  return (await avatars.get(addr)) ?? null;
 }
 
 /** The profile as `viewer` may see it (null = not signed in). On-chain
  *  parts (licences, listings, loans) are read by the web page from the
  *  subgraph; `visible.library` tells it whether to show them. */
-export function getProfile(addr: string, viewer: string | null = null) {
+export async function getProfile(addr: string, viewer: string | null = null) {
   if (!ADDR_RE.test(addr)) throw new Error("adresse invalide");
-  const p = profiles.get(addr);
-  const vis = visibility(addr, viewer);
-  const friendList = vis.profile ? friends.list(addr) : [];
-  const recent = vis.activity ? activity.recent(addr) : [];
-  const names = profiles.names(recent.flatMap((a) => (typeof a.data.with === "string" ? [a.data.with] : [])));
+  const p = await profiles.get(addr);
+  const vis = await visibility(addr, viewer);
+  const friendList = vis.profile ? await friends.list(addr) : [];
+  const recent = vis.activity ? await activity.recent(addr) : [];
+  const names = await profiles.people(recent.flatMap((a) => (typeof a.data.with === "string" ? [a.data.with] : [])));
   return {
     addr,
     name: p?.name ?? null,
@@ -368,26 +398,26 @@ export function getProfile(addr: string, viewer: string | null = null) {
     bio: vis.profile ? (p?.bio ?? "") : "",
     favorites: vis.profile ? (p?.favorites ?? []) : [],
     memberSince: vis.profile ? (p?.createdAt ?? null) : null,
-    presence: vis.presence ? presenceOf(addr) : OFFLINE,
-    topPlayed: vis.activity ? playstats.top(addr, 8) : [],
-    totalSeconds: vis.activity ? playstats.total(addr) : null,
-    devicesCount: vis.profile ? devices.list(addr).length : null,
+    presence: vis.presence ? await presenceOf(addr) : OFFLINE,
+    topPlayed: vis.activity ? await playstats.top(addr, 8) : [],
+    totalSeconds: vis.activity ? await playstats.total(addr) : null,
+    devicesCount: vis.profile ? (await devices.list(addr)).length : null,
     friendsCount: vis.profile ? friendList.length : null,
-    friends: people(friendList.slice(0, 12).map((f) => f.addr)),
+    friends: await people(friendList.slice(0, 12).map((f) => f.addr)),
     activity: recent.map((a) => ({
       ...a,
-      data: typeof a.data.with === "string" ? { ...a.data, withName: names[a.data.with] ?? null } : a.data,
+      data: typeof a.data.with === "string" ? { ...a.data, withName: names[a.data.with]?.name ?? null } : a.data,
     })),
-    privacy: privacy.get(addr),
+    privacy: await privacy.get(addr),
     visible: vis,
     updatedAt: p?.updatedAt ?? null,
   };
 }
 
 /** Names for a list of addresses (sellers, team members, chat). */
-export function namesOf(addrs: string[]): Record<string, { name: string | null; hasAvatar: boolean }> {
+export async function namesOf(addrs: string[]): Promise<Record<string, { name: string | null; hasAvatar: boolean }>> {
   const out: Record<string, { name: string | null; hasAvatar: boolean }> = {};
-  for (const p of people(addrs.filter((a) => ADDR_RE.test(a)).slice(0, 64))) out[p.addr] = { name: p.name, hasAvatar: p.hasAvatar };
+  for (const p of await people(addrs.filter((a) => ADDR_RE.test(a)).slice(0, 64))) out[p.addr] = { name: p.name, hasAvatar: p.hasAvatar };
   return out;
 }
 
@@ -399,20 +429,20 @@ export async function searchProfiles(q: string): Promise<{ addr: string; name: s
   const query = q.trim();
   if (query.length < 2) return [];
   const byAddr = query.toLowerCase().startsWith("0x");
-  const hits = profiles
-    .all()
-    .filter((p) => (byAddr ? p.addr.startsWith(query.toLowerCase()) : fold(p.name).includes(fold(query))))
-    .slice(0, 10);
+  if (byAddr && !/^0x[0-9a-f]{0,40}$/i.test(query)) return [];
+  const hits = (await profiles.search(query, byAddr)).filter((p) => (byAddr ? true : fold(p.name).includes(fold(query)))).slice(0, 10);
   return Promise.all(hits.map(async (p) => ({ ...p, isStudio: (await studiosOwnedBy(p.addr)).length > 0 })));
 }
 
 /** Play time pushed by the launcher at the end of a session (device session). */
-export function addPlaystat(wallet: string, editionId: string, seconds: number): { ok: true } {
+export async function addPlaystat(wallet: string, editionId: string, seconds: number): Promise<{ ok: true }> {
   if (!/^\d{1,6}$/.test(editionId)) throw new Error("édition invalide");
   const s = Math.floor(seconds);
   if (!Number.isFinite(s) || s <= 0 || s > 24 * 3600) throw new Error("durée invalide");
-  playstats.add(wallet, editionId, s);
-  activity.add(wallet, "played", { editionId, seconds: s });
+  await tx(async () => {
+    await playstats.add(wallet, editionId, s);
+    await activity.add(wallet, "played", { editionId, seconds: s });
+  });
   return { ok: true };
 }
 
@@ -425,30 +455,32 @@ const WISH_MAX = 50;
 const EDITION_RE = /^\d{1,6}$/;
 const WEI_RE = /^\d{1,40}$/;
 
-export function wishlistOf(me: string) {
+export async function wishlistOf(me: string) {
   return wishlist.list(me);
 }
 
-export function setWish(me: string, body: { editionId?: unknown; on?: unknown; priceWei?: unknown }) {
+export async function setWish(me: string, body: { editionId?: unknown; on?: unknown; priceWei?: unknown }) {
   const editionId = String(body.editionId ?? "");
   if (!EDITION_RE.test(editionId)) throw new Error("édition invalide");
   if (body.on === false) {
-    wishlist.remove(me, editionId);
+    await wishlist.remove(me, editionId);
   } else {
     const priceWei = String(body.priceWei ?? "");
     if (!WEI_RE.test(priceWei)) throw new Error("prix invalide");
-    const already = wishlist.list(me).some((w) => w.editionId === editionId);
-    if (!already && wishlist.count(me) >= WISH_MAX) throw new Error(`liste de souhaits pleine (${WISH_MAX} jeux max)`);
-    wishlist.put(me, editionId, priceWei);
+    await tx(async () => {
+      const already = (await wishlist.list(me)).some((w) => w.editionId === editionId);
+      if (!already && (await wishlist.count(me)) >= WISH_MAX) throw new Error(`liste de souhaits pleine (${WISH_MAX} jeux max)`);
+      await wishlist.put(me, editionId, priceWei);
+    }, `wishlist:${lc(me)}`);
   }
   return wishlist.list(me);
 }
 
-export function markWishSeen(me: string, body: { editionId?: unknown; priceWei?: unknown }): { ok: true } {
+export async function markWishSeen(me: string, body: { editionId?: unknown; priceWei?: unknown }): Promise<{ ok: true }> {
   const editionId = String(body.editionId ?? "");
   const priceWei = String(body.priceWei ?? "");
   if (!EDITION_RE.test(editionId) || !WEI_RE.test(priceWei)) throw new Error("souhait invalide");
-  wishlist.seen(me, editionId, priceWei);
+  await wishlist.seen(me, editionId, priceWei);
   return { ok: true };
 }
 
@@ -456,9 +488,9 @@ export function markWishSeen(me: string, body: { editionId?: unknown; priceWei?:
 
 const URL_RE = /^https:\/\/[^\s<>"']{3,200}$/;
 
-export function getStudioPage(studioId: string): StudioPage {
+export async function getStudioPage(studioId: string): Promise<StudioPage> {
   if (!/^\d{1,9}$/.test(studioId)) throw new Error("studio invalide");
-  return studioPages.get(studioId) ?? { description: "", links: [], team: [], updatedAt: 0 };
+  return (await studioPages.get(studioId)) ?? { description: "", links: [], team: [], updatedAt: 0 };
 }
 
 /** Only the studio's on-chain owner can edit its page. */
@@ -481,7 +513,7 @@ export async function saveStudioPage(me: string, studioId: string, body: { descr
     if (wallet && !ADDR_RE.test(wallet)) throw new Error(`wallet invalide pour ${name}`);
     return { name, role, wallet: wallet ? lc(wallet) : null };
   });
-  studioPages.put(studioId, { description, links, team }, me);
+  await studioPages.put(studioId, { description, links, team }, me);
   console.log(`✔ page studio #${studioId} mise à jour`);
   return { ok: true };
 }
@@ -491,33 +523,29 @@ export async function saveStudioPage(me: string, studioId: string, body: { descr
 const BODY_MAX = 1000;
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 30;
-const sent = new Map<string, number[]>();
 
-function rateLimit(wallet: string): void {
-  const now = Date.now();
-  const recent = (sent.get(wallet) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
-  if (recent.length >= RATE_MAX) throw new Error("trop de messages — patientez une minute");
-  recent.push(now);
-  sent.set(wallet, recent);
-}
-
-export function chatSummary(me: string) {
-  const rows = messages.summary(me);
-  const names = namesOf(rows.map((r) => r.other));
+export async function chatSummary(me: string) {
+  const rows = await messages.summary(me);
+  const names = await namesOf(rows.map((r) => r.other));
   return rows.map((r) => ({ ...r, name: names[r.other]?.name ?? null }));
 }
 
-export function chatThread(me: string, other: string, afterId: number): ChatMessage[] {
+export async function chatThread(me: string, other: string, afterId: number): Promise<ChatMessage[]> {
   if (!ADDR_RE.test(other)) throw new Error("adresse invalide");
   return messages.thread(me, other, Number.isFinite(afterId) ? afterId : 0);
 }
 
 /** kind "text": free text. kind "loan": a lend just happened, shown as a
  *  card in the thread (cosmetic; the loan itself is on-chain). */
-export function sendMessage(me: string, other: string, body: { kind?: unknown; text?: unknown; loan?: unknown }): ChatMessage {
+export async function sendMessage(me: string, other: string, body: { kind?: unknown; text?: unknown; loan?: unknown }): Promise<ChatMessage> {
   if (!ADDR_RE.test(other)) throw new Error("adresse invalide");
-  if (!friends.since(me, other)) throw new Error("le chat est réservé aux amis");
-  rateLimit(lc(me));
+  if (!(await friends.since(me, other))) throw new Error("le chat est réservé aux amis");
+  // shared counter (Redis): the limit holds whichever replica takes the message
+  // (fails open if Redis is down: chat keeps working, unthrottled)
+  const allowed = await live()
+    .rateHit(`chat:${lc(me)}`, RATE_MAX, RATE_WINDOW_MS)
+    .catch(() => true);
+  if (!allowed) throw new Error("trop de messages — patientez une minute");
   let kind = "text";
   let text: string;
   if (body.kind === "loan") {
@@ -531,15 +559,15 @@ export function sendMessage(me: string, other: string, body: { kind?: unknown; t
     if (!text) throw new Error("message vide");
     if (text.length > BODY_MAX) throw new Error(`message trop long (${BODY_MAX} max)`);
   }
-  const msg = messages.add(me, other, kind, text);
-  push(other, "message", msg);
-  push(me, "message", msg); // the sender's other windows
+  const msg = await messages.add(me, other, kind, text);
+  await push(other, "message", msg);
+  await push(me, "message", msg); // the sender's other windows
   return msg;
 }
 
-export function markRead(me: string, other: string, upTo: number): { ok: true } {
+export async function markRead(me: string, other: string, upTo: number): Promise<{ ok: true }> {
   if (!ADDR_RE.test(other) || !Number.isFinite(upTo)) throw new Error("requête invalide");
-  messages.markRead(me, other, upTo);
-  push(other, "read", { by: lc(me), upTo });
+  await messages.markRead(me, other, upTo);
+  await push(other, "read", { by: lc(me), upTo });
   return { ok: true };
 }
