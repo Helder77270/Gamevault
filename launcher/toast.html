@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AURA-64 · notifications</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Desktop toast window (P7 #1): transparent, sized to its toasts by Rust. */
+      :root {
+        --ink: #eef5ff;
+        --dim: rgba(214, 230, 255, 0.5);
+        --cyan: oklch(0.8 0.1 200);
+        --sans: "Chakra Petch", system-ui, sans-serif;
+        --mono: "Space Mono", ui-monospace, monospace;
+        color-scheme: dark;
+      }
+      html, body { margin: 0; background: transparent; overflow: hidden; font-family: var(--sans); color: var(--ink); user-select: none; }
+      #stack { display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; padding: 4px; }
+      .t {
+        position: relative; overflow: hidden; cursor: pointer; border-radius: 16px; padding: 10px 12px 12px;
+        border: 1px solid rgba(200, 225, 255, 0.26);
+        background: linear-gradient(180deg, rgba(20, 26, 52, 0.97), rgba(9, 12, 26, 0.97));
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        animation: tIn 0.38s cubic-bezier(0.2, 1.3, 0.5, 1) both;
+      }
+      .t:hover { border-color: rgba(200, 225, 255, 0.5); }
+      .t.out { animation: tOut 0.24s ease both; }
+      @keyframes tIn { from { opacity: 0; transform: translateX(60px); } to { opacity: 1; transform: none; } }
+      @keyframes tOut { to { opacity: 0; transform: translateX(60px); } }
+      .t-top { display: flex; align-items: center; gap: 10px; }
+      .t-brand { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; letter-spacing: 0.2em; font-size: 10px; }
+      .t-brand i { width: 12px; height: 12px; border-radius: 4px; background: linear-gradient(150deg, oklch(0.92 0.07 200), oklch(0.6 0.14 305)); box-shadow: 0 0 10px oklch(0.75 0.13 240 / 0.75); }
+      .t-k { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.2em; color: var(--dim); }
+      .t-x { margin-left: auto; cursor: pointer; width: 22px; height: 22px; border-radius: 999px; border: none; background: transparent; color: var(--dim); font-size: 11px; }
+      .t-x:hover { color: var(--ink); background: rgba(226, 240, 255, 0.12); }
+      .t-row { display: flex; gap: 12px; align-items: center; margin-top: 8px; }
+      .t-ico { width: 40px; height: 40px; flex: none; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; }
+      .t-download .t-ico { color: #0a1020; background: linear-gradient(180deg, #f2f8ff, oklch(0.84 0.07 205)); }
+      .t-message .t-ico { color: #f6efff; background: oklch(0.6 0.12 310 / 0.55); border: 1px solid oklch(0.8 0.11 310 / 0.6); }
+      .t-security .t-ico { color: #1d1404; background: oklch(0.86 0.12 85); }
+      .t-security { border-color: oklch(0.82 0.12 85 / 0.5); }
+      .t-title { font-size: 15px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+      .t-body { margin-top: 2px; font-size: 12.5px; line-height: 1.4; color: rgba(222, 236, 255, 0.74); overflow-wrap: anywhere; }
+      .t-hint { margin-top: 8px; font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.16em; color: var(--cyan); }
+      .t-timer { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: rgba(226, 240, 255, 0.08); }
+      .t-timer i { display: block; height: 100%; width: 100%; background: var(--cyan); transform-origin: left; animation: tTimer var(--life, 6.5s) linear forwards; }
+      .t:hover .t-timer i { animation-play-state: paused; }
+      @keyframes tTimer { to { transform: scaleX(0); } }
+      /* card toasts: the slot, the card dropping in */
+      .t-reader { position: relative; width: 44px; height: 40px; flex: none; }
+      .t-card { position: absolute; left: 10px; top: 0; width: 24px; height: 20px; border-radius: 3px 8px 1px 1px; background: linear-gradient(150deg, oklch(0.85 0.09 205), oklch(0.62 0.12 300)); box-shadow: 0 0 12px oklch(0.75 0.12 240 / 0.6); animation: cardIn 0.7s cubic-bezier(0.3, 1.4, 0.6, 1) 0.25s both; }
+      .t-card.out { animation: cardOut 0.7s ease 0.25s both; }
+      .t-slot { position: absolute; left: 0; right: 0; bottom: 4px; height: 12px; border-radius: 3px 3px 6px 6px; background: linear-gradient(180deg, #080d1a, oklch(0.22 0.04 265)); border: 1px solid rgba(200, 225, 255, 0.25); }
+      .t-led { position: absolute; right: 3px; bottom: 7px; width: 5px; height: 5px; border-radius: 50%; background: rgba(220, 235, 255, 0.25); animation: ledOn 0.2s linear 0.9s both; }
+      .t-card.out ~ .t-led { animation: none; }
+      @keyframes cardIn { from { transform: translateY(-14px); opacity: 0; } to { transform: translateY(12px); opacity: 1; } }
+      @keyframes cardOut { from { transform: translateY(12px); opacity: 1; } to { transform: translateY(-16px); opacity: 0; } }
+      @keyframes ledOn { to { background: oklch(0.8 0.14 160); box-shadow: 0 0 8px oklch(0.8 0.14 160); } }
+      @media (prefers-reduced-motion: reduce) { .t, .t.out, .t-card, .t-card.out, .t-led { animation-duration: 0.01s; animation-delay: 0s; } }
+    </style>
+  </head>
+  <body>
+    <div id="stack" aria-live="polite"></div>
+    <script type="module" src="/src/toast.ts"></script>
+  </body>
+</html>

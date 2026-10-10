@@ -412,6 +412,87 @@ fn library_scan(dirs: Vec<String>) -> Vec<download::LibraryEntry> {
     download::scan_library(&dirs)
 }
 
+// ── Desktop toasts (P7 #1) ───────────────────────────────────────────────
+// Steam-like: a small AURA-64 window over every other app, bottom-right of
+// the screen's work area, never taking the focus. It is created on demand,
+// sized to its toasts (so the empty part never blocks clicks behind it) and
+// closed when the last one leaves. A click brings the launcher back.
+
+const TOAST_W: f64 = 384.0;
+
+#[derive(Default)]
+struct Toasts(Mutex<(bool, Vec<Value>)>); // (window ready, queued before it was)
+
+fn place_toast_window(w: &tauri::WebviewWindow, height: f64) {
+    let Ok(Some(m)) = w.primary_monitor() else { return };
+    let scale = m.scale_factor();
+    let wa = m.work_area();
+    let margin = (10.0 * scale) as i32;
+    let x = wa.position.x + wa.size.width as i32 - (TOAST_W * scale) as i32 - margin;
+    let y = wa.position.y + wa.size.height as i32 - (height * scale) as i32 - margin;
+    let _ = w.set_size(tauri::LogicalSize::new(TOAST_W, height));
+    let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
+}
+
+#[tauri::command]
+fn desktop_toast(app: AppHandle, toasts: tauri::State<Toasts>, payload: Value) -> Result<(), String> {
+    let mut st = toasts.0.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(w) = app.get_webview_window("toast") {
+        if st.0 {
+            return w.emit("desktop-toast", payload).map_err(|e| e.to_string());
+        }
+        st.1.push(payload); // still loading: picked up by toast_ready
+        return Ok(());
+    }
+    st.0 = false;
+    st.1.push(payload);
+    let w = tauri::WebviewWindowBuilder::new(&app, "toast", tauri::WebviewUrl::App("toast.html".into()))
+        .title("AURA-64")
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .focused(false)
+        .focusable(false)
+        .visible(false)
+        .inner_size(TOAST_W, 120.0)
+        .build()
+        .map_err(|e| format!("fenêtre de notification: {e}"))?;
+    place_toast_window(&w, 120.0);
+    w.show().map_err(|e| e.to_string())
+}
+
+/// The toast page is loaded: hand over what arrived meanwhile.
+#[tauri::command]
+fn toast_ready(toasts: tauri::State<Toasts>) -> Vec<Value> {
+    let mut st = toasts.0.lock().unwrap_or_else(|e| e.into_inner());
+    st.0 = true;
+    std::mem::take(&mut st.1)
+}
+
+/// Fit the window to its toasts (height in CSS px), bottom-right anchored.
+#[tauri::command]
+fn toast_fit(window: tauri::WebviewWindow, height: f64) {
+    if window.label() == "toast" {
+        place_toast_window(&window, height.clamp(40.0, 900.0));
+    }
+}
+
+#[tauri::command]
+fn toast_close(window: tauri::WebviewWindow, toasts: tauri::State<Toasts>) {
+    if window.label() == "toast" {
+        *toasts.0.lock().unwrap_or_else(|e| e.into_inner()) = (false, Vec::new());
+        let _ = window.close();
+    }
+}
+
+#[tauri::command]
+fn focus_main(app: AppHandle) {
+    show_main(&app);
+}
+
 /// Bring the launcher back from the notification area.
 fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
@@ -426,7 +507,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
+        .manage(Toasts::default())
         .manage(Arc::new(download::Downloads::default()))
         .manage(GameSession(Mutex::new(None)))
         .manage(NativeSession(Arc::new(Mutex::new(None))))
@@ -467,9 +548,12 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // only the launcher hides to the tray; the toast window really closes
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .register_uri_scheme_protocol("game", |ctx, _request| {
@@ -505,7 +589,12 @@ pub fn run() {
             library_scan,
             dl_preview,
             default_library,
-            create_library
+            create_library,
+            desktop_toast,
+            toast_ready,
+            toast_fit,
+            toast_close,
+            focus_main
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

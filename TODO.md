@@ -161,10 +161,9 @@ décision de conception, un redéploiement ou une infra en plus).
 - [x] **A** (2026-10-10) Toasts en bas à droite : jeu téléchargé, message d'un ami, carte
       insérée / retirée, appareil déconnecté du compte depuis une autre
       machine. Déjà là : toasts carte et chat, à unifier.
-- [x] **A** (2026-10-10) Notifications Windows quand AURA-64 est dans la zone de
-      notification (fenêtre cachée).
-
-### Démarrage & session
+- [x] **A** (2026-10-10) Notifications SUR LE BUREAU façon Steam (fenêtre AURA-64
+      en bas à droite, au-dessus des autres logiciels) ; dans le launcher, le
+      widget SLOT A entre en scène pour la carte.
 - [ ] **A** Se déconnecter (Réglages) : oublie la session du compte sur cette
       machine ; la clé de la machine reste, la carte aussi.
 - [ ] **A** Choisir sa page de démarrage (Accueil, Game Shelf, Amis,

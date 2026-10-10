@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "toast",
+  "description": "Desktop toast window: receives toasts, reports clicks back to the launcher",
+  "windows": [
+    "toast"
+  ],
+  "permissions": [
+    "core:event:default"
+  ]
+}

@@ -72,12 +72,12 @@ interface Settings {
   dev: boolean;
   veilleMin: number; // idle minutes before the screensaver, 0 = never
   libraries: string[]; // download folders on this PC (the card stays the key)
-  notif: { download: boolean; message: boolean; card: boolean; security: boolean; windows: boolean };
+  notif: { download: boolean; message: boolean; card: boolean; security: boolean };
 }
 
 const VEILLE_CHOICES = [1, 3, 5, 10, 0];
 const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3, libraries: [],
-  notif: { download: true, message: true, card: true, security: true, windows: true } };
+  notif: { download: true, message: true, card: true, security: true } };
 
 function loadSettings(): Settings {
   try {
@@ -289,12 +289,9 @@ function onChatMessage(m: ChatMsg): void {
       kind: "message",
       title: f?.name ?? short(other, 6),
       body: m.kind === "loan" ? t("nt.msgLoan") : m.body.length > 120 ? `${m.body.slice(0, 120)}…` : m.body,
-      action: {
-        label: t("nt.reply"),
-        run: () => {
-          go("friends");
-          void openChat(other);
-        },
+      action: () => {
+        go("friends");
+        void openChat(other);
       },
     });
     rerender();
@@ -1094,21 +1091,6 @@ function chimeCash(): void {
 
 let slotEvent: { kind: "in" | "out"; until: number } | null = null;
 
-function cardToast(kind: "in" | "out", title: string): void {
-  const layer = document.getElementById("overlay-layer");
-  if (!layer) return;
-  const el = document.createElement("div");
-  el.className = `card-toast ${kind}`;
-  el.innerHTML = `
-    <div class="ct-reader"><div class="ct-card"></div><div class="ct-slot"></div></div>
-    <div class="ct-label">CARD ${kind === "in" ? "INSERTED" : "EJECTED"}<br><b>${esc(title.toUpperCase())}</b></div>`;
-  layer.appendChild(el);
-  (kind === "in" ? sfxInsert : chimeOut)();
-  slotEvent = { kind, until: Date.now() + 3000 };
-  setTimeout(() => el.classList.add("bye"), 2400);
-  setTimeout(() => el.remove(), 3000);
-}
-
 // ── Helpers ───────────────────────────────────────────────────
 
 const short = (h: string, n = 8): string => (h.length <= 2 * n ? h : `${h.slice(0, n)}…${h.slice(-4)}`);
@@ -1819,7 +1801,6 @@ function settingsView(): string {
           ${toggle("set-nt-message", settings.notif.message, t("set.nt.message"), t("set.nt.messageSub"))}
           ${toggle("set-nt-card", settings.notif.card, t("set.nt.card"), t("set.nt.cardSub"))}
           ${toggle("set-nt-security", settings.notif.security, t("set.nt.security"), t("set.nt.securitySub"))}
-          ${toggle("set-nt-windows", settings.notif.windows, t("set.nt.windows"), t("set.nt.windowsSub"))}
           <div class="set-row"><div><div class="set-label">${esc(t("set.nt.test"))}</div></div><button class="pillbtn" id="set-nt-test">${esc(t("set.nt.testBtn"))}</button></div>
         </section>
         <div class="set-sub" style="text-align:center;margin-top:4px">${esc(t("set.about"))}</div>
@@ -2382,7 +2363,7 @@ function wire(root: HTMLElement): void {
   flip("set-sound", "sound");
   flip("set-motion", "reducedMotion");
   flip("set-dev", "dev");
-  (["download", "message", "card", "security", "windows"] as const).forEach((k) =>
+  (["download", "message", "card", "security"] as const).forEach((k) =>
     document.getElementById(`set-nt-${k}`)?.addEventListener("click", () => {
       settings.notif[k] = !settings.notif[k];
       saveSettings();
@@ -2390,7 +2371,7 @@ function wire(root: HTMLElement): void {
     }),
   );
   document.getElementById("set-nt-test")?.addEventListener("click", () =>
-    showNotif({ kind: "download", title: t("nt.dlDone", { t: "GameVault Runner" }), body: t("nt.dlDoneBody"), action: { label: t("nt.open"), run: () => go("downloads") } }),
+    void notify({ kind: "download", title: t("nt.dlDone", { t: "GameVault Runner" }), body: t("nt.dlDoneBody"), action: () => go("downloads") }),
   );
   root.querySelectorAll<HTMLButtonElement>("[data-rmlib]").forEach((b) =>
     b.addEventListener("click", () => {
@@ -2615,11 +2596,11 @@ async function refresh(): Promise<void> {
             hideVeille();
             sfxInsert();
           }
-          void cardEvent("in", g.meta.title ?? g.cartridge.volume_label ?? "CARD");
+          void cardEvent("in", g.meta.title ?? g.cartridge.volume_label ?? "CARD", g);
         });
       state.games
         .filter((g) => !cur.has(g.cartridge.mount_point))
-        .forEach((g) => void cardEvent("out", g.meta.title ?? g.cartridge.volume_label ?? "CARD"));
+        .forEach((g) => void cardEvent("out", g.meta.title ?? g.cartridge.volume_label ?? "CARD", g));
     }
     state.games = newGames;
     state.lastScan = new Date().toLocaleTimeString();
@@ -2647,25 +2628,20 @@ async function refresh(): Promise<void> {
 }
 
 // ── Notifications (P7 #1, 2026-10-10) ─────────────────────────────────────
-// One stack, bottom-right, for what happens while you look elsewhere: a
-// game finished downloading, a friend wrote, a card went in or out, this
-// machine lost its place on the account. When AURA-64 is hidden in the
-// notification area or in the background, Windows shows it too. The card
-// keeps its own signature animation when the window is in front.
+// Steam-like DESKTOP toasts: a small AURA-64 window bottom-right of the
+// screen, over every other app (src/toast.ts, sized and placed by Rust).
+// A click brings the launcher back where the toast points. Inside the
+// launcher, a card going in or out plays the SLOT A widget instead.
 type NotifKind = "download" | "message" | "card" | "security";
 interface Notif {
   kind: NotifKind;
   title: string;
   body: string;
-  action?: { label: string; run: () => void };
+  action?: () => void;
+  out?: boolean; // card removed
 }
 
-const NOTIF_ICON: Record<NotifKind, string> = {
-  download: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>`,
-  message: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"></path></svg>`,
-  card: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"></path><path d="M10 3v4M13 3v4"></path></svg>`,
-  security: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"></path><path d="M12 8v5M12 16v.01"></path></svg>`,
-};
+const toastActions = new Map<string, () => void>();
 
 /** "front" = visible and focused; "back" = visible, not focused; "tray" = hidden. */
 async function windowState(): Promise<"front" | "back" | "tray"> {
@@ -2680,56 +2656,83 @@ async function windowState(): Promise<"front" | "back" | "tray"> {
 
 async function notify(n: Notif): Promise<void> {
   if (!settings.notif[n.kind]) return;
-  const where = await windowState();
-  if (where !== "front" && settings.notif.windows) {
-    void invoke("plugin:notification|notify", { options: { title: n.title, body: n.body } }).catch(() => {});
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  if (n.action) {
+    toastActions.set(id, n.action);
+    window.setTimeout(() => toastActions.delete(id), 60_000);
   }
-  if (where !== "tray") showNotif(n);
+  await invoke("desktop_toast", {
+    payload: {
+      id,
+      kind: n.kind,
+      kindLabel: t(`nt.${n.kind}` as "nt.download"),
+      title: n.title,
+      body: n.body,
+      hint: n.action ? t("nt.clickHint") : undefined,
+      out: n.out ?? false,
+    },
+  }).catch(() => {});
 }
 
-function showNotif(n: Notif): void {
-  let stack = document.getElementById("notif-stack");
-  if (!stack) {
-    stack = document.createElement("div");
-    stack.id = "notif-stack";
-    stack.setAttribute("aria-live", "polite");
-    document.body.appendChild(stack);
-  }
-  while (stack.children.length >= 4) stack.firstElementChild?.remove();
+// a click on a desktop toast: launcher back in front, then the toast's page
+void listen<{ id: string }>("toast-action", (ev) => {
+  void invoke("focus_main");
+  const run = toastActions.get(ev.payload.id);
+  toastActions.delete(ev.payload.id);
+  run?.();
+});
+
+/** What the SLOT A widget says about a card. */
+function cardStateLabel(g: Game | undefined): { label: string; cls: string } {
+  if (!g) return { label: "SLOT EMPTY", cls: "off" };
+  const ed = editionFor(g);
+  if (ed && playableNow(ed)) return { label: "READY · TICKET " + ticketDaysLeft(g), cls: "" };
+  if (g.verdict === "unpaired" || !isOurs(g)) return { label: "PAIR THIS MACHINE", cls: "warn" };
+  if (g.verdict === "expired") return { label: t("home.ticketExpired"), cls: "warn" };
+  if (!g.cartridge.has_build && !libraryBuildFor(ed)) return { label: t("dl.toDownload"), cls: "warn" };
+  return { label: g.verdict.toUpperCase(), cls: "warn" };
+}
+
+/** The SLOT A widget slides in, the card drops into the slot (or rises out). */
+function slotToast(kind: "in" | "out", g: Game | undefined, title: string): void {
+  const layer = document.getElementById("overlay-layer");
+  if (!layer) return;
+  layer.querySelectorAll(".slot-toast").forEach((x) => x.remove());
+  const st = kind === "in" ? cardStateLabel(g) : { label: "CARD EJECTED", cls: "off" };
+  const where = g ? `${g.cartridge.mount_point} · ${g.cartridge.has_build ? "BUILD SUR LA CARTE" : libraryBuildFor(editionFor(g)) ? "JEU SUR CE PC" : "CLÉ SEULE"}` : "";
   const el = document.createElement("div");
-  el.className = `nt nt-${n.kind}`;
-  el.setAttribute("role", "status");
+  el.className = `card-widget slot-toast ${kind}`;
   el.innerHTML = `
-    <span class="nt-ico">${NOTIF_ICON[n.kind]}</span>
-    <div class="nt-body">
-      <div class="nt-k">${esc(t(`nt.${n.kind}` as "nt.download"))}</div>
-      <div class="nt-t">${esc(n.title)}</div>
-      <div class="nt-s">${esc(n.body)}</div>
-      ${n.action ? `<button class="nt-act">${esc(n.action.label)}</button>` : ""}
-    </div>
-    <button class="nt-x" aria-label="${esc(t("nt.close"))}">✕</button>`;
-  const bye = () => {
-    el.classList.add("out");
-    window.setTimeout(() => el.remove(), 260);
-  };
-  el.querySelector(".nt-x")?.addEventListener("click", bye);
-  el.querySelector(".nt-act")?.addEventListener("click", () => {
-    n.action?.run();
-    bye();
-  });
-  let timer = window.setTimeout(bye, 6500);
-  el.addEventListener("mouseenter", () => window.clearTimeout(timer));
-  el.addEventListener("mouseleave", () => (timer = window.setTimeout(bye, 2500)));
-  stack.appendChild(el);
+    <div class="mono-label" style="font-size:10px;letter-spacing:0.26em">SLOT A · ${kind === "in" ? "CARD SEATED" : "CARD EJECTED"}</div>
+    <div class="cw-row">
+      <span class="st-reader" aria-hidden="true"><span class="st-card"></span><span class="st-slot"><span class="st-slot-line"></span></span><span class="st-led"></span></span>
+      <div style="min-width:0">
+        <div class="cw-title">${esc(title)}</div>
+        <div class="cw-state ${st.cls}"><span class="cw-led"></span>${esc(st.label)}</div>
+        ${where ? `<div class="cw-dim">${esc(where)}</div>` : ""}
+      </div>
+    </div>`;
+  layer.appendChild(el);
+  (kind === "in" ? sfxInsert : chimeOut)();
+  slotEvent = { kind, until: Date.now() + 3000 };
+  window.setTimeout(() => el.classList.add("bye"), 3400);
+  window.setTimeout(() => el.remove(), 3900);
 }
 
-/** A card went in or out: the signature animation in front, a notification otherwise. */
-async function cardEvent(kind: "in" | "out", title: string): Promise<void> {
+/** A card went in or out: the SLOT A widget in front, a desktop toast otherwise. */
+async function cardEvent(kind: "in" | "out", title: string, g?: Game): Promise<void> {
+  if (!settings.notif.card) return;
   if ((await windowState()) === "front") {
-    if (settings.notif.card) cardToast(kind, title);
+    slotToast(kind, g, title);
     return;
   }
-  void notify({ kind: "card", title: t(kind === "in" ? "nt.cardIn" : "nt.cardOut"), body: title });
+  void notify({
+    kind: "card",
+    title: t(kind === "in" ? "nt.cardIn" : "nt.cardOut"),
+    body: g && kind === "in" ? `${title} · ${cardStateLabel(g).label}` : title,
+    out: kind === "out",
+    action: () => go("home"),
+  });
 }
 
 // This machine's place on the account (2 machines max): pairing another
@@ -2749,7 +2752,7 @@ async function checkDeviceSlot(): Promise<void> {
         kind: "security",
         title: t("nt.secTitle"),
         body: t("nt.secBody"),
-        action: { label: t("nt.secAction"), run: () => go("home") },
+        action: () => go("home"),
       });
     }
     deviceWasActive = active;
@@ -3252,11 +3255,11 @@ void listen<{ id: string; phase: string; done?: number; total?: number; net_bps?
           kind: "download",
           title: t(j.kind === "repair" ? "nt.repaired" : "nt.dlDone", { t: j.title }),
           body: t("nt.dlDoneBody"),
-          action: { label: t("nt.open"), run: () => go("downloads") },
+          action: () => go("downloads"),
         });
       }
       if (p.phase === "error") {
-        void notify({ kind: "download", title: t("nt.dlError", { t: j.title }), body: p.error ?? "", action: { label: t("nt.open"), run: () => go("downloads") } });
+        void notify({ kind: "download", title: t("nt.dlError", { t: j.title }), body: p.error ?? "", action: () => go("downloads") });
       }
       if (p.phase === "cancelled") delete dl.jobs[p.id];
       void refreshLibrary().then(() => {

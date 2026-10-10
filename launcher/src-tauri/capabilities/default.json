@@ -9,7 +9,6 @@
     "core:default",
     "core:window:allow-is-focused",
     "core:window:allow-is-visible",
-    "notification:default",
     "dialog:allow-open",
     "core:window:allow-is-maximized",
     "core:window:allow-start-dragging",
