@@ -41,7 +41,8 @@ vehicle, the blockchain is the lock."
   Since 2026-10-10 the card is the KEY: one ticket per paired machine in
   `/gamevault/tickets/<device pubkey>.json` (2 kept, the device limit;
   `ticket.json` = last written). The game itself downloads to a library
-  folder on the PC by default (`<dir>/gamevault-library/<cid>/build.enc`),
+  folder on the PC by default (`<library>/<Game title> (<cid 8>)/build.enc`
+  + `gamevault.json`; first library proposed as `...\GameVault`),
   or to the card if it has room — no play without the card inserted.
 - Downloads: Rust download manager (download.rs) — 4 MiB chunks over HTTP
   ranges, ticketd first then IPFS mirrors per chunk, each chunk checked

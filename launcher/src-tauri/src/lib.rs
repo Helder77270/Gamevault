@@ -95,8 +95,9 @@ fn play_game(
         on_card
     } else {
         let p = PathBuf::from(build_path.ok_or("jeu absent de la carte et de la bibliothèque")?);
+        // a library game folder: build.enc beside its gamevault.json
         let in_library = p.file_name().is_some_and(|n| n == "build.enc")
-            && p.parent().and_then(|c| c.parent()).and_then(|l| l.file_name()).is_some_and(|n| n == "gamevault-library");
+            && p.parent().is_some_and(|f| f.join("gamevault.json").is_file());
         if !in_library || !p.is_file() {
             return Err("chemin de jeu refusé".into());
         }
@@ -316,15 +317,40 @@ fn write_ticket(mount_point: String, ticket_json: String) -> Result<(), String> 
 
 /// Where a download lands: a detected card (its /gamevault/) or a library
 /// folder of this PC. The full path is always built on this side.
-fn dl_target(dest_kind: &str, dest: &str, cid: &str) -> Result<PathBuf, String> {
+fn dl_target(dest_kind: &str, dest: &str, cid: &str, title: &str) -> Result<PathBuf, String> {
     match dest_kind {
         "card" => {
             known_mount(dest)?;
             Ok(Path::new(dest).join("gamevault").join("build.enc"))
         }
-        "library" => download::library_target(dest, cid),
+        "library" => download::library_target(dest, cid, title),
         _ => Err("destination inconnue".into()),
     }
+}
+
+/// The exact folder a download would land in (shown before it starts).
+#[tauri::command]
+fn dl_preview(dest_kind: String, dest: String, cid: String, title: String) -> Result<String, String> {
+    if dest_kind == "library" && !Path::new(&dest).is_dir() {
+        // a library not created yet: same naming rule, previewed under it
+        if cid.len() < 10 || !cid.bytes().all(|b| b.is_ascii_alphanumeric()) {
+            return Err("CID invalide".into());
+        }
+        return Ok(Path::new(&dest).join(download::game_folder_name(&title, &cid)).to_string_lossy().into_owned());
+    }
+    let t = dl_target(&dest_kind, &dest, &cid, &title)?;
+    Ok(t.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default())
+}
+
+/// A first library folder to propose when none exists yet.
+#[tauri::command]
+fn default_library() -> Option<(String, u64, u64)> {
+    download::default_library()
+}
+
+#[tauri::command]
+fn create_library(path: String) -> Result<String, String> {
+    download::create_library(&path)
 }
 
 #[tauri::command]
@@ -336,8 +362,13 @@ fn dl_start(
     sha256: String,
     dest_kind: String,
     dest: String,
+    title: String,
+    edition: String,
 ) -> Result<String, String> {
-    let target = dl_target(&dest_kind, &dest, &cid)?;
+    let target = dl_target(&dest_kind, &dest, &cid, &title)?;
+    if dest_kind == "library" {
+        download::mark_game_folder(&target, &cid, &title, &edition)?;
+    }
     download::start(app, Arc::clone(&dl), id, cid, sha256, target.clone())?;
     Ok(target.to_string_lossy().into_owned())
 }
@@ -351,8 +382,9 @@ fn dl_repair(
     sha256: String,
     dest_kind: String,
     dest: String,
+    title: String,
 ) -> Result<(), String> {
-    let target = dl_target(&dest_kind, &dest, &cid)?;
+    let target = dl_target(&dest_kind, &dest, &cid, &title)?;
     if !target.is_file() {
         return Err("aucun jeu installé à réparer ici".into());
     }
@@ -469,7 +501,10 @@ pub fn run() {
             dl_pause,
             dl_cancel,
             disk_space,
-            library_scan
+            library_scan,
+            dl_preview,
+            default_library,
+            create_library
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

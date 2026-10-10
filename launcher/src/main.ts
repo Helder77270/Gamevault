@@ -2646,11 +2646,12 @@ interface LibraryEntry {
   status: "installed" | "partial";
 }
 interface DestOption {
-  kind: "library" | "card";
+  kind: "library" | "card" | "create"; // create = a first GameVault folder, made on confirm
   dest: string;
   label: string;
   free: number | null;
   total: number | null;
+  folder: string; // the exact game folder the build lands in
 }
 const ACTIVE_PHASES = ["prepare", "download", "read", "fetch", "final"];
 const dl = {
@@ -2701,7 +2702,7 @@ function pump(): void {
   next.phase = "prepare";
   next.error = "";
   const cmd = next.kind === "repair" ? "dl_repair" : "dl_start";
-  invoke(cmd, { id: next.id, cid: next.cid, sha256: next.sha256, destKind: next.destKind, dest: next.dest }).catch((err) => {
+  invoke(cmd, { id: next.id, cid: next.cid, sha256: next.sha256, destKind: next.destKind, dest: next.dest, title: next.title, edition: next.editionId }).catch((err) => {
     next.phase = "error";
     next.error = String(err);
     render();
@@ -2727,15 +2728,28 @@ async function openDownload(editionId: string): Promise<void> {
       return null;
     }
   };
+  const preview = async (kind: string, dest: string) => {
+    try {
+      return await invoke<string>("dl_preview", { destKind: kind === "create" ? "library" : kind, dest, cid: e.buildCid, title: e.title });
+    } catch {
+      return dest;
+    }
+  };
   const options: DestOption[] = [];
   for (const dir of settings.libraries) {
     const s = await space(dir);
-    options.push({ kind: "library", dest: dir, label: dir, free: s?.[0] ?? null, total: s?.[1] ?? null });
+    options.push({ kind: "library", dest: dir, label: dir, free: s?.[0] ?? null, total: s?.[1] ?? null, folder: await preview("library", dir) });
+  }
+  // No game folder yet: propose creating GameVault on the roomiest drive.
+  if (!settings.libraries.length) {
+    const d = await invoke<[string, number, number] | null>("default_library").catch(() => null);
+    if (d) options.push({ kind: "create", dest: d[0], label: d[0], free: d[1], total: d[2], folder: await preview("create", d[0]) });
   }
   const card = cardForEdition(editionId);
   if (card) {
     const s = await space(card.cartridge.mount_point);
-    options.push({ kind: "card", dest: card.cartridge.mount_point, label: card.cartridge.mount_point, free: s?.[0] ?? null, total: s?.[1] ?? null });
+    const m = card.cartridge.mount_point;
+    options.push({ kind: "card", dest: m, label: m, free: s?.[0] ?? null, total: s?.[1] ?? null, folder: `${m.replace(/[\\/]$/, "")}\\gamevault` });
   }
   const fits = (o: DestOption) => size === null || o.free === null || o.free >= size * 1.01;
   const first = options.find(fits);
@@ -2758,12 +2772,23 @@ async function addLibraryFolder(): Promise<void> {
   else render();
 }
 
-function confirmDownload(): void {
+async function confirmDownload(): Promise<void> {
   const p = dl.picker;
   const e = p ? state.catalog.find((c) => c.editionId === p.editionId) : undefined;
   if (!p || !e || !p.choice) return;
   const [kind, ...rest] = p.choice.split("|");
-  dl.jobs[e.buildCid] = newJob(e, "download", kind as DlJob["destKind"], rest.join("|"));
+  let dest = rest.join("|");
+  if (kind === "create") {
+    try {
+      dest = await invoke<string>("create_library", { path: dest });
+      settings.libraries.push(dest);
+      saveSettings();
+    } catch (err) {
+      toast(String(err));
+      return;
+    }
+  }
+  dl.jobs[e.buildCid] = newJob(e, "download", kind === "card" ? "card" : "library", dest);
   dl.picker = null;
   state.screen = "downloads";
   pump();
@@ -2805,7 +2830,7 @@ function cancelJob(id: string): void {
   if (j.phase === "paused" && j.destKind === "library") {
     // the part file must go too: a short start the cancel flag stops at once
     j.phase = "prepare";
-    void invoke("dl_start", { id, cid: j.cid, sha256: j.sha256, destKind: j.destKind, dest: j.dest }).then(() => invoke("dl_cancel", { id }));
+    void invoke("dl_start", { id, cid: j.cid, sha256: j.sha256, destKind: j.destKind, dest: j.dest, title: j.title, edition: j.editionId }).then(() => invoke("dl_cancel", { id }));
     return;
   }
   delete dl.jobs[id];
@@ -2933,13 +2958,15 @@ function pickerView(): string {
     const key = `${o.kind}|${o.dest}`;
     const lacks = need !== null && o.free !== null && o.free < need * 1.01 ? need * 1.01 - o.free : 0;
     const used = o.free !== null && o.total ? Math.round(((o.total - o.free) / o.total) * 100) : 0;
-    const badge = o.kind === "library" && i === 0 ? `<span class="dp-badge">${t("dl.default")}</span>` : o.kind === "card" ? `<span class="dp-badge vi">${t("dl.option")}</span>` : "";
+    const badge =
+      o.kind === "create" ? `<span class="dp-badge">${t("dl.toCreate")}</span>` : o.kind === "library" && i === 0 ? `<span class="dp-badge">${t("dl.default")}</span>` : o.kind === "card" ? `<span class="dp-badge vi">${t("dl.option")}</span>` : "";
     return `
       <label class="dp-opt ${p.choice === key ? "on" : ""} ${lacks ? "bad" : ""}">
         <input type="radio" name="dp" value="${esc(key)}" ${p.choice === key ? "checked" : ""} ${lacks ? "disabled" : ""} data-dpchoice="${esc(key)}" />
         <span class="dp-body">
-          <span class="dp-name">${o.kind === "card" ? t("dl.cardName", { d: o.label }) : t("dl.dirName", { d: o.label })} ${badge}</span>
-          <span class="dp-sub ${lacks ? "bad" : ""}">${lacks ? t("dl.lacks", { n: fmtBytes(lacks) }) : o.kind === "card" ? t("dl.cardSub") : t("dl.libSub")}</span>
+          <span class="dp-name">${o.kind === "card" ? t("dl.cardName", { d: o.label }) : o.kind === "create" ? t("dl.createName", { d: o.label }) : t("dl.dirName", { d: o.label })} ${badge}</span>
+          <span class="dp-sub ${lacks ? "bad" : ""}">${lacks ? t("dl.lacks", { n: fmtBytes(lacks) }) : o.kind === "card" ? t("dl.cardSub") : o.kind === "create" ? t("dl.createSub") : t("dl.libSub")}</span>
+          <span class="dp-path">→ ${esc(o.folder)}</span>
           <span class="dp-gauge"><i style="width:${used}%"></i></span>
         </span>
         <span class="dp-free">${o.free !== null ? `${t("dl.free", { n: fmtBytes(o.free) })}<br><span>${t("dl.of", { n: fmtBytes(o.total ?? 0) })}</span>` : ""}</span>
@@ -2959,7 +2986,7 @@ function pickerView(): string {
       <div class="dp-rules">${t("dl.sources")}<br>${t("dl.verifyRule")}</div>
       <div class="dp-actions">
         <button class="sx-btn ghost" id="dp-cancel">${t("dl.cancel")}</button>
-        <button class="sx-play dp-go" id="dp-go" ${chosen ? "" : "disabled"}>${chosen ? esc(t("dl.go", { d: chosen.label })) : esc(t("dl.chooseFirst"))}</button>
+        <button class="sx-play dp-go" id="dp-go" ${chosen ? "" : "disabled"}>${chosen ? esc(t(chosen.kind === "create" ? "dl.goCreate" : "dl.go", { d: chosen.label })) : esc(t("dl.chooseFirst"))}</button>
       </div>
     </div>`;
 }
@@ -3034,7 +3061,7 @@ function wireDownloads(root: HTMLElement): void {
   );
   document.getElementById("dp-add")?.addEventListener("click", () => void addLibraryFolder());
   document.getElementById("dl-addlib")?.addEventListener("click", () => void addLibraryFolder());
-  document.getElementById("dp-go")?.addEventListener("click", confirmDownload);
+  document.getElementById("dp-go")?.addEventListener("click", () => void confirmDownload());
   const closePicker = () => {
     dl.picker = null;
     render();

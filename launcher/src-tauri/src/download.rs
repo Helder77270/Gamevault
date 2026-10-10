@@ -103,9 +103,12 @@ fn hex_ok(h: &str) -> bool {
     h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-/// Library layout: <dir>/gamevault-library/<cid>/build.enc. The webview
-/// only names the library folder; the rest of the path is built here.
-pub fn library_target(dir: &str, cid: &str) -> Result<PathBuf, String> {
+/// Library layout, readable in the file explorer:
+///   <library>/<Game title> (<cid 8>)/build.enc + gamevault.json
+/// The title is cosmetic (sanitized); gamevault.json says which build the
+/// folder holds. The webview only names the library folder; the rest of the
+/// path is built here.
+pub fn library_target(dir: &str, cid: &str, title: &str) -> Result<PathBuf, String> {
     if !cid_ok(cid) {
         return Err("CID invalide".into());
     }
@@ -113,7 +116,59 @@ pub fn library_target(dir: &str, cid: &str) -> Result<PathBuf, String> {
     if !base.is_absolute() || !base.is_dir() {
         return Err("dossier introuvable".into());
     }
-    Ok(base.join("gamevault-library").join(cid).join("build.enc"))
+    // an already-installed copy keeps its folder, even if the title changed
+    if let Some(found) = scan_library(&[dir.to_string()]).into_iter().find(|e| e.cid == cid) {
+        if let Some(folder) = PathBuf::from(found.path).parent() {
+            return Ok(folder.join("build.enc"));
+        }
+    }
+    Ok(base.join(game_folder_name(title, cid)).join("build.enc"))
+}
+
+pub fn game_folder_name(title: &str, cid: &str) -> String {
+    let clean: String = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || " -_'.".contains(c) { c } else { ' ' })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let clean: String = clean.trim_matches(|c: char| c == '.' || c == ' ').chars().take(60).collect();
+    let name = if clean.is_empty() { "Jeu".to_string() } else { clean };
+    format!("{name} ({})", &cid[..8])
+}
+
+/// Mark a library game folder with what it holds (written before the
+/// download starts, so a resumable part is recognised after a restart).
+pub fn mark_game_folder(target: &Path, cid: &str, title: &str, edition: &str) -> Result<(), String> {
+    let folder = target.parent().ok_or("dossier invalide")?;
+    std::fs::create_dir_all(folder).map_err(|e| format!("dossier: {e}"))?;
+    let info = serde_json::json!({ "cid": cid, "title": title, "edition": edition });
+    std::fs::write(folder.join("gamevault.json"), info.to_string()).map_err(|e| format!("gamevault.json: {e}"))
+}
+
+/// A suggested first library: <system drive>\Users\<me>\GameVault, or
+/// <drive>\GameVault on the fixed drive with the most free space.
+pub fn default_library() -> Option<(String, u64, u64)> {
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let best = disks.list().iter().filter(|d| !d.is_removable()).max_by_key(|d| d.available_space())?;
+    let mount = best.mount_point().to_path_buf();
+    let home = std::env::var("USERPROFILE").ok().map(PathBuf::from);
+    let path = match &home {
+        Some(h) if h.starts_with(&mount) => h.join("GameVault"),
+        _ => mount.join("GameVault"),
+    };
+    Some((path.to_string_lossy().into_owned(), best.available_space(), best.total_space()))
+}
+
+/// Create a library folder — only one named GameVault, under an existing parent.
+pub fn create_library(path: &str) -> Result<String, String> {
+    let p = PathBuf::from(path);
+    if !p.is_absolute() || !p.file_name().is_some_and(|n| n == "GameVault") || !p.parent().is_some_and(|x| x.is_dir()) {
+        return Err("emplacement refusé".into());
+    }
+    std::fs::create_dir_all(&p).map_err(|e| format!("création du dossier: {e}"))?;
+    Ok(p.to_string_lossy().into_owned())
 }
 
 fn part_of(target: &Path) -> PathBuf {
@@ -702,13 +757,16 @@ pub struct LibraryEntry {
 pub fn scan_library(dirs: &[String]) -> Vec<LibraryEntry> {
     let mut out = Vec::new();
     for dir in dirs {
-        let root = PathBuf::from(dir).join("gamevault-library");
-        let Ok(rd) = std::fs::read_dir(&root) else { continue };
+        let Ok(rd) = std::fs::read_dir(dir) else { continue };
         for e in rd.flatten() {
-            let cid = e.file_name().to_string_lossy().into_owned();
-            if !cid_ok(&cid) {
+            let Some(cid) = std::fs::read_to_string(e.path().join("gamevault.json"))
+                .ok()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .and_then(|v| v["cid"].as_str().map(str::to_string))
+                .filter(|c| cid_ok(c))
+            else {
                 continue;
-            }
+            };
             let build = e.path().join("build.enc");
             let (path, status) = if build.is_file() {
                 (build, "installed")
@@ -731,10 +789,15 @@ mod tests {
     #[test]
     fn library_target_builds_the_path_itself() {
         let dir = std::env::temp_dir();
-        let t = library_target(&dir.to_string_lossy(), "QmRGYZtATbsDrNv6Fk7L2BrMfk1517XGHMpmJxsoaPeZvr").unwrap();
-        assert!(t.ends_with(Path::new("gamevault-library/QmRGYZtATbsDrNv6Fk7L2BrMfk1517XGHMpmJxsoaPeZvr/build.enc")));
-        assert!(library_target(&dir.to_string_lossy(), "../../etc").is_err());
-        assert!(library_target("relative/dir", "QmRGYZtATbsDrNv6Fk7L2BrMfk1517XGHMpmJxsoaPeZvr").is_err());
+        let cid = "QmRGYZtATbsDrNv6Fk7L2BrMfk1517XGHMpmJxsoaPeZvr";
+        let t = library_target(&dir.to_string_lossy(), cid, "GameVault Runner").unwrap();
+        assert!(t.ends_with(Path::new("GameVault Runner (QmRGYZtA)/build.enc")));
+        // a hostile title cannot climb out of the library
+        let t2 = library_target(&dir.to_string_lossy(), cid, "..\\..\\Windows/System32").unwrap();
+        assert!(t2.starts_with(&dir) && t2.parent().unwrap().parent().unwrap() == dir.as_path());
+        assert!(library_target(&dir.to_string_lossy(), "../../etc", "x").is_err());
+        assert!(library_target("relative/dir", cid, "x").is_err());
+        assert!(create_library(&dir.join("NotGameVault").to_string_lossy()).is_err());
     }
 
     /// Live: needs ticketd on 127.0.0.1:8787 with the Runner build.
@@ -749,7 +812,8 @@ mod tests {
         let sink: Sink = Arc::new(move |e, v| ev.lock().unwrap().push((e.to_string(), v)));
         let dir = std::env::temp_dir().join(format!("gv-dl-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let target = library_target(&dir.to_string_lossy(), CID).unwrap();
+        let target = library_target(&dir.to_string_lossy(), CID, "GameVault Runner").unwrap();
+        mark_game_folder(&target, CID, "GameVault Runner", "2").unwrap();
 
         // 1 · fresh download, verified against the on-chain sha256
         run_download(&sink, CID, CID, SHA, &target, Arc::new(Ctl::default())).expect("download");
@@ -776,6 +840,9 @@ mod tests {
         assert!(part_of(&target).is_file() && state_of(&target).is_file(), "resumable state on disk");
         run_download(&sink, CID, CID, SHA, &target, Arc::new(Ctl::default())).expect("resume");
         assert_eq!(file_sha(&target).unwrap(), SHA);
+        // the library scan finds it by its gamevault.json
+        let found = scan_library(&[dir.to_string_lossy().into_owned()]);
+        assert!(found.iter().any(|e| e.cid == CID && e.status == "installed"), "scan");
         let _ = std::fs::remove_dir_all(dir);
     }
 

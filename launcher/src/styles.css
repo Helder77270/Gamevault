@@ -947,3 +947,4 @@ button { font-family: inherit; }
 .set-lib { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .set-lib code { font-family: var(--mono); font-size: 11px; color: var(--ink); overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { .dl-sheen, .c-a { animation: none; } }
+.dp-path { margin-top: 5px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; color: rgba(214,230,255,0.75); overflow-wrap: anywhere; }
