@@ -61,7 +61,7 @@ interface Pairing {
   error?: string;
 }
 
-type Screen = "boot" | "home" | "shelf" | "detail" | "insert" | "friends" | "settings" | "downloads" | "error";
+type Screen = "boot" | "home" | "shelf" | "detail" | "insert" | "friends" | "settings" | "downloads" | "profile" | "error";
 
 // ── Settings (per machine, localStorage) ─────────────────────
 type Skin = "midnight" | "sunset" | "crt";
@@ -193,6 +193,8 @@ const state = {
   ticketdOk: false,
   /** selected editionId for detail/insert screens */
   sel: null as string | null,
+  /** where the detail screen was opened from (its back button, nav highlight) */
+  detailFrom: "shelf" as "shelf" | "store",
   filter: "all" as "all" | "play" | "wish",
   /** Wishlist (ticketd, private to the account): editionId -> lowest price
    *  last shown, in wei. Empty without a device session. */
@@ -1898,6 +1900,247 @@ function friendsView(): string {
     </div>`;
 }
 
+
+// ── Profile (P8 #1) ─────────────────────────────────────────
+// The account's own page: read as its owner (device session), edited
+// without a wallet (name, bio, avatar). Privacy and wishlist live here.
+
+interface MyProfile {
+  addr: string;
+  name: string | null;
+  hasAvatar: boolean;
+  bio: string;
+  favorites: string[];
+  memberSince: number | null;
+  presence: Presence;
+  topPlayed: { editionId: string; seconds: number }[];
+  totalSeconds: number | null;
+  devicesCount: number | null;
+  friendsCount: number | null;
+  friends: { addr: string; name: string | null; hasAvatar: boolean }[];
+  activity: { kind: string; data: Record<string, unknown>; at: number }[];
+}
+
+let myProfile: MyProfile | null = null;
+let myProfileState: "idle" | "loading" | "offline" = "idle";
+let avatarBust = 0;
+let profEdit: { name: string; bio: string; avatar: string; preview: string | null; busy: boolean; error: string } | null = null;
+
+async function loadMyProfile(): Promise<void> {
+  const me = libraryAddress();
+  if (!me) return;
+  myProfileState = "loading";
+  try {
+    const res = (await socialFetch(`/profile/${me}`)) ?? (await fetch(`${TICKETD_URL}/profile/${me}`, { signal: AbortSignal.timeout(4000) }));
+    if (!res.ok) throw new Error(String(res.status));
+    myProfile = (await res.json()) as MyProfile;
+    myProfileState = "idle";
+  } catch {
+    myProfileState = "offline";
+  }
+  renderChrome();
+  if (state.screen === "profile") render();
+}
+
+/** Square 256 px webp, like the web profile page (~10-40 KB). */
+async function shrinkAvatar(file: File): Promise<string> {
+  const img = await createImageBitmap(file);
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const side = Math.min(img.width, img.height);
+  ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+  return canvas.toDataURL("image/webp", 0.85);
+}
+
+async function saveMyProfile(): Promise<void> {
+  if (!profEdit || !myProfile) return;
+  profEdit.busy = true;
+  profEdit.error = "";
+  render();
+  const avatar = profEdit.avatar.startsWith("data:") ? profEdit.avatar.split(",")[1] : profEdit.avatar;
+  const res = await socialFetch("/profile", { name: profEdit.name.trim(), bio: profEdit.bio, favorites: myProfile.favorites, avatar });
+  if (res?.ok) {
+    if (avatar !== "keep") avatarBust = Date.now();
+    profEdit = null;
+    await loadMyProfile();
+    return;
+  }
+  profEdit.busy = false;
+  profEdit.error = res ? (((await res.json().catch(() => ({}))) as { error?: string }).error ?? t("prof.saveErr")) : t("prof.offline");
+  render();
+}
+
+function myAvatar(size: number): string {
+  const me = libraryAddress();
+  if (!me) return "";
+  const html = avatarHtml({ addr: me, name: myProfile?.name ?? null, hasAvatar: myProfile?.hasAvatar }, size);
+  return avatarBust ? html.replace(/(\/profile\/avatar\/[^"]+)"/, `$1?t=${avatarBust}"`) : html;
+}
+
+function wishlistCard(): string {
+  const rows = Object.keys(state.wish)
+    .map((id) => state.catalog.find((e) => e.editionId === id))
+    .filter((e): e is OnchainEdition => Boolean(e))
+    .map(
+      (e) => `<div class="prof-wish">
+        <button class="prof-wish-art" style="${artFor(e.editionId)}" data-storesel="${esc(e.editionId)}" aria-label="${esc(e.title)}"></button>
+        <div style="flex:1;min-width:0">
+          <button class="prof-link" data-storesel="${esc(e.editionId)}">${esc(e.title)}</button>
+          <div class="set-sub">${esc(formatEth(e.priceWei))} ETH${state.deals[e.editionId] && state.deals[e.editionId].price < e.priceWei ? ` · ${esc(t("store.usedFrom", { p: formatEth(state.deals[e.editionId].price) }))}` : ""}</div>
+        </div>
+        <button class="pillbtn" data-wish="${esc(e.editionId)}">${esc(t("prof.wishRemove"))}</button>
+      </div>`,
+    )
+    .join("");
+  return `<section class="set-card">
+    <div class="mono-label">${t("prof.wishlist")} · ${Object.keys(state.wish).length}</div>
+    ${rows || `<div class="set-sub">${esc(t("prof.wishEmpty"))}</div>`}
+  </section>`;
+}
+
+function profileView(): string {
+  const me = libraryAddress();
+  if (!me) {
+    return `<div class="shelf"><div class="shelf-head"><div class="shelf-title">${t("prof.title")}</div></div>
+      <div class="prof-empty"><div class="set-label">${esc(t("acc.none"))}</div><div class="set-sub">${esc(t("acc.noneSub"))}</div></div></div>`;
+  }
+  if (!myProfile && myProfileState === "idle") void loadMyProfile();
+  const p = myProfile;
+  const name = p?.name ?? short(me, 6);
+  const titleOf = (id: string) => state.catalog.find((e) => e.editionId === id)?.title ?? `#${id}`;
+  const owned = new Set(state.owned.map((o) => o.editionId)).size;
+
+  const idCard = profEdit
+    ? `<section class="set-card prof-id">
+        <div class="prof-avwrap">
+          ${profEdit.preview ? `<span class="lc-av" style="width:96px;height:96px"><img src="${esc(profEdit.preview)}" alt="" /></span>` : profEdit.avatar === "none" ? avatarHtml({ addr: me, name: profEdit.name || null }, 96) : myAvatar(96)}
+          <label class="pillbtn" for="prof-file">${esc(t("prof.avatarChange"))}</label>
+          <input type="file" id="prof-file" accept="image/png,image/jpeg,image/webp" hidden />
+          ${p?.hasAvatar || profEdit.preview ? `<button class="pillbtn" id="prof-avnone">${esc(t("prof.avatarRemove"))}</button>` : ""}
+        </div>
+        <div class="prof-form">
+          <label class="set-sub" for="prof-name">${esc(t("prof.name"))}</label>
+          <input class="aura-input" id="prof-name" maxlength="24" value="${esc(profEdit.name)}" />
+          <label class="set-sub" for="prof-bio">${esc(t("prof.bio"))}</label>
+          <textarea class="aura-input prof-bio-in" id="prof-bio" maxlength="500" rows="4">${esc(profEdit.bio)}</textarea>
+          ${profEdit.error ? `<div class="errbox">${esc(profEdit.error)}</div>` : ""}
+          <div class="prof-btns">
+            <button class="pillbtn" id="prof-cancel">${esc(t("acc.cancel"))}</button>
+            <button class="cta" id="prof-save" ${profEdit.busy ? "disabled" : ""}>${esc(t(profEdit.busy ? "prof.saving" : "prof.save"))}</button>
+          </div>
+        </div>
+      </section>`
+    : `<section class="set-card prof-id">
+        <div class="prof-avwrap">${myAvatar(96)}</div>
+        <div style="flex:1;min-width:0">
+          <div class="prof-name">${esc(name)}</div>
+          <div class="prof-addr">${esc(short(me, 8))}${p?.memberSince ? ` · ${esc(t("prof.since", { d: new Date(p.memberSince).toLocaleDateString(locale(), { month: "short", year: "numeric" }) }))}` : ""}</div>
+          <p class="prof-bio">${esc(p?.bio || t("prof.noBio"))}</p>
+          ${state.session ? `<button class="pillbtn" id="prof-edit">${esc(t("prof.edit"))}</button>` : ""}
+        </div>
+      </section>`;
+
+  const stats = `<div class="prof-stats">
+      <div class="pv-stat"><div class="k">${t("prof.playtime")}</div><div class="v">${p?.totalSeconds != null ? fmtDur(p.totalSeconds) : "—"}</div></div>
+      <div class="pv-stat"><div class="k">${t("prof.games")}</div><div class="v">${owned}</div></div>
+      <div class="pv-stat"><div class="k">${t("prof.friends")}</div><div class="v">${p?.friendsCount ?? "—"}</div></div>
+      <div class="pv-stat"><div class="k">${t("prof.devices")}</div><div class="v">${p?.devicesCount != null ? `${p.devicesCount} / 2` : "—"}</div></div>
+    </div>`;
+
+  const played = (p?.topPlayed ?? [])
+    .map((r) => `<div class="prof-row"><span class="prof-mini" style="${artFor(r.editionId)}"></span><span style="flex:1;min-width:0">${esc(titleOf(r.editionId))}</span><span class="set-sub">${fmtDur(r.seconds)}</span></div>`)
+    .join("");
+  const ago = (ms: number) => fmtAgo(ms);
+  const feed = (p?.activity ?? [])
+    .slice(0, 8)
+    .map((a) => {
+      const what =
+        a.kind === "played"
+          ? t("prof.actPlayed", { g: titleOf(String(a.data.editionId)), d: fmtDur(Number(a.data.seconds)) })
+          : t("prof.actFriend", { n: String((a.data.withName as string | null) ?? short(String(a.data.with), 6)) });
+      return `<div class="prof-row"><span style="flex:1;min-width:0">${esc(what)}</span><span class="set-sub">${esc(ago(a.at))}</span></div>`;
+    })
+    .join("");
+  const friends = (p?.friends ?? []).map((f) => `<button class="prof-friend" data-profile="${esc(f.addr)}" title="${esc(f.name ?? f.addr)}">${avatarHtml(f, 40)}</button>`).join("");
+
+  return `
+    <div class="shelf">
+      <div class="shelf-head">
+        <div style="display:flex;align-items:center;gap:18px">
+          <button class="backbtn" data-go="home">&#8592;</button>
+          <div>
+            <div class="shelf-title">${t("prof.title")}</div>
+            <div class="shelf-meta">${myProfileState === "offline" ? esc(t("prof.offline")) : esc(presenceLabel(p?.presence))}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px"><button class="pillbtn" data-profile="${esc(me)}">${t("prof.public")} ↗</button></div>
+      </div>
+      <div class="prof-wrap">
+        <div class="prof-col">
+          ${idCard}
+          ${stats}
+          <section class="set-card"><div class="mono-label">${t("prof.recent")}</div>${played || `<div class="set-sub">${esc(t("prof.nothing"))}</div>`}</section>
+          <section class="set-card"><div class="mono-label">${t("prof.activity")}</div>${feed || `<div class="set-sub">${esc(t("prof.nothing"))}</div>`}</section>
+        </div>
+        <div class="prof-col">
+          <section class="set-card"><div class="mono-label">${t("prof.friends")} · ${p?.friendsCount ?? 0}</div><div class="prof-friends">${friends || `<span class="set-sub">${esc(t("fr.none"))}</span>`}</div></section>
+          ${wishlistCard()}
+          ${privacyCard()}
+        </div>
+      </div>
+    </div>`;
+}
+
+function wireProfile(root: HTMLElement): void {
+  root.querySelector("#prof-edit")?.addEventListener("click", () => {
+    profEdit = { name: myProfile?.name ?? "", bio: myProfile?.bio ?? "", avatar: "keep", preview: null, busy: false, error: "" };
+    render();
+  });
+  root.querySelector("#prof-cancel")?.addEventListener("click", () => {
+    profEdit = null;
+    render();
+  });
+  const keep = () => {
+    if (!profEdit) return;
+    profEdit.name = (document.getElementById("prof-name") as HTMLInputElement | null)?.value ?? profEdit.name;
+    profEdit.bio = (document.getElementById("prof-bio") as HTMLTextAreaElement | null)?.value ?? profEdit.bio;
+  };
+  root.querySelector("#prof-save")?.addEventListener("click", () => {
+    keep();
+    void saveMyProfile();
+  });
+  root.querySelector("#prof-avnone")?.addEventListener("click", () => {
+    if (!profEdit) return;
+    keep();
+    profEdit.avatar = "none";
+    profEdit.preview = null;
+    render();
+  });
+  root.querySelector<HTMLInputElement>("#prof-file")?.addEventListener("change", async (ev) => {
+    const file = (ev.currentTarget as HTMLInputElement).files?.[0];
+    if (!file || !profEdit) return;
+    keep();
+    try {
+      const url = await shrinkAvatar(file);
+      profEdit.avatar = url;
+      profEdit.preview = url;
+    } catch {
+      profEdit.error = t("prof.avatarErr");
+    }
+    render();
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-storesel]").forEach((b) =>
+    b.addEventListener("click", () => {
+      state.sel = b.dataset.storesel!;
+      state.detailFrom = "store";
+      go("detail");
+    }),
+  );
+}
+
 function settingsView(): string {
   const lang = getLang();
   const skins: { id: Skin; name: string; sub: string; swatch: string }[] = [
@@ -2034,7 +2277,6 @@ function settingsView(): string {
           ${toggle("set-nt-wishlist", settings.notif.wishlist, t("set.nt.wishlist"), t("set.nt.wishlistSub"))}
           <div class="set-row"><div><div class="set-label">${esc(t("set.nt.test"))}</div></div><button class="pillbtn" id="set-nt-test">${esc(t("set.nt.testBtn"))}</button></div>
         </section>
-        ${privacyCard()}
         <div class="set-sub" style="text-align:center;margin-top:4px">${esc(t("set.about"))}</div>
       </div>
     </div>`;
@@ -2281,6 +2523,7 @@ const SCREENS: Record<Screen, () => string> = {
   detail: detailView,
   insert: insertView,
   friends: friendsView,
+  profile: profileView,
   settings: settingsView,
   downloads: downloadsView,
   error: errorView,
@@ -2296,6 +2539,11 @@ function applyStaticI18n(): void {
   label("nav-shelf", t("nav.shelf"));
   label("nav-friends", t("nav.friends"));
   label("nav-downloads", t("nav.downloads"));
+  const prof = document.getElementById("nav-profile");
+  if (prof) {
+    prof.setAttribute("aria-label", t("prof.title"));
+    prof.title = t("prof.title");
+  }
   const gear = document.getElementById("nav-settings");
   if (gear) {
     gear.setAttribute("aria-label", t("nav.settings"));
@@ -2350,7 +2598,19 @@ function renderChrome(): void {
     "nav-friends": ["friends"],
     "nav-downloads": ["downloads"],
     "nav-settings": ["settings"],
+    "nav-profile": ["profile"],
   };
+  const restart = document.getElementById("restart-btn");
+  if (restart) restart.hidden = !settings.dev; // a dev tool, not a console button
+  const chip = document.getElementById("nav-profile");
+  if (chip) {
+    const me = libraryAddress();
+    const key = `${me}|${myProfile?.name ?? ""}|${myProfile?.hasAvatar ?? ""}|${avatarBust}`;
+    if (chip.dataset.key !== key) {
+      chip.dataset.key = key;
+      chip.innerHTML = me ? myAvatar(28) : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"></path></svg>`;
+    }
+  }
   syncDownloadsWithGame();
   const aj = activeJob();
   const barDl = document.getElementById("bar-dl");
@@ -2713,6 +2973,7 @@ function wire(root: HTMLElement): void {
   );
   wireDownloads(root);
   wireWishlist(root);
+  wireProfile(root);
   root.querySelectorAll<HTMLButtonElement>("[data-install]").forEach((b) =>
     b.addEventListener("click", () => {
       const e = state.catalog.find((x) => x.editionId === b.dataset.install);
@@ -2809,6 +3070,7 @@ async function runBoot(): Promise<void> {
   await fetchMarketState();
   void fetchFriends(); // non-blocking: the AMIS screen fills in seconds
   void fetchWishlist();
+  void loadMyProfile();
   setLine(4, `${state.owned.length} LICENCE${state.owned.length > 1 ? "S" : ""} · ${state.games.length} CARD${state.games.length > 1 ? "S" : ""}`, true);
   scanPrimed = true; // from now on, new mounts are real insertions
 
@@ -2886,6 +3148,7 @@ async function refresh(): Promise<void> {
         .catch(() => {});
       void fetchFriends();
       void fetchWishlist();
+      if (state.screen !== "profile" || !profEdit) void loadMyProfile();
     }
     if (scanCount % 5 === 0) void refreshLibrary();
     if (scanCount++ % (settings.lowBandwidth ? 30 : 5) === 0) {
@@ -3050,6 +3313,7 @@ function accountCard(): string {
         <div class="set-label">${esc(short(addr, 6))}</div>
         <div class="set-sub">${esc(watched ? t("acc.watched") : t("acc.paired"))}</div>
       </div>
+      ${watched ? "" : `<button class="pillbtn" data-go="profile">${esc(t("prof.open"))}</button>`}
       ${logoutAsk ? "" : `<button class="pillbtn" id="acc-logout">${esc(t(watched ? "acc.forget" : "acc.logout"))}</button>`}
     </div>
     ${confirm}
@@ -3079,6 +3343,9 @@ async function logout(): Promise<void> {
   state.deals = {};
   privacy = null;
   privacyState = "idle";
+  myProfile = null;
+  myProfileState = "idle";
+  profEdit = null;
   state.chat = { active: null, thread: [], unread: {}, ready: true };
   deviceWasActive = null;
   logoutAsk = false;

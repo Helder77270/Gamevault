@@ -245,6 +245,99 @@ décision de conception, un redéploiement ou une infra en plus).
 5. Accessibilité : échelle de l'interface, réduction des effets étendue.
 6. Puis les B, dans l'ordre de la liste, selon le temps.
 
+## P8 — Nuit du 2026-10-10 → 11 (validée avec Helder, en autonomie)
+
+Règles de la nuit : commits locaux par chantier, AUCUN push (Helder teste
+au réveil, y compris les 5 commits P7 B). ETH de test autorisé avec la clé
+de déploiement pour le gros build ; s'il n'y en a pas assez, faire le reste. Chaque chantier : typecheck + tests + exe release reconstruit.
+Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
+à regarder au réveil. Rapport final dans docs/nuit-2026-10-11.md.
+
+### 1. Profil accessible dans le launcher
+- [x] Écran PROFIL (nav + clic sur l'avatar du compte) : avatar, pseudo,
+      bio, temps de jeu, derniers jeux, amis, appareils. Édition pseudo /
+      bio / avatar directement (session de la machine, pas de wallet).
+- [x] Confidentialité et liste de souhaits regroupées là (+ lien vers la
+      page publique web).
+
+### 2. Game Shelf = MES jeux
+- [ ] Le shelf ne montre plus les jeux à acheter (le jeu test à
+      0.00001 ETH disparaît) : seulement possédés, sur carte, prêtés,
+      empruntés, en vente, souhaités.
+- [ ] Filtres : TOUS · JOUABLES · SOUHAITS · EN VENTE · PRÊTS.
+- [ ] Onglet BOUTIQUE dans le launcher (validé) : on navigue dans tout le
+      catalogue (neuf + occasions), on souhaite ; un clic sur « acheter »
+      ou sur une occasion ouvre la page web d'achat / de mise en vente.
+
+### 3. Chat : sélecteur d'emojis
+- [ ] Bouton emoji dans la discussion (launcher ET web) : une grille,
+      insertion à la position du curseur.
+
+### 4. Retirer les textes « techniques / très IA » du parcours client
+- [ ] Audit de toutes les phrases affichées (launcher + web) : on retire
+      les explications internes (« déchiffré en mémoire depuis la carte,
+      la clé ne touche jamais le disque », « règle cartouche : prêter un
+      jeu c'est le donner… », etc.). Elles restent UNIQUEMENT dans les
+      Paramètres, où elles servent à comprendre.
+- [ ] Liste des phrases retirées dans le rapport, pour en remettre si besoin.
+
+### 5. Style A « Chanfrein » partout
+- [ ] Coins coupés à 45° (cartouche) sur boutons, vignettes, bannières,
+      panneaux, puces, segments, toasts — launcher, fenêtre des toasts,
+      et web (même DA). LED carrées. Le sunset reste réservé à l'achat.
+- [ ] Skill art-direction mis à jour (formes : chanfrein, plus de pilules).
+
+### 6. Téléchargements
+- [ ] La vue n'affiche plus les jeux installés : seulement à installer,
+      en attente / en cours / en pause, à réparer, et (plus tard) à mettre
+      à jour.
+- [ ] Jeu de test LOURD : un build factice d'~500 Mo généré localement
+      (aléatoire déterministe, jamais téléchargé d'internet), qui reste
+      jouable (vrai jeu + gros fichier de remplissage). Publié comme une
+      vraie édition on-chain (Base Sepolia, clé de déploiement), servi
+      par ticketd (/build en Range + manifest de ~125 morceaux), licence
+      envoyée sur le wallet de Helder.
+- [ ] Mode d'emploi du test complet : télécharger, mettre en pause,
+      reprendre, couper le réseau, CASSER un morceau (outil dev qui abîme
+      des octets de build.enc), VÉRIFIER → réparation des seuls morceaux
+      abîmés. Ça teste enfin le parallèle à 4 morceaux et la limite de
+      vitesse sur un vrai volume.
+- [ ] Vérifier que le lancement tient avec 500 Mo déchiffrés en mémoire
+      (sinon : le noter, ne pas casser le flux de la démo).
+
+### 7. Infra : Docker, Kubernetes, Ansible (prêt pour du volume)
+- [ ] Dockerfiles ticketd + web (multi-stage, utilisateur non-root,
+      healthcheck sur /health).
+- [ ] Manifests Kubernetes (k8s/) : namespace, Deployments, Services,
+      Ingress (TLS cert-manager, rate limiting par IP, taille de requête,
+      timeouts longs pour /events SSE et /build), HPA, probes
+      liveness/readiness (redémarrage auto d'un conteneur mort),
+      PodDisruptionBudget, ressources requests/limits, Secrets/ConfigMap,
+      NetworkPolicy.
+- [ ] Point dur à dire franchement : ticketd garde un état local (SQLite,
+      présence et flux SSE en mémoire). Tant que ce n'est pas migré vers
+      Postgres + Redis, ticketd ne peut tourner qu'en 1 réplique (volume
+      persistant) ; le web, lui, monte en charge sans limite. Les manifests
+      le reflètent ; la migration est écrite en chantier suivant.
+- [ ] Builds de jeux volumineux : servis derrière un cache (CDN / objet
+      storage) plutôt que par ticketd — noté dans le doc d'archi.
+- [ ] Playbook Ansible (deploy/ansible/) : prépare des serveurs (Docker,
+      k3s ou cluster existant), pose les secrets depuis un vault, applique
+      les manifests, vérifie le déploiement.
+- [ ] Validation locale : `kubectl apply --dry-run`, build des images
+      Docker, ansible-lint si dispo (WSL). Pas de vrai cluster cette nuit.
+
+### Oublis repérés ce soir (ajoutés)
+- [ ] 5 commits locaux P7 B non poussés (57a13b8 → 3e84fa7) : push après
+      ton test.
+- [ ] Repli IPFS jamais testé en vrai : le tester avec le gros build
+      (ticketd coupé → morceaux depuis IPFS) si le pin passe (taille
+      Pinata), sinon le noter.
+- [ ] Petite course connue : un jeu qui se ferme dans la même seconde où un
+      téléchargement se met en pause peut laisser le job en pause.
+- [ ] « En attente de mise à jour » dans Téléchargements dépend du modèle
+      de versions (contrat v1.2, item C) : prévu dans la vue, pas branché.
+
 ## Idées plus tard
 0G storage swap (1 fichier : shared/storage.ts) · World ID gating si besoin
 réel · pochettes SD imprimées · provenance embarquée dans le launcher
