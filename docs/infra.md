@@ -147,22 +147,36 @@ Vérifié le 11 octobre (après ton feu vert pour Docker, Ansible, minikube) :
   pour l'utilisateur) : `--syntax-check` OK, **ansible-lint passe au
   profil « production » : 0 erreur, 0 avertissement**.
 
+- **Déploiement complet sur minikube** (Kubernetes 1.31, Docker 29,
+  cgroups v2) avec `k8s/overlays/minikube`, tout passé par l'ingress :
+  - les 16 objets acceptés **sans aucun avertissement de la politique
+    « restricted »** (non-root, seccomp, capacités, lecture seule) ;
+  - ticketd + volume persistant de 5 Gio, 2 réplicas web, autoscaler qui
+    lit la charge (1 % / 70 %) ;
+  - HTTPS : `api…/health` → `{"ok":true}`, accueil web → 200 ;
+    HTTP → **308** vers HTTPS ;
+  - **limite de débit** : 80 requêtes rapides sur `/session` → 60 passent
+    (rafale autorisée), **20 refusées en 429** ;
+  - **redémarrage automatique** : ticketd tué brutalement depuis le nœud →
+    ~3 s de 502/503, puis 200, compteur de redémarrages à 1 ;
+  - **continuité** : un pod web supprimé sous trafic → 40 requêtes sur 40
+    en 200, remplaçant recréé tout seul.
+  - Refaire tout ça d'une commande :
+    `powershell -ExecutionPolicy Bypass -File deploy\minikube.ps1`
+    (`-NoBuild` si les images existent déjà).
+
 Pas vérifié :
-- **Déploiement sur minikube** : impossible sur cette machine en l'état.
-  Le noyau WSL est récent (6.18) et n'offre plus le contrôleur mémoire
-  des cgroups v1 ; Docker Desktop 20.10 (2021) n'utilise que les cgroups
-  v1. Résultat : `missing required cgroups: memory`, kubelet ne démarre
-  pas. Même blocage pour kind ou k3d (ils tournent dans le même Docker).
-  Deux façons d'en sortir (à toi de choisir) :
-  1. **Mettre à jour Docker Desktop** (une version récente gère les
-     cgroups v2 du noyau actuel) — le plus simple, il faut accepter sa
-     licence et les droits admin, donc c'est toi qui l'installes ;
-  2. passer WSL en cgroups v2 seuls (`.wslconfig` :
-     `kernelCommandLine = cgroup_no_v1=all`, puis `wsl --shutdown`) —
-     touche la configuration de WSL pour toutes les distributions, et un
-     Docker Desktop aussi ancien pourrait ne pas suivre.
-  Ensuite : `minikube start --driver=docker`, `minikube image load` des
-  deux images, `minikube addons enable ingress`, `kubectl apply -k`.
+- Les NetworkPolicy : le réseau par défaut de minikube ne les applique pas
+  (il faudrait Calico ou Cilium) ; elles sont acceptées mais pas éprouvées.
+- cert-manager / Let's Encrypt (il faut un vrai domaine) et le playbook
+  Ansible sur de vrais serveurs.
+- L'autoscaler sous un vrai tir de charge.
+
+Réglages machine faits le 11 octobre avec ton accord : Docker Desktop mis
+à jour en 29.8.2, et `C:\Users\helde\.wslconfig` force les cgroups v2
+(`kernelCommandLine = cgroup_no_v1=all`) — le noyau WSL 6.18 n'a plus le
+contrôleur mémoire en v1, indispensable à Kubernetes. Pour revenir en
+arrière : supprimer ce fichier puis `wsl --shutdown`.
 
 ## Ce qui reste avant une vraie mise en ligne
 
