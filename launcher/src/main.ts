@@ -2223,18 +2223,18 @@ function storeView(): string {
     .map((e) => {
       const offers = used(e.editionId);
       const cheapest = offers.reduce<bigint | null>((m, o) => (m === null || o.price < m ? o.price : m), null);
-      const mineBadge = owns(e.editionId) ? `<span class="st-badge ok">${esc(t("store.owned"))}</span>` : "";
-      const wished = e.editionId in state.wish ? `<span class="st-badge wish">${esc(t("wish.on"))}</span>` : "";
+      const mineBadge = owns(e.editionId) ? `<span class="sto-badge ok">${esc(t("store.owned"))}</span>` : "";
+      const wished = e.editionId in state.wish ? `<span class="sto-badge wish">${esc(t("wish.on"))}</span>` : "";
       const soldOut = e.minted >= e.supply;
       return `
-        <button class="st-card" data-edition="${esc(e.editionId)}" data-q="${esc(`${e.title} ${e.studio}`.toLowerCase())}">
-          <div class="st-art" style="${artFor(e.editionId)}">${mineBadge}${wished}</div>
-          <div class="st-body">
-            <div class="st-title">${esc(e.title)}</div>
-            <div class="st-meta">${esc(e.studio.toUpperCase())} · ${esc(GENRES[e.editionId] ?? "INDIE")}</div>
-            <div class="st-prices">
-              <span class="st-new">${soldOut ? esc(t("store.soldOut")) : `${esc(formatEth(e.priceWei))} ETH`}</span>
-              ${cheapest !== null ? `<span class="st-used">${esc(t("store.usedFrom", { p: formatEth(cheapest) }))} · ${offers.length}</span>` : ""}
+        <button class="sto-card" data-edition="${esc(e.editionId)}" data-q="${esc(`${e.title} ${e.studio}`.toLowerCase())}">
+          <div class="sto-art" style="${artFor(e.editionId)}">${mineBadge}${wished}</div>
+          <div class="sto-body">
+            <div class="sto-title">${esc(e.title)}</div>
+            <div class="sto-meta">${esc(e.studio.toUpperCase())} · ${esc(GENRES[e.editionId] ?? "INDIE")}</div>
+            <div class="sto-prices">
+              <span class="sto-new">${soldOut ? esc(t("store.soldOut")) : `${esc(formatEth(e.priceWei))} ETH`}</span>
+              ${cheapest !== null ? `<span class="sto-used">${esc(t("store.usedFrom", { p: formatEth(cheapest) }))} · ${offers.length}</span>` : ""}
             </div>
           </div>
         </button>`;
@@ -2257,15 +2257,15 @@ function storeView(): string {
           ${chip("all", t("store.all"))}
           ${chip("used", t("store.used"))}
           ${state.session ? chip("wish", t("wish.filter")) : ""}
-          <select class="aura-input st-sort" id="store-sort" aria-label="${esc(t("store.sort"))}">
+          <select class="aura-input sto-sort" id="store-sort" aria-label="${esc(t("store.sort"))}">
             <option value="popular" ${storeSort === "popular" ? "selected" : ""}>${esc(t("store.sortPopular"))}</option>
             <option value="price" ${storeSort === "price" ? "selected" : ""}>${esc(t("store.sortPrice"))}</option>
             <option value="new" ${storeSort === "new" ? "selected" : ""}>${esc(t("store.sortNew"))}</option>
           </select>
         </div>
       </div>
-      <div class="st-grid-wrap">
-        <div class="st-grid">${cards || `<div class="slot-dim">${esc(state.catalog.length ? t("store.empty") : t("store.loading"))}</div>`}</div>
+      <div class="sto-grid-wrap">
+        <div class="sto-grid">${cards || `<div class="slot-dim">${esc(state.catalog.length ? t("store.empty") : t("store.loading"))}</div>`}</div>
       </div>
     </div>`;
 }
@@ -2274,19 +2274,19 @@ function storeView(): string {
 function offersBlock(e: OnchainEdition): string {
   if (owns(e.editionId)) return "";
   const offers = state.offers.filter((o) => o.editionId === e.editionId).sort((a, b) => (a.price < b.price ? -1 : 1));
-  if (!e.resellable) return `<div class="st-offers"><div class="mono-label">${t("store.offers")}</div><div class="set-sub">${esc(t("store.noResale"))}</div></div>`;
+  if (!e.resellable) return `<div class="sto-offers"><div class="mono-label">${t("store.offers")}</div><div class="set-sub">${esc(t("store.noResale"))}</div></div>`;
   const rows = offers
     .map((o) => {
       const pct = o.price < e.priceWei ? Math.round(Number(((e.priceWei - o.price) * 100n) / (e.priceWei || 1n))) : 0;
       const who = state.names[o.seller] ?? short(o.seller, 4);
-      return `<div class="st-offer">
-        <span class="st-offer-p">${esc(formatEth(o.price))} ETH${pct ? ` <span class="st-off">−${pct} %</span>` : ""}</span>
+      return `<div class="sto-offer">
+        <span class="sto-offer-p">${esc(formatEth(o.price))} ETH${pct ? ` <span class="sto-off">−${pct} %</span>` : ""}</span>
         <span class="set-sub" style="flex:1;min-width:0">${esc(t("store.licence", { id: o.tokenId, s: who }))}</span>
         <button class="pillbtn violet" data-offer="${esc(o.tokenId)}">${esc(t("store.seeOffer"))} ↗</button>
       </div>`;
     })
     .join("");
-  return `<div class="st-offers"><div class="mono-label">${t("store.offers")} · ${offers.length}</div>${rows || `<div class="set-sub">${esc(t("store.noOffer"))}</div>`}</div>`;
+  return `<div class="sto-offers"><div class="mono-label">${t("store.offers")} · ${offers.length}</div>${rows || `<div class="set-sub">${esc(t("store.noOffer"))}</div>`}</div>`;
 }
 
 function wireStore(root: HTMLElement): void {
@@ -2303,7 +2303,7 @@ function wireStore(root: HTMLElement): void {
   // search filters in place: no re-render while typing
   root.querySelector<HTMLInputElement>("#store-q")?.addEventListener("input", (ev) => {
     const q = (ev.currentTarget as HTMLInputElement).value.trim().toLowerCase();
-    root.querySelectorAll<HTMLElement>(".st-card").forEach((c) => (c.hidden = Boolean(q) && !(c.dataset.q ?? "").includes(q)));
+    root.querySelectorAll<HTMLElement>(".sto-card").forEach((c) => (c.hidden = Boolean(q) && !(c.dataset.q ?? "").includes(q)));
   });
   root.querySelectorAll<HTMLButtonElement>("[data-offer]").forEach((b) =>
     b.addEventListener("click", () => {
