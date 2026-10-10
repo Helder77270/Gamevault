@@ -13,7 +13,7 @@ import { LICENSE_ABI } from "@gamevault/shared/abi";
 import { DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { fetchOnchainCatalog, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { ConnectButton } from "../components/ConnectButton";
-import { TICKETD_URL, useTicketd } from "../lib/ticketd";
+import { TICKETD_URL, ticketdGet, useTicketd } from "../lib/ticketd";
 
 const LICENSE = DEPLOYMENTS.gameLicense as `0x${string}`;
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -55,9 +55,7 @@ export default function FriendsPage() {
 
     // Amis : BDD ticketd (aucun appel chaîne)
     try {
-      const res = await fetch(`${TICKETD_URL}/friends/${address}`);
-      if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as { friends: Friend[]; incoming: Contact[]; outgoing: Contact[] };
+      const data = await ticketdGet<{ friends: Friend[]; incoming: Contact[]; outgoing: Contact[] }>(`/friends/${address}`, address);
       setFriends(data.friends);
       setIncoming(data.incoming);
       setOutgoing(data.outgoing);

@@ -440,3 +440,12 @@ textarea.pe-input { resize: vertical; line-height: 1.55; min-height: 7rem; }
 .wish-title { color: var(--ink); font-weight: 700; text-decoration: none; }
 .wish-title:hover { text-decoration: underline; }
 .wish-deal { color: oklch(0.85 0.09 310); font-weight: 600; font-size: 0.85rem; }
+
+/* profile privacy (P7 B) */
+.pv-row { display: flex; align-items: center; gap: 0.9rem; padding: 0.75rem 1rem; border-radius: 14px; border: 1px solid rgba(200,225,255,0.14); background: rgba(5,6,13,0.35); }
+.pv-label { color: var(--ink); font-weight: 600; }
+.pv-seg { display: inline-flex; flex: none; padding: 3px; border-radius: 999px; border: 1px solid rgba(200,225,255,0.2); background: rgba(5,6,13,0.5); }
+.pv-seg button { cursor: pointer; border: none; background: transparent; color: rgba(214,230,255,0.7); font: 600 0.78rem var(--sans); padding: 0.4rem 0.8rem; border-radius: 999px; }
+.pv-seg button.on { background: rgba(226,240,255,0.92); color: #05060d; }
+.pv-seg button:disabled { opacity: 0.6; cursor: wait; }
+@media (max-width: 640px) { .pv-row { flex-direction: column; align-items: stretch; } }

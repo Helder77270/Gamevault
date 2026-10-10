@@ -59,11 +59,11 @@ function OccasionsInner() {
     async (addr: string) => {
       setSeller(null);
       const [p, sales, friends] = await Promise.all([
-        ticketdGet<{ name: string | null; hasAvatar: boolean; bio: string; memberSince: number | null }>(`/profile/${addr}`).catch(() => null),
+        ticketdGet<{ name: string | null; hasAvatar: boolean; bio: string; memberSince: number | null }>(`/profile/${addr}`, me).catch(() => null),
         subgraph<{ royaltyPayments: { id: string }[] }>(`query($a: Bytes!) { royaltyPayments(where: { seller: $a }, first: 1000) { id } }`, { a: addr })
           .then((d) => d.royaltyPayments.length)
           .catch(() => 0),
-        me ? ticketdGet<{ friends: { addr: string }[] }>(`/friends/${me}`).catch(() => null) : Promise.resolve(null),
+        me ? ticketdGet<{ friends: { addr: string }[] }>(`/friends/${me}`, me).catch(() => null) : Promise.resolve(null),
       ]);
       setSeller({
         addr,

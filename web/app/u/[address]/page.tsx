@@ -25,12 +25,15 @@ type Profile = {
   memberSince: number | null;
   presence: { state: "offline" | "online" | "playing"; editionId: string | null };
   topPlayed: { editionId: string; seconds: number }[];
-  totalSeconds: number;
-  devicesCount: number;
-  friendsCount: number;
+  totalSeconds: number | null;
+  devicesCount: number | null;
+  friendsCount: number | null;
   friends: Person[];
   activity: { kind: string; data: Record<string, unknown>; at: number }[];
+  privacy?: Record<Section, "public" | "friends" | "private">;
+  visible?: Record<Section, boolean>;
 };
+type Section = "profile" | "presence" | "activity" | "library";
 type Chain = {
   owned: { id: string; listed: boolean; listPrice: string | null; borrower: string | null; loanExpires: string | null; edition: { id: string } | null }[];
   borrowed: { id: string; loanExpires: string | null; edition: { id: string } | null }[];
@@ -79,7 +82,7 @@ export default function PublicProfilePage() {
     if (!valid) return;
     setError("");
     try {
-      setProfile(await ticketdGet<Profile>(`/profile/${addr}`));
+      setProfile(await ticketdGet<Profile>(`/profile/${addr}`, me));
     } catch (e) {
       setError(`profil : ${e instanceof Error ? e.message : e}`);
     }
@@ -90,7 +93,7 @@ export default function PublicProfilePage() {
       if (me.toLowerCase() === addr) {
         setRelation("self");
       } else {
-        const f = await ticketdGet<{ friends: Person[]; incoming: Person[]; outgoing: Person[] }>(`/friends/${me}`).catch(() => null);
+        const f = await ticketdGet<{ friends: Person[]; incoming: Person[]; outgoing: Person[] }>(`/friends/${me}`, me).catch(() => null);
         const has = (l?: Person[]) => Boolean(l?.some((p) => p.addr === addr));
         setRelation(has(f?.friends) ? "friend" : has(f?.outgoing) ? "pending" : has(f?.incoming) ? "incoming" : "none");
       }
@@ -133,6 +136,10 @@ export default function PublicProfilePage() {
   const name = profile?.name ?? shortAddr(addr);
   const presence = profile?.presence;
   const showcase = (profile?.favorites ?? []).slice(0, 3);
+  // privacy: a hidden section says so instead of looking empty
+  const sees = (s: Section): boolean => profile?.visible?.[s] ?? true;
+  const hiddenNote = (s: Section): string =>
+    profile?.privacy?.[s] === "friends" ? `Visible par les amis de ${name}.` : `${name} garde cette section privée.`;
 
   return (
     <div className="pf">
@@ -149,7 +156,7 @@ export default function PublicProfilePage() {
           <div className="pf-meta">
             {shortAddr(addr)}
             {profile?.memberSince ? ` · membre depuis ${new Date(profile.memberSince).toLocaleDateString("fr-FR", { month: "short", year: "numeric" })}` : ""}
-            {profile ? ` · ${profile.devicesCount} appareil${profile.devicesCount > 1 ? "s" : ""}` : ""}
+            {profile && profile.devicesCount !== null ? ` · ${profile.devicesCount} appareil${profile.devicesCount > 1 ? "s" : ""}` : ""}
           </div>
           {studios.length > 0 && (
             <div className="pf-meta">
@@ -193,10 +200,12 @@ export default function PublicProfilePage() {
         <div className="pf-main">
           <div className="pf-box">
             <div className="pf-label">À propos</div>
-            <p className="pf-bio">{profile?.bio || (relation === "self" ? "Ajoutez une bio depuis « Modifier mon profil »." : "Pas encore de bio.")}</p>
+            <p className="pf-bio">
+              {!sees("profile") ? hiddenNote("profile") : profile?.bio || (relation === "self" ? "Ajoutez une bio depuis « Modifier mon profil »." : "Pas encore de bio.")}
+            </p>
           </div>
 
-          <div>
+          {sees("profile") && <div>
             <div className="pf-label">Vitrine · favoris <span>personnalisation · bientôt</span></div>
             <div className="pf-cards">
               {showcase.map((id) => (
@@ -212,11 +221,13 @@ export default function PublicProfilePage() {
                 <div key={`slot-${i}`} className="pf-slot">EMPLACEMENT LIBRE</div>
               ))}
             </div>
-          </div>
+          </div>}
 
           <div className="pf-box">
-            <div className="pf-label">Bibliothèque · {library.length}</div>
-            {library.length === 0 ? (
+            <div className="pf-label">Bibliothèque{sees("library") ? ` · ${library.length}` : ""}</div>
+            {!sees("library") ? (
+              <p className="addr">{hiddenNote("library")} Chaque licence garde son historique public on-chain (page provenance).</p>
+            ) : library.length === 0 ? (
               <p className="addr">{chain ? "Aucune licence pour l'instant." : "Lecture du subgraph…"}</p>
             ) : (
               library.map((l) => (
@@ -235,7 +246,8 @@ export default function PublicProfilePage() {
           <div className="pf-box">
             <div className="pf-label">Activité récente</div>
             <div className="pf-feed">
-              {(profile?.activity ?? []).length === 0 && <span className="addr">Rien pour l&apos;instant.</span>}
+              {!sees("activity") && <span className="addr">{hiddenNote("activity")}</span>}
+              {sees("activity") && (profile?.activity ?? []).length === 0 && <span className="addr">Rien pour l&apos;instant.</span>}
               {(profile?.activity ?? []).map((a, i) => (
                 <div key={i}>
                   <span>
@@ -260,10 +272,10 @@ export default function PublicProfilePage() {
 
         <div className="pf-side">
           <div className="pf-stats">
-            <div className="pf-stat"><small>Licences</small><b>{chain?.owned.length ?? "…"}</b></div>
-            <div className="pf-stat"><small>Temps de jeu</small><b>{profile ? fmtDur(profile.totalSeconds) : "…"}</b></div>
-            <div className="pf-stat"><small>Prêts en cours</small><b>{chain?.lent.length ?? "…"}</b></div>
-            <div className="pf-stat"><small>Amis</small><b>{profile?.friendsCount ?? "…"}</b></div>
+            <div className="pf-stat"><small>Licences</small><b>{sees("library") ? (chain?.owned.length ?? "…") : "—"}</b></div>
+            <div className="pf-stat"><small>Temps de jeu</small><b>{!profile ? "…" : profile.totalSeconds === null ? "—" : fmtDur(profile.totalSeconds)}</b></div>
+            <div className="pf-stat"><small>Prêts en cours</small><b>{sees("library") ? (chain?.lent.length ?? "…") : "—"}</b></div>
+            <div className="pf-stat"><small>Amis</small><b>{!profile ? "…" : (profile.friendsCount ?? "—")}</b></div>
           </div>
 
           <div className="pf-box">
@@ -297,14 +309,15 @@ export default function PublicProfilePage() {
           )}
 
           <div className="pf-box">
-            <div className="pf-label">Amis · {profile?.friendsCount ?? 0}</div>
+            <div className="pf-label">Amis{profile?.friendsCount != null ? ` · ${profile.friendsCount}` : ""}</div>
             <div className="pf-friends">
               {(profile?.friends ?? []).map((f) => (
                 <Link key={f.addr} href={`/u/${f.addr}`} title={f.name ?? f.addr}>
                   <Avatar addr={f.addr} name={f.name} hasAvatar={f.hasAvatar} size={40} />
                 </Link>
               ))}
-              {profile && profile.friends.length === 0 && <span className="addr">Aucun ami pour l&apos;instant.</span>}
+              {profile && !sees("profile") && <span className="addr">{hiddenNote("profile")}</span>}
+              {profile && sees("profile") && profile.friends.length === 0 && <span className="addr">Aucun ami pour l&apos;instant.</span>}
             </div>
           </div>
         </div>

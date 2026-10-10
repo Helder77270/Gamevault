@@ -41,6 +41,8 @@ import {
   studioAccount,
   subscribe,
   markWishSeen,
+  privacyOf,
+  setPrivacy,
   setWish,
   wishlistOf,
 } from "./social.ts";
@@ -126,6 +128,14 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   const POST = req.method === "POST";
   const match = (re: string) => path.match(new RegExp(`^${re}$`));
   const session = () => authWallet(req.headers.authorization);
+  /** Who is looking, when a session is sent (privacy); null otherwise. */
+  const viewer = (): string | null => {
+    try {
+      return session().wallet;
+    } catch {
+      return null;
+    }
+  };
 
   if (req.method === "OPTIONS") return send(204, {});
   if (GET && path === "/health") return send(200, { ok: true });
@@ -206,9 +216,17 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   const profileMatch = GET && match(`/profile/${ADDR}`);
   if (profileMatch) {
     try {
-      return send(200, getProfile(profileMatch[1]));
+      return send(200, getProfile(profileMatch[1], viewer()));
     } catch (e) {
       return fail(400, "profil", e);
+    }
+  }
+  if (path === "/profile/privacy" && (GET || POST)) {
+    try {
+      const me = session().wallet;
+      return send(200, GET ? privacyOf(me) : setPrivacy(me, await readJson(req)));
+    } catch (e) {
+      return fail(403, "confidentialité", e);
     }
   }
   if (POST && path === "/profile") {
@@ -299,7 +317,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   const friendsMatch = GET && match(`/friends/${ADDR}`);
   if (friendsMatch) {
     try {
-      return send(200, friendsOf(friendsMatch[1]));
+      return send(200, friendsOf(friendsMatch[1], viewer()));
     } catch (e) {
       return fail(400, "amis", e);
     }

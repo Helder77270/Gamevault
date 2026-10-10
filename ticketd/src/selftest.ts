@@ -133,5 +133,19 @@ check("wishlist: private to its owner", social.wishlistOf(friend.address).length
 social.setWish(owner.address, { editionId: "2", on: false });
 check("wishlist: removed", social.wishlistOf(owner.address).length === 0);
 
+// Privacy: sections narrowed to friends / nobody; the owner always sees all
+const outsider = privateKeyToAccount(generatePrivateKey()).address;
+social.setPrivacy(owner.address, { profile: "friends", presence: "private", activity: "private" });
+const asStranger = social.getProfile(owner.address, outsider);
+const asFriend = social.getProfile(owner.address, friend.address);
+check("privacy: a stranger sees no friends list", asStranger.friends.length === 0 && asStranger.friendsCount === null);
+check("privacy: a friend sees the friends-only profile", asFriend.friendsCount === 1);
+check("privacy: private activity hidden even from friends", asFriend.activity.length === 0 && asFriend.totalSeconds === null);
+social.setPresence(owner.address, null);
+check("privacy: invisible presence shows offline to friends", social.friendsOf(friend.address, friend.address).friends[0]?.presence.state === "offline");
+check("privacy: the owner still sees everything", social.getProfile(owner.address, owner.address).activity.length > 0);
+check("privacy: a stranger cannot read the friends list", social.friendsOf(owner.address, null).friends.length === 0);
+check("privacy: invalid level refused", await refused(() => social.setPrivacy(owner.address, { library: "everyone" })));
+
 console.log(failures === 0 ? "\nAll checks passed — ticketd issuance and social layer are sound." : `\n${failures} check(s) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

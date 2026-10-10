@@ -612,7 +612,8 @@ async function fetchFriends(): Promise<void> {
   }
   try {
     // Friendship lives in the platform DB (ticketd) — zero gas, zero chain.
-    const res = await fetch(`${TICKETD_URL}/friends/${me}`, { signal: AbortSignal.timeout(3000) });
+    // as myself when the device session is open: privacy rules know who looks
+    const res = (await socialFetch(`/friends/${me}`)) ?? (await fetch(`${TICKETD_URL}/friends/${me}`, { signal: AbortSignal.timeout(3000) }));
     if (res.ok) {
       const data = (await res.json()) as { friends: Friend[]; incoming: unknown[] };
       state.friends = data.friends;
@@ -2033,6 +2034,7 @@ function settingsView(): string {
           ${toggle("set-nt-wishlist", settings.notif.wishlist, t("set.nt.wishlist"), t("set.nt.wishlistSub"))}
           <div class="set-row"><div><div class="set-label">${esc(t("set.nt.test"))}</div></div><button class="pillbtn" id="set-nt-test">${esc(t("set.nt.testBtn"))}</button></div>
         </section>
+        ${privacyCard()}
         <div class="set-sub" style="text-align:center;margin-top:4px">${esc(t("set.about"))}</div>
       </div>
     </div>`;
@@ -3073,6 +3075,10 @@ async function logout(): Promise<void> {
   state.incoming = 0;
   state.loans = [];
   state.owned = [];
+  state.wish = {};
+  state.deals = {};
+  privacy = null;
+  privacyState = "idle";
   state.chat = { active: null, thread: [], unread: {}, ready: true };
   deviceWasActive = null;
   logoutAsk = false;
@@ -3832,7 +3838,60 @@ function patchDl(j: DlJob): void {
   if (map) map.outerHTML = chunkMap(j.chunks, j.id);
 }
 
+// ── Profile privacy (P7 B) ──────────────────────────────────
+// Who sees each social section (ticketd). Ownership stays public on-chain.
+
+type PrivacyLevel = "public" | "friends" | "private";
+const PRIVACY_SECTIONS = ["profile", "presence", "activity", "library"] as const;
+type Privacy = Record<(typeof PRIVACY_SECTIONS)[number], PrivacyLevel>;
+const PRIVACY_LEVELS: PrivacyLevel[] = ["public", "friends", "private"];
+let privacy: Privacy | null = null;
+let privacyState: "idle" | "loading" | "offline" = "idle";
+
+async function loadPrivacy(): Promise<void> {
+  privacyState = "loading";
+  const res = await socialFetch("/profile/privacy");
+  if (res?.ok) {
+    privacy = (await res.json()) as Privacy;
+    privacyState = "idle";
+  } else privacyState = "offline";
+  if (state.screen === "settings") render();
+}
+
+async function setPrivacyLevel(section: keyof Privacy, level: PrivacyLevel): Promise<void> {
+  const res = await socialFetch("/profile/privacy", { [section]: level });
+  if (res?.ok) privacy = (await res.json()) as Privacy;
+  render();
+}
+
+function privacyCard(): string {
+  if (!state.session) return "";
+  if (!privacy && privacyState === "idle") void loadPrivacy();
+  const rows = privacy
+    ? PRIVACY_SECTIONS.map(
+        (s) => `<div class="set-row">
+            <div><div class="set-label">${esc(t(`pr.${s}` as "pr.profile"))}</div><div class="set-sub">${esc(t(`pr.${s}Sub` as "pr.profileSub"))}</div></div>
+            <div class="seg">
+              ${PRIVACY_LEVELS.map((l) => `<button class="seg-btn ${privacy![s] === l ? "on" : ""}" data-privacy="${s}:${l}">${esc(t(`pr.lv.${l}` as "pr.lv.public"))}</button>`).join("")}
+            </div>
+          </div>`,
+      ).join("")
+    : `<div class="set-sub">${esc(t(privacyState === "offline" ? "pr.offline" : "pr.loading"))}</div>`;
+  return `
+        <section class="set-card">
+          <div class="mono-label">${t("pr.title")}</div>
+          <div class="set-sub" style="margin-bottom:6px">${esc(t("pr.note"))}</div>
+          ${rows}
+        </section>`;
+}
+
 function wireWishlist(root: HTMLElement): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-privacy]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const [s, l] = b.dataset.privacy!.split(":") as [keyof Privacy, PrivacyLevel];
+      void setPrivacyLevel(s, l);
+    }),
+  );
   root.querySelectorAll<HTMLButtonElement>("[data-wish]").forEach((b) =>
     b.addEventListener("click", (ev) => {
       ev.stopPropagation();

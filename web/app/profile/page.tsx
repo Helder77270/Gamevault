@@ -12,9 +12,10 @@ import { fetchOnchainCatalog, hueOf, type OnchainEdition } from "@gamevault/shar
 import { Avatar, shortAddr } from "../components/Avatar";
 import { ConnectButton } from "../components/ConnectButton";
 import { PendingPayout } from "../components/PendingPayout";
-import { TICKETD_URL, useTicketd } from "../lib/ticketd";
+import { TICKETD_URL, ticketdGet, useTicketd } from "../lib/ticketd";
 import { fetchOccasions, type Occasion } from "../lib/occasions";
 import { WishlistCard } from "../components/Wishlist";
+import { PrivacyCard } from "../components/PrivacyCard";
 
 
 type ProfileData = {
@@ -23,6 +24,7 @@ type ProfileData = {
   bio: string;
   favorites: string[];
   topPlayed: { editionId: string; seconds: number }[];
+  visible?: { profile: boolean };
 };
 
 /** Redimensionne l'image au canvas : carré 256 px, webp q0.85 → ~10-40 Ko. */
@@ -68,14 +70,20 @@ export default function ProfilePage() {
   const [devices, setDevices] = useState<{ max: number; devices: { pubkey: string; pairedAt: number; lastSeen: number }[] } | null>(null);
   const [revoking, setRevoking] = useState("");
   const [copied, setCopied] = useState(false);
+  const [locked, setLocked] = useState(false);
   const addrRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     if (!address) return;
     try {
-      const res = await fetch(`${TICKETD_URL}/profile/${address}`);
-      if (!res.ok) throw new Error(await res.text());
-      const data = (await res.json()) as ProfileData;
+      let data = await ticketdGet<ProfileData>(`/profile/${address}`, address);
+      // a non-public profile read without a session comes back emptied:
+      // read it as its owner (one signature) before anything can be saved
+      if (data.visible && !data.visible.profile) {
+        setLocked(true);
+        data = await authed<ProfileData>(`/profile/${address}`);
+        setLocked(false);
+      }
       setProfile(data);
       setName(data.name ?? "");
       setBio(data.bio ?? "");
@@ -85,7 +93,7 @@ export default function ProfilePage() {
     } catch (e) {
       setError(`ticketd: ${e instanceof Error ? e.message : e}`);
     }
-  }, [address]);
+  }, [address, authed]);
 
   /** Free a device slot — wallet signature, zero gas. That machine is
    *  revoked at its next online check. */
@@ -415,12 +423,17 @@ export default function ProfilePage() {
             )}
           </section>
 
-          {/* 5 · wishlist (private) */}
+          {/* 5 · privacy */}
+          <section className="pe-card" id="confidentialite">
+            <PrivacyCard />
+          </section>
+
+          {/* 6 · wishlist (private) */}
           <section className="pe-card" id="souhaits">
             <WishlistCard catalog={catalog} occasions={occasions} />
           </section>
 
-          {/* 6 · pending payouts */}
+          {/* 7 · pending payouts */}
           <section className="pe-card" id="gains">
             <PendingPayout address={address} variant="card" />
           </section>
@@ -473,7 +486,7 @@ export default function ProfilePage() {
                 <button className="btn ghost" disabled={busy} onClick={cancel}>
                   Annuler
                 </button>
-                <button className="btn" disabled={busy || !nameOk} onClick={() => void save()}>
+                <button className="btn" disabled={busy || !nameOk || locked} onClick={() => void save()}>
                   {busy ? "Enregistrement…" : "Enregistrer"}
                 </button>
               </span>

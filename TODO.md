@@ -214,9 +214,11 @@ décision de conception, un redéploiement ou une infra en plus).
       avec l'édition ; filtre activé par défaut.
 
 ### Comptes & connexion
-- [ ] **B** Confidentialité du profil : public, amis seulement, privé (profil,
-      présence, activité, bibliothèque). À dire clairement : la propriété des
-      licences reste publique on-chain, seule la couche sociale se masque.
+- [x] **B** (2026-10-10) Confidentialité du profil : public, amis, privé, par
+      section (profil, présence, activité, bibliothèque). ticketd filtre selon
+      qui regarde (session envoyée si elle existe) ; réglages dans le launcher
+      et dans Mon profil. Dit clairement : la propriété des licences reste
+      publique on-chain, seule la couche sociale se masque.
 - [ ] **C** Plusieurs comptes sur une machine : sélecteur de compte. La clé de
       la machine peut servir à plusieurs comptes ; chaque compte garde sa
       limite de 2 machines.

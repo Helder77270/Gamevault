@@ -39,9 +39,16 @@ const errorOf = async (res: Response): Promise<string> => {
   }
 };
 
-/** Public GET helper (no session). */
-export async function ticketdGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${TICKETD_URL}${path}`);
+/** GET helper. `as` = the connected address: its session token, when this
+ *  browser has one, is sent so privacy rules know who is looking (friends
+ *  see friends-only sections). Never asks for a signature. */
+export async function ticketdGet<T>(path: string, as?: string): Promise<T> {
+  const token = as ? load(as)?.token : undefined;
+  let res = await fetch(`${TICKETD_URL}${path}`, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+  if (res.status === 401 && token) {
+    store(as!, null); // expired: read as an anonymous visitor
+    res = await fetch(`${TICKETD_URL}${path}`);
+  }
   if (!res.ok) throw new Error(await errorOf(res));
   return (await res.json()) as T;
 }

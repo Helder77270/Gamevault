@@ -110,6 +110,13 @@ CREATE TABLE IF NOT EXISTS wishlist (
   at INTEGER NOT NULL,            -- ms
   PRIMARY KEY (addr, edition_id)
 );
+-- Profile privacy (P7 B, 2026-10-10): who sees each social section. No
+-- row = everything public (the Steam-like default).
+CREATE TABLE IF NOT EXISTS privacy (
+  addr TEXT PRIMARY KEY,
+  data TEXT NOT NULL,             -- JSON {profile, presence, activity, library}
+  updated_at INTEGER NOT NULL     -- ms
+);
 `;
 
 /** Additive column migrations for tables created by an earlier schema. */
@@ -369,6 +376,28 @@ export const wishlist = {
   },
   seen(addr: string, editionId: string, seenWei: string): void {
     db().prepare("UPDATE wishlist SET seen_wei = ? WHERE addr = ? AND edition_id = ?").run(seenWei, addr.toLowerCase(), editionId);
+  },
+};
+
+// ── Privacy ────────────────────────────────────────────────────────────
+
+export type PrivacyLevel = "public" | "friends" | "private";
+export const PRIVACY_SECTIONS = ["profile", "presence", "activity", "library"] as const;
+export type Privacy = Record<(typeof PRIVACY_SECTIONS)[number], PrivacyLevel>;
+const LEVELS: PrivacyLevel[] = ["public", "friends", "private"];
+
+export const privacy = {
+  get(addr: string): Privacy {
+    const row = db().prepare("SELECT data FROM privacy WHERE addr = ?").get(addr.toLowerCase()) as { data: string } | undefined;
+    const saved = (row ? JSON.parse(row.data) : {}) as Partial<Record<string, string>>;
+    const out = {} as Privacy;
+    for (const s of PRIVACY_SECTIONS) out[s] = LEVELS.includes(saved[s] as PrivacyLevel) ? (saved[s] as PrivacyLevel) : "public";
+    return out;
+  },
+  set(addr: string, p: Privacy): void {
+    db()
+      .prepare("INSERT INTO privacy (addr, data, updated_at) VALUES (?, ?, ?) ON CONFLICT (addr) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at")
+      .run(addr.toLowerCase(), JSON.stringify(p), Date.now());
   },
 };
 

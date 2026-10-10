@@ -7,8 +7,12 @@
 // value or keys stays signed per action: pairing (/ticket), studio publish,
 // device revoke.
 //
-// Profiles are PUBLIC (Steam-like): bio, favorites, play time, friends,
-// activity. Chat is between friends only, stored here (not end-to-end).
+// Profiles are PUBLIC by default (Steam-like): bio, favorites, play time,
+// friends, activity. Each section can be narrowed to friends or to nobody
+// (P7 B privacy); name and avatar stay visible so people can be recognised.
+// Licence ownership stays public ON-CHAIN whatever is chosen here — only
+// the social layer hides. Chat is between friends only, stored here (not
+// end-to-end).
 
 import type { ServerResponse } from "node:http";
 import { createHash, randomBytes } from "node:crypto";
@@ -26,7 +30,11 @@ import {
   messages,
   nonceUsed,
   playstats,
+  privacy,
   profiles,
+  PRIVACY_SECTIONS,
+  type Privacy,
+  type PrivacyLevel,
   sessions,
   studioPages,
   tx,
@@ -133,8 +141,52 @@ export function setPresence(wallet: string, playing: string | null): { ok: true 
   if (playing !== null && !/^\d{1,6}$/.test(playing)) throw new Error("édition invalide");
   const prev = presence.get(lc(wallet));
   presence.set(lc(wallet), { playing, at: Date.now() });
-  if (prev?.playing !== playing) notifyFriends(wallet, "presence", { addr: lc(wallet), ...presenceOf(wallet) });
+  if (prev?.playing !== playing && privacy.get(wallet).presence !== "private") {
+    notifyFriends(wallet, "presence", { addr: lc(wallet), ...presenceOf(wallet) });
+  }
   return { ok: true };
+}
+
+const OFFLINE = { state: "offline" as const, editionId: null };
+
+/** Presence as `viewer` may see it (hidden = shown offline). */
+export function presenceFor(wallet: string, viewer: string | null): ReturnType<typeof presenceOf> {
+  return canSee(wallet, viewer, privacy.get(wallet).presence) ? presenceOf(wallet) : OFFLINE;
+}
+
+// ── Privacy ────────────────────────────────────────────────────────────
+
+/** May `viewer` (null = not signed in) see a section `owner` set to `level`? */
+function canSee(owner: string, viewer: string | null, level: PrivacyLevel): boolean {
+  if (viewer && lc(viewer) === lc(owner)) return true;
+  if (level === "public") return true;
+  if (level === "friends") return Boolean(viewer && friends.since(owner, viewer));
+  return false;
+}
+
+function visibility(owner: string, viewer: string | null): Record<keyof Privacy, boolean> {
+  const p = privacy.get(owner);
+  const out = {} as Record<keyof Privacy, boolean>;
+  for (const s of PRIVACY_SECTIONS) out[s] = canSee(owner, viewer, p[s]);
+  return out;
+}
+
+export function privacyOf(me: string): Privacy {
+  return privacy.get(me);
+}
+
+export function setPrivacy(me: string, body: Record<string, unknown>): Privacy {
+  const next = privacy.get(me);
+  for (const s of PRIVACY_SECTIONS) {
+    if (body[s] === undefined) continue;
+    const v = String(body[s]);
+    if (v !== "public" && v !== "friends" && v !== "private") throw new Error(`niveau invalide pour ${s}`);
+    next[s] = v;
+  }
+  privacy.set(me, next);
+  // going invisible: friends see this account offline right away
+  if (next.presence === "private") notifyFriends(me, "presence", { addr: lc(me), ...OFFLINE });
+  return next;
 }
 
 export function presenceOf(wallet: string): { state: "offline" | "online" | "playing"; editionId: string | null } {
@@ -229,16 +281,18 @@ function people(addrs: string[]): Person[] {
   return addrs.map((a) => ({ addr: lc(a), name: names[lc(a)] ?? null, hasAvatar: Boolean(profiles.get(a)?.avatarType) }));
 }
 
-export function friendsOf(addr: string): {
+export function friendsOf(addr: string, viewer: string | null = null): {
   friends: (Person & { since: number; presence: ReturnType<typeof presenceOf> })[];
   incoming: Person[];
   outgoing: Person[];
 } {
   if (!ADDR_RE.test(addr)) throw new Error("adresse invalide");
+  // friends and pending requests belong to the "profile" section
+  if (!canSee(addr, viewer, privacy.get(addr).profile)) return { friends: [], incoming: [], outgoing: [] };
   const list = friends.list(addr);
   const info = new Map(people(list.map((f) => f.addr)).map((p) => [p.addr, p]));
   return {
-    friends: list.map((f) => ({ ...info.get(lc(f.addr))!, since: f.since, presence: presenceOf(f.addr) })),
+    friends: list.map((f) => ({ ...info.get(lc(f.addr))!, since: f.since, presence: presenceFor(f.addr, viewer) })),
     incoming: people(friends.incoming(addr)),
     outgoing: people(friends.outgoing(addr)),
   };
@@ -297,30 +351,35 @@ export function getAvatar(addr: string): { bytes: Uint8Array; type: string } | n
   return { bytes: new Uint8Array(readFileSync(file)), type: p.avatarType };
 }
 
-/** The public profile (Steam-like). On-chain parts (licences, listings,
- *  loans) are read by the web page from the subgraph. */
-export function getProfile(addr: string) {
+/** The profile as `viewer` may see it (null = not signed in). On-chain
+ *  parts (licences, listings, loans) are read by the web page from the
+ *  subgraph; `visible.library` tells it whether to show them. */
+export function getProfile(addr: string, viewer: string | null = null) {
   if (!ADDR_RE.test(addr)) throw new Error("adresse invalide");
   const p = profiles.get(addr);
-  const friendList = friends.list(addr);
-  const names = profiles.names(activity.recent(addr).flatMap((a) => (typeof a.data.with === "string" ? [a.data.with] : [])));
+  const vis = visibility(addr, viewer);
+  const friendList = vis.profile ? friends.list(addr) : [];
+  const recent = vis.activity ? activity.recent(addr) : [];
+  const names = profiles.names(recent.flatMap((a) => (typeof a.data.with === "string" ? [a.data.with] : [])));
   return {
     addr,
     name: p?.name ?? null,
     hasAvatar: Boolean(p?.avatarType),
-    bio: p?.bio ?? "",
-    favorites: p?.favorites ?? [],
-    memberSince: p?.createdAt ?? null,
-    presence: presenceOf(addr),
-    topPlayed: playstats.top(addr, 8),
-    totalSeconds: playstats.total(addr),
-    devicesCount: devices.list(addr).length,
-    friendsCount: friendList.length,
+    bio: vis.profile ? (p?.bio ?? "") : "",
+    favorites: vis.profile ? (p?.favorites ?? []) : [],
+    memberSince: vis.profile ? (p?.createdAt ?? null) : null,
+    presence: vis.presence ? presenceOf(addr) : OFFLINE,
+    topPlayed: vis.activity ? playstats.top(addr, 8) : [],
+    totalSeconds: vis.activity ? playstats.total(addr) : null,
+    devicesCount: vis.profile ? devices.list(addr).length : null,
+    friendsCount: vis.profile ? friendList.length : null,
     friends: people(friendList.slice(0, 12).map((f) => f.addr)),
-    activity: activity.recent(addr).map((a) => ({
+    activity: recent.map((a) => ({
       ...a,
       data: typeof a.data.with === "string" ? { ...a.data, withName: names[a.data.with] ?? null } : a.data,
     })),
+    privacy: privacy.get(addr),
+    visible: vis,
     updatedAt: p?.updatedAt ?? null,
   };
 }

@@ -63,7 +63,7 @@ function ChatInner() {
 
   const loadLists = useCallback(async () => {
     if (!me) return;
-    const f = await ticketdGet<{ friends: Friend[] }>(`/friends/${me}`).catch(() => ({ friends: [] as Friend[] }));
+    const f = await ticketdGet<{ friends: Friend[] }>(`/friends/${me}`, me).catch(() => ({ friends: [] as Friend[] }));
     setFriends(f.friends);
     const s = await authed<Summary[]>("/chat").catch(() => []);
     setSummary(Object.fromEntries(s.map((x) => [x.other, x])));
