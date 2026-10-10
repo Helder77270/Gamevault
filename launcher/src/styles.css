@@ -1041,3 +1041,25 @@ button { font-family: inherit; }
 .prof-link:hover { color: var(--cyan); }
 .prof-empty { padding: 40px; display: grid; gap: 6px; }
 @media (max-width: 1100px) { .prof-wrap { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── Store (P8 #2) ── */
+.st-grid-wrap { flex: 1; overflow: auto; padding: 20px 40px 32px; }
+.st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+.st-card { cursor: pointer; text-align: left; padding: 0; border: 1px solid var(--line); background: rgba(16,22,43,0.6); color: var(--ink); display: flex; flex-direction: column; font: inherit; }
+.st-card:hover, .st-card:focus-visible { border-color: var(--cyan); outline: none; }
+.st-art { position: relative; aspect-ratio: 16 / 9; display: flex; gap: 6px; align-items: flex-start; justify-content: flex-end; padding: 8px; }
+.st-badge { font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em; padding: 3px 6px; background: rgba(5,6,13,0.78); border: 1px solid currentColor; }
+.st-badge.ok { color: oklch(0.8 0.14 var(--ok-h)); }
+.st-badge.wish { color: oklch(0.85 0.09 310); }
+.st-body { padding: 10px 12px 12px; display: grid; gap: 4px; }
+.st-title { font-weight: 700; font-size: 15px; }
+.st-meta { font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; color: var(--dim); }
+.st-prices { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-top: 4px; }
+.st-new { font-weight: 700; }
+.st-used { font-size: 12px; color: oklch(0.85 0.09 310); }
+.st-sort { width: auto; padding-right: 10px; }
+.st-offers { flex-basis: 100%; display: grid; gap: 6px; margin: 6px 0 4px; }
+.st-offer { display: flex; gap: 12px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); background: rgba(5,6,13,0.35); flex-wrap: wrap; }
+.st-offer-p { font-weight: 700; }
+.st-off { color: oklch(0.85 0.09 310); font-size: 12px; margin-left: 4px; }
+.shelf-empty { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; padding: 20px 0; }

@@ -61,7 +61,7 @@ interface Pairing {
   error?: string;
 }
 
-type Screen = "boot" | "home" | "shelf" | "detail" | "insert" | "friends" | "settings" | "downloads" | "profile" | "error";
+type Screen = "boot" | "home" | "store" | "shelf" | "detail" | "insert" | "friends" | "settings" | "downloads" | "profile" | "error";
 
 // ── Settings (per machine, localStorage) ─────────────────────
 type Skin = "midnight" | "sunset" | "crt";
@@ -187,7 +187,7 @@ const state = {
   friends: [] as Friend[],
   incoming: 0,
   /** live loans touching the library wallet, lent or borrowed */
-  loans: [] as { tokenId: string; owner: string; user: string; expires: number }[],
+  loans: [] as { tokenId: string; owner: string; user: string; expires: number; editionId: string }[],
   /** Chat with friends (ticketd, device session — no wallet in the launcher) */
   chat: { active: null as string | null, thread: [] as ChatMsg[], unread: {} as Record<string, number>, ready: true },
   ticketdOk: false,
@@ -195,12 +195,16 @@ const state = {
   sel: null as string | null,
   /** where the detail screen was opened from (its back button, nav highlight) */
   detailFrom: "shelf" as "shelf" | "store",
-  filter: "all" as "all" | "play" | "wish",
+  filter: "all" as "all" | "play" | "wish" | "sale" | "loan",
   /** Wishlist (ticketd, private to the account): editionId -> lowest price
    *  last shown, in wei. Empty without a device session. */
   wish: {} as Record<string, string>,
-  /** cheapest live resale listing of each wished edition */
+  /** cheapest live resale listing of each edition */
   deals: {} as Record<string, { tokenId: string; price: bigint }>,
+  /** every live second-hand offer (Marketplace rules), for the store */
+  offers: [] as { tokenId: string; editionId: string; price: bigint; seller: string }[],
+  /** pseudos of the sellers shown in the store */
+  names: {} as Record<string, string>,
   /** shelf layout: retro grid, or Steam-style list + preview pane */
   shelfMode: (["list", "storage"].includes(localStorage.getItem("gv-shelfmode") ?? "") ? localStorage.getItem("gv-shelfmode") : "grid") as "grid" | "list" | "storage",
   /** preview pane: technical data accordion (CID/hash/ticket) open? */
@@ -643,7 +647,8 @@ async function fetchFriends(): Promise<void> {
           chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "userExpires", args: [i] }),
         ]);
         if (owner.toLowerCase() === me.toLowerCase() || user.toLowerCase() === me.toLowerCase()) {
-          loans.push({ tokenId: i.toString(), owner, user, expires: Number(exp) });
+          const ed = await chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "editionOf", args: [i] });
+          loans.push({ tokenId: i.toString(), owner, user, expires: Number(exp), editionId: ed.toString() });
         }
       } catch {
         /* burned / rpc hiccup */
@@ -657,15 +662,16 @@ async function fetchFriends(): Promise<void> {
 
 async function fetchMarketState(): Promise<void> {
   if (!chainClient || !DEPLOYMENTS.gameLicense || !DEPLOYMENTS.marketplace) return;
-  for (const g of state.games) {
-    if (!g.ticket) continue;
-    const id = BigInt(g.ticket.tokenId);
+  const ids = new Set([...state.games.flatMap((g) => (g.ticket ? [g.ticket.tokenId] : [])), ...state.owned.map((o) => o.tokenId)]);
+  for (const tok of ids) {
+    if (!/^\d{1,12}$/.test(tok)) continue;
+    const id = BigInt(tok);
     try {
       const [owner, listing] = await Promise.all([
         chainClient.readContract({ address: DEPLOYMENTS.gameLicense, abi: LICENSE_ABI, functionName: "ownerOf", args: [id] }),
         chainClient.readContract({ address: DEPLOYMENTS.marketplace, abi: MARKETPLACE_ABI, functionName: "listings", args: [id] }),
       ]);
-      state.market[g.ticket.tokenId] = { owner, seller: listing[0], price: listing[1] };
+      state.market[tok] = { owner, seller: listing[0], price: listing[1] };
     } catch {
       /* offline or unknown token */
     }
@@ -692,7 +698,6 @@ async function fetchWishlist(): Promise<void> {
   state.wish = Object.fromEntries(rows.map((r) => [r.editionId, r.seenWei]));
   // bought since: off the list
   for (const id of Object.keys(state.wish)) if (owns(id)) void setWish(id, false);
-  await scanDeals();
 }
 
 async function setWish(editionId: string, on: boolean): Promise<void> {
@@ -712,10 +717,11 @@ async function setWish(editionId: string, on: boolean): Promise<void> {
  *  Marketplace.buy(). A copy cheaper than the price last shown = an alert. */
 async function scanDeals(quiet?: string): Promise<void> {
   const wished = Object.keys(state.wish);
-  if (!wished.length || !chainClient || !DEPLOYMENTS.gameLicense || !DEPLOYMENTS.marketplace) {
+  if (!chainClient || !DEPLOYMENTS.gameLicense || !DEPLOYMENTS.marketplace) {
     state.deals = {};
     return;
   }
+  const offers: typeof state.offers = [];
   const lic = DEPLOYMENTS.gameLicense as `0x${string}`;
   const market = DEPLOYMENTS.marketplace as `0x${string}`;
   const deals: typeof state.deals = {};
@@ -727,7 +733,6 @@ async function scanDeals(quiet?: string): Promise<void> {
         const [seller, price, nonce] = await chainClient.readContract({ address: market, abi: MARKETPLACE_ABI, functionName: "listings", args: [i] });
         if (seller.toLowerCase() === ZERO_ADDR) continue;
         const ed = (await chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "editionOf", args: [i] })).toString();
-        if (!wished.includes(ed)) continue;
         const [owner, moves, approved, operator] = await Promise.all([
           chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "ownerOf", args: [i] }),
           chainClient.readContract({ address: lic, abi: LICENSE_ABI, functionName: "transferCount", args: [i] }),
@@ -736,6 +741,7 @@ async function scanDeals(quiet?: string): Promise<void> {
         ]);
         if (owner.toLowerCase() !== seller.toLowerCase() || moves !== nonce) continue;
         if (approved.toLowerCase() !== market.toLowerCase() && !operator) continue;
+        offers.push({ tokenId: i.toString(), editionId: ed, price, seller: seller.toLowerCase() });
         if (!deals[ed] || price < deals[ed].price) deals[ed] = { tokenId: i.toString(), price };
       } catch {
         complete = false; // rpc hiccup: never "raise" a seen price on a partial scan
@@ -745,6 +751,16 @@ async function scanDeals(quiet?: string): Promise<void> {
     return; // offline — keep last known
   }
   state.deals = deals;
+  state.offers = offers;
+  const unknown = [...new Set(offers.map((o) => o.seller))].filter((a) => !(a in state.names));
+  if (unknown.length) {
+    void fetch(`${TICKETD_URL}/profiles/names?a=${unknown.join(",")}`, { signal: AbortSignal.timeout(3000) })
+      .then((r) => (r.ok ? (r.json() as Promise<Record<string, { name: string | null }>>) : {}))
+      .then((n) => {
+        for (const a of unknown) state.names[a] = (n as Record<string, { name: string | null }>)[a]?.name ?? short(a, 4);
+      })
+      .catch(() => {});
+  }
   for (const id of wished) {
     const e = state.catalog.find((x) => x.editionId === id);
     if (!e || owns(id)) continue;
@@ -1549,10 +1565,11 @@ function homeView(): string {
     : "";
   // Library rail: the seated game first, then what this machine can play,
   // then the rest of the catalog (peeking off the right edge, iiSU-style).
+  const mineEds = myShelf().filter((e) => !(e.editionId in state.wish) || owns(e.editionId));
   const railEds = [
     ...state.catalog.filter((e) => e.editionId === editionId),
-    ...state.catalog.filter((e) => e.editionId !== editionId && playableNow(e)),
-    ...state.catalog.filter((e) => e.editionId !== editionId && !playableNow(e)),
+    ...mineEds.filter((e) => e.editionId !== editionId && playableNow(e)),
+    ...mineEds.filter((e) => e.editionId !== editionId && !playableNow(e)),
   ];
   const rail = railEds
     .map(
@@ -1622,7 +1639,8 @@ function shelfStatus(e: OnchainEdition, g: Game | undefined, ownedTok: { tokenId
     return { label: "CHECK CARD", cls: "warn" };
   }
   if (ownedTok.length) return { label: libraryBuildFor(e) ? "AWAITING CARD" : t("dl.toDownload"), cls: "warn" };
-  return { label: `${formatEth(e.priceWei)} ETH`, cls: "buy" };
+  if (state.loans.some((l) => l.editionId === e.editionId)) return { label: t("shelf.loan"), cls: "warn" };
+  return { label: t("wish.on"), cls: "buy" };
 }
 
 function previewPane(e: OnchainEdition): string {
@@ -1681,14 +1699,40 @@ function previewPane(e: OnchainEdition): string {
     </div>`;
 }
 
+/** On the shelf: what I own, hold on a card, lend, borrow, sell or wish for. */
+function myShelf(): OnchainEdition[] {
+  return state.catalog.filter(
+    (e) =>
+      owns(e.editionId) ||
+      Boolean(cardForEdition(e.editionId)) ||
+      e.editionId in state.wish ||
+      state.loans.some((l) => l.editionId === e.editionId),
+  );
+}
+
+function shelfEmpty(): string {
+  if (!state.catalog.length) return `<div class="slot-dim">${DEPLOYMENTS.gameRegistry ? "READING CHAIN…" : "NO CONTRACTS DEPLOYED"}</div>`;
+  return `<div class="shelf-empty"><div class="slot-dim">${esc(t(state.filter === "all" ? "shelf.empty" : "store.empty"))}</div><button class="pillbtn violet" data-go="store">${esc(t("store.title"))}</button></div>`;
+}
+
+/** One of my licences of this edition is listed on the marketplace. */
+function onSale(e: OnchainEdition): boolean {
+  return state.owned.some((o) => o.editionId === e.editionId && state.market[o.tokenId] && state.market[o.tokenId].seller.toLowerCase() !== ZERO_ADDR);
+}
+
 function shelfView(): string {
   const addr = libraryAddress();
+  const mine = myShelf();
   const list =
     state.filter === "play"
-      ? state.catalog.filter(playableNow)
+      ? mine.filter(playableNow)
       : state.filter === "wish"
-        ? state.catalog.filter((e) => e.editionId in state.wish)
-        : state.catalog;
+        ? mine.filter((e) => e.editionId in state.wish)
+        : state.filter === "sale"
+          ? mine.filter(onSale)
+          : state.filter === "loan"
+            ? mine.filter((e) => state.loans.some((l) => l.editionId === e.editionId))
+            : mine;
   const unlocked = state.catalog.filter(playableNow).length;
   const isList = state.shelfMode === "list";
   if (state.shelfMode === "storage") void refreshStorageSpace();
@@ -1717,7 +1761,7 @@ function shelfView(): string {
               </button>`;
                   })
                   .join("")
-              : `<div class="slot-dim">${DEPLOYMENTS.gameRegistry ? "READING CHAIN…" : "NO CONTRACTS DEPLOYED"}</div>`
+              : shelfEmpty()
           }
         </div>
       </div>`;
@@ -1748,7 +1792,7 @@ function shelfView(): string {
             </button>`;
                   })
                   .join("")
-              : `<div class="slot-dim">${DEPLOYMENTS.gameRegistry ? "READING CHAIN…" : "NO CONTRACTS DEPLOYED"}</div>`
+              : shelfEmpty()
           }
         </div>
         ${selEd ? previewPane(selEd) : `<div class="shelf-preview"><div class="pv-body"><span class="slot-dim">${t("shelf.selectTitle")}</span></div></div>`}
@@ -1768,6 +1812,8 @@ function shelfView(): string {
           <button class="pillbtn ${state.filter === "all" ? "active" : ""}" id="filt-all">ALL</button>
           <button class="pillbtn ${state.filter === "play" ? "active" : ""}" id="filt-play">PLAYABLE</button>
           ${state.session ? `<button class="pillbtn ${state.filter === "wish" ? "active" : ""}" id="filt-wish">${esc(t("wish.filter"))}${Object.keys(state.wish).length ? ` · ${Object.keys(state.wish).length}` : ""}</button>` : ""}
+          <button class="pillbtn ${state.filter === "sale" ? "active" : ""}" id="filt-sale">${esc(t("shelf.sale"))}</button>
+          <button class="pillbtn ${state.filter === "loan" ? "active" : ""}" id="filt-loan">${esc(t("shelf.loan"))}</button>
           <div class="view-toggle">
             <button id="view-grid" class="${isList ? "" : "active"}" aria-label="${t("shelf.gridView")}"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"></rect><rect x="13" y="3" width="8" height="8" rx="1.5"></rect><rect x="3" y="13" width="8" height="8" rx="1.5"></rect><rect x="13" y="13" width="8" height="8" rx="1.5"></rect></svg></button>
             <button id="view-list" class="${isList ? "active" : ""}" aria-label="${t("shelf.listView")}"><svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="4" width="18" height="3.4" rx="1.4"></rect><rect x="3" y="10.3" width="18" height="3.4" rx="1.4"></rect><rect x="3" y="16.6" width="18" height="3.4" rx="1.4"></rect></svg></button>
@@ -2141,6 +2187,117 @@ function wireProfile(root: HTMLElement): void {
   );
 }
 
+
+// ── Store (P8 #2) ───────────────────────────────────────────
+// Browse everything: new copies and second-hand offers. Buying or taking
+// an offer happens on the web page, one click away.
+
+let storeFilter: "all" | "used" | "wish" = "all";
+let storeSort: "popular" | "price" | "new" = "popular";
+
+function storeView(): string {
+  const used = (id: string) => state.offers.filter((o) => o.editionId === id);
+  let list = [...state.catalog];
+  if (storeFilter === "used") list = list.filter((e) => used(e.editionId).length);
+  if (storeFilter === "wish") list = list.filter((e) => e.editionId in state.wish);
+  if (storeSort === "popular") list.sort((a, b) => b.minted - a.minted);
+  else if (storeSort === "price") list.sort((a, b) => (lowestPrice(a) < lowestPrice(b) ? -1 : 1));
+  else list.sort((a, b) => Number(b.editionId) - Number(a.editionId));
+
+  const cards = list
+    .map((e) => {
+      const offers = used(e.editionId);
+      const cheapest = offers.reduce<bigint | null>((m, o) => (m === null || o.price < m ? o.price : m), null);
+      const mineBadge = owns(e.editionId) ? `<span class="st-badge ok">${esc(t("store.owned"))}</span>` : "";
+      const wished = e.editionId in state.wish ? `<span class="st-badge wish">${esc(t("wish.on"))}</span>` : "";
+      const soldOut = e.minted >= e.supply;
+      return `
+        <button class="st-card" data-edition="${esc(e.editionId)}" data-q="${esc(`${e.title} ${e.studio}`.toLowerCase())}">
+          <div class="st-art" style="${artFor(e.editionId)}">${mineBadge}${wished}</div>
+          <div class="st-body">
+            <div class="st-title">${esc(e.title)}</div>
+            <div class="st-meta">${esc(e.studio.toUpperCase())} · ${esc(GENRES[e.editionId] ?? "INDIE")}</div>
+            <div class="st-prices">
+              <span class="st-new">${soldOut ? esc(t("store.soldOut")) : `${esc(formatEth(e.priceWei))} ETH`}</span>
+              ${cheapest !== null ? `<span class="st-used">${esc(t("store.usedFrom", { p: formatEth(cheapest) }))} · ${offers.length}</span>` : ""}
+            </div>
+          </div>
+        </button>`;
+    })
+    .join("");
+
+  const chip = (id: typeof storeFilter, label: string) => `<button class="pillbtn ${storeFilter === id ? "active" : ""}" data-storefilter="${id}">${esc(label)}</button>`;
+  return `
+    <div class="shelf">
+      <div class="shelf-head">
+        <div style="display:flex;align-items:center;gap:18px">
+          <button class="backbtn" data-go="home">&#8592;</button>
+          <div>
+            <div class="shelf-title">${t("store.title")}</div>
+            <div class="shelf-meta">${t("store.meta", { n: state.catalog.length, u: state.offers.length })}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input class="aura-input" id="store-q" placeholder="${esc(t("store.search"))}" aria-label="${esc(t("store.search"))}" style="width:13rem" />
+          ${chip("all", t("store.all"))}
+          ${chip("used", t("store.used"))}
+          ${state.session ? chip("wish", t("wish.filter")) : ""}
+          <select class="aura-input st-sort" id="store-sort" aria-label="${esc(t("store.sort"))}">
+            <option value="popular" ${storeSort === "popular" ? "selected" : ""}>${esc(t("store.sortPopular"))}</option>
+            <option value="price" ${storeSort === "price" ? "selected" : ""}>${esc(t("store.sortPrice"))}</option>
+            <option value="new" ${storeSort === "new" ? "selected" : ""}>${esc(t("store.sortNew"))}</option>
+          </select>
+        </div>
+      </div>
+      <div class="st-grid-wrap">
+        <div class="st-grid">${cards || `<div class="slot-dim">${esc(state.catalog.length ? t("store.empty") : t("store.loading"))}</div>`}</div>
+      </div>
+    </div>`;
+}
+
+/** Second-hand offers of an edition, on its sheet (store side). */
+function offersBlock(e: OnchainEdition): string {
+  if (owns(e.editionId)) return "";
+  const offers = state.offers.filter((o) => o.editionId === e.editionId).sort((a, b) => (a.price < b.price ? -1 : 1));
+  if (!e.resellable) return `<div class="st-offers"><div class="mono-label">${t("store.offers")}</div><div class="set-sub">${esc(t("store.noResale"))}</div></div>`;
+  const rows = offers
+    .map((o) => {
+      const pct = o.price < e.priceWei ? Math.round(Number(((e.priceWei - o.price) * 100n) / (e.priceWei || 1n))) : 0;
+      const who = state.names[o.seller] ?? short(o.seller, 4);
+      return `<div class="st-offer">
+        <span class="st-offer-p">${esc(formatEth(o.price))} ETH${pct ? ` <span class="st-off">−${pct} %</span>` : ""}</span>
+        <span class="set-sub" style="flex:1;min-width:0">${esc(t("store.licence", { id: o.tokenId, s: who }))}</span>
+        <button class="pillbtn violet" data-offer="${esc(o.tokenId)}">${esc(t("store.seeOffer"))} ↗</button>
+      </div>`;
+    })
+    .join("");
+  return `<div class="st-offers"><div class="mono-label">${t("store.offers")} · ${offers.length}</div>${rows || `<div class="set-sub">${esc(t("store.noOffer"))}</div>`}</div>`;
+}
+
+function wireStore(root: HTMLElement): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-storefilter]").forEach((b) =>
+    b.addEventListener("click", () => {
+      storeFilter = b.dataset.storefilter as typeof storeFilter;
+      render();
+    }),
+  );
+  root.querySelector<HTMLSelectElement>("#store-sort")?.addEventListener("change", (ev) => {
+    storeSort = (ev.currentTarget as HTMLSelectElement).value as typeof storeSort;
+    render();
+  });
+  // search filters in place: no re-render while typing
+  root.querySelector<HTMLInputElement>("#store-q")?.addEventListener("input", (ev) => {
+    const q = (ev.currentTarget as HTMLInputElement).value.trim().toLowerCase();
+    root.querySelectorAll<HTMLElement>(".st-card").forEach((c) => (c.hidden = Boolean(q) && !(c.dataset.q ?? "").includes(q)));
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-offer]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const tok = b.dataset.offer!;
+      if (/^\d{1,12}$/.test(tok)) void openUrl(`${MARKETPLACE_URL}/occasions?sel=${tok}`);
+    }),
+  );
+}
+
 function settingsView(): string {
   const lang = getLang();
   const skins: { id: Skin; name: string; sub: string; swatch: string }[] = [
@@ -2366,7 +2523,7 @@ function detailView(): string {
   return `
     <div class="detail">
       <div class="detail-left">
-        <button class="pillbtn" data-go="shelf" style="align-self:flex-start">&#8592; SHELF</button>
+        <button class="pillbtn" data-go="${state.detailFrom}" style="align-self:flex-start">&#8592; ${state.detailFrom === "store" ? esc(t("store.title")) : "SHELF"}</button>
         <div class="hero-art" style="${artFor(e.editionId)}">
           <div class="artnote">${t("det.boxArt", { id: esc(e.editionId) })}</div>
           <div class="sheen"></div>
@@ -2390,6 +2547,7 @@ function detailView(): string {
         <div class="detail-actions">
           ${action}
           <div class="detail-hint">${esc(hint)}</div>
+          ${offersBlock(e)}
           <div style="flex-basis:100%;display:flex;gap:8px;flex-wrap:wrap">${dealButton(e, "pillbtn violet")}${wishButton(e, "pillbtn")}${marketRow}${provRow}${g?.cartridge.has_build || libraryBuildFor(e) ? `<button class="pillbtn" data-repair="${esc(e.editionId)}">${t("dl.verify")}</button>` : ""}</div>
         </div>
       </div>
@@ -2524,6 +2682,7 @@ const SCREENS: Record<Screen, () => string> = {
   insert: insertView,
   friends: friendsView,
   profile: profileView,
+  store: storeView,
   settings: settingsView,
   downloads: downloadsView,
   error: errorView,
@@ -2537,6 +2696,7 @@ function applyStaticI18n(): void {
   };
   label("nav-home", t("nav.home"));
   label("nav-shelf", t("nav.shelf"));
+  label("nav-store", t("store.title"));
   label("nav-friends", t("nav.friends"));
   label("nav-downloads", t("nav.downloads"));
   const prof = document.getElementById("nav-profile");
@@ -2594,7 +2754,8 @@ function renderChrome(): void {
   // Topbar nav active state (static chrome — survives screen rebuilds)
   const navMap: Record<string, Screen[]> = {
     "nav-home": ["home"],
-    "nav-shelf": ["shelf", "detail", "insert"],
+    "nav-store": state.detailFrom === "store" ? ["store", "detail"] : ["store"],
+    "nav-shelf": state.detailFrom === "store" ? ["shelf", "insert"] : ["shelf", "detail", "insert"],
     "nav-friends": ["friends"],
     "nav-downloads": ["downloads"],
     "nav-settings": ["settings"],
@@ -2709,6 +2870,8 @@ function sigOf(): string {
     f: state.filter,
     w: state.wish,
     de: Object.entries(state.deals).map(([k, v]) => [k, v.tokenId, String(v.price)]),
+    of: state.offers.map((o) => o.tokenId + ":" + String(o.price)),
+    lo2: state.loans.map((l) => l.tokenId + l.user),
     sll: state.selling,
     g: state.games.map((g) => [g.cartridge.mount_point, g.verdict, g.cartridge.has_build, g.ticket?.tokenId, isOurs(g), g.meta.edition]),
     c: state.catalog.map((e) => [e.editionId, e.minted, e.title]),
@@ -2772,6 +2935,7 @@ function wire(root: HTMLElement): void {
     b.addEventListener("click", () => {
       if (!b.dataset.edition) return;
       state.sel = b.dataset.edition;
+      if (state.screen !== "detail") state.detailFrom = state.screen === "store" ? "store" : "shelf";
       go("detail");
     }),
   );
@@ -2788,6 +2952,14 @@ function wire(root: HTMLElement): void {
     state.filter = "wish";
     render();
   });
+  document.getElementById("filt-sale")?.addEventListener("click", () => {
+    state.filter = "sale";
+    render();
+  });
+  document.getElementById("filt-loan")?.addEventListener("click", () => {
+    state.filter = "loan";
+    render();
+  });
   document.getElementById("refresh-btn")?.addEventListener("click", () => void forceRefresh());
   document.getElementById("home-insert")?.addEventListener("click", () => {
     // A cartridge waiting for pairing? go straight to its reader screen.
@@ -2799,7 +2971,7 @@ function wire(root: HTMLElement): void {
       go("shelf");
     }
   });
-  document.getElementById("home-store")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));
+  document.getElementById("home-store")?.addEventListener("click", () => go("store"));
   document.getElementById("friends-manage")?.addEventListener("click", () => void openUrl(`${MARKETPLACE_URL}/friends`));
   document.getElementById("friends-lend")?.addEventListener("click", () => void openUrl(`${MARKETPLACE_URL}/friends`));
   root.querySelectorAll<HTMLButtonElement>("[data-chat]").forEach((b) => b.addEventListener("click", () => void openChat(b.dataset.chat!)));
@@ -2974,6 +3146,7 @@ function wire(root: HTMLElement): void {
   wireDownloads(root);
   wireWishlist(root);
   wireProfile(root);
+  wireStore(root);
   root.querySelectorAll<HTMLButtonElement>("[data-install]").forEach((b) =>
     b.addEventListener("click", () => {
       const e = state.catalog.find((x) => x.editionId === b.dataset.install);
@@ -3069,7 +3242,7 @@ async function runBoot(): Promise<void> {
   await fetchOwned();
   await fetchMarketState();
   void fetchFriends(); // non-blocking: the AMIS screen fills in seconds
-  void fetchWishlist();
+  void fetchWishlist().then(() => scanDeals());
   void loadMyProfile();
   setLine(4, `${state.owned.length} LICENCE${state.owned.length > 1 ? "S" : ""} · ${state.games.length} CARD${state.games.length > 1 ? "S" : ""}`, true);
   scanPrimed = true; // from now on, new mounts are real insertions
@@ -3147,7 +3320,7 @@ async function refresh(): Promise<void> {
         })
         .catch(() => {});
       void fetchFriends();
-      void fetchWishlist();
+      void fetchWishlist().then(() => scanDeals());
       if (state.screen !== "profile" || !profEdit) void loadMyProfile();
     }
     if (scanCount % 5 === 0) void refreshLibrary();
@@ -4424,6 +4597,7 @@ window.addEventListener("DOMContentLoaded", () => {
       if (state.screen === "boot" || state.playing || state.nativeRun) return;
       const s = b.dataset.navgo as Screen;
       if (s === "friends") void fetchFriends().then(() => render());
+      if (s === "store") void scanDeals().then(() => state.screen === "store" && render());
       if (s === "settings") cacheInfo = null;
       go(s);
     }),

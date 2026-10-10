@@ -261,11 +261,11 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
       page publique web).
 
 ### 2. Game Shelf = MES jeux
-- [ ] Le shelf ne montre plus les jeux à acheter (le jeu test à
+- [x] Le shelf ne montre plus les jeux à acheter (le jeu test à
       0.00001 ETH disparaît) : seulement possédés, sur carte, prêtés,
       empruntés, en vente, souhaités.
-- [ ] Filtres : TOUS · JOUABLES · SOUHAITS · EN VENTE · PRÊTS.
-- [ ] Onglet BOUTIQUE dans le launcher (validé) : on navigue dans tout le
+- [x] Filtres : TOUS · JOUABLES · SOUHAITS · EN VENTE · PRÊTS.
+- [x] Onglet BOUTIQUE dans le launcher (validé) : on navigue dans tout le
       catalogue (neuf + occasions), on souhaite ; un clic sur « acheter »
       ou sur une occasion ouvre la page web d'achat / de mise en vente.
 
