@@ -75,6 +75,7 @@ interface Settings {
   notif: { download: boolean; message: boolean; card: boolean; security: boolean };
   startPage: StartPage; // where AURA-64 opens after the boot
   startInTray: boolean; // at Windows startup: stay in the notification area
+  localServices: boolean; // POC: start ticketd + the site from the repo when they are down
 }
 
 const START_PAGES = ["home", "shelf", "friends", "downloads"] as const;
@@ -83,7 +84,7 @@ type StartPage = (typeof START_PAGES)[number];
 const VEILLE_CHOICES = [1, 3, 5, 10, 0];
 const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3, libraries: [],
   notif: { download: true, message: true, card: true, security: true },
-  startPage: "home", startInTray: false };
+  startPage: "home", startInTray: false, localServices: true };
 
 function loadSettings(): Settings {
   try {
@@ -94,6 +95,7 @@ function loadSettings(): Settings {
     if (!VEILLE_CHOICES.includes(Number(s.veilleMin))) s.veilleMin = SETTINGS_DEFAULT.veilleMin;
     if (!START_PAGES.includes(s.startPage)) s.startPage = "home";
     s.startInTray = Boolean(s.startInTray);
+    s.localServices = s.localServices !== false;
     s.notif = { ...SETTINGS_DEFAULT.notif, ...(typeof s.notif === "object" && s.notif ? s.notif : {}) };
     s.libraries = Array.isArray(s.libraries) ? s.libraries.filter((x) => typeof x === "string" && x.length > 2).slice(0, 8) : [];
     return s;
@@ -1768,6 +1770,7 @@ function settingsView(): string {
           </div>
           ${toggle("set-autostart", autostartOn, t("set.autostart"), t("set.autostartSub"))}
           <div class="${autostartOn ? "" : "dim"}">${toggle("set-trayStart", settings.startInTray, t("set.trayStart"), t("set.trayStartSub"))}</div>
+          ${toggle("set-localServices", settings.localServices, t("set.localServices"), t("set.localServicesSub"))}
         </section>
         <section class="set-card">
           <div class="mono-label">${t("set.lang")}</div>
@@ -2549,6 +2552,15 @@ async function runBoot(): Promise<void> {
   } catch {
     setLine(2, "OFFLINE", false);
   }
+  if (settings.localServices) {
+    state.bootLines[3] = { ...state.bootLines[3], value: t("svc.starting"), state: "idle" };
+    if (state.screen === "boot") render();
+    try {
+      await invoke("start_local_services");
+    } catch {
+      /* repo not found (installed build): ticketd is expected online */
+    }
+  }
   try {
     const r = await fetch(`${TICKETD_URL}/health`, { signal: AbortSignal.timeout(1500) });
     state.ticketdOk = r.ok;
@@ -2751,6 +2763,11 @@ function wireStartup(root: HTMLElement): void {
       toast(String(err));
     }
     await refreshAutostart();
+    render();
+  });
+  document.getElementById("set-localServices")?.addEventListener("click", () => {
+    settings.localServices = !settings.localServices;
+    saveSettings();
     render();
   });
   document.getElementById("set-trayStart")?.addEventListener("click", () => {

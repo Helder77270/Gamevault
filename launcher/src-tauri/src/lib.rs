@@ -502,6 +502,89 @@ async fn toast_close(window: tauri::WebviewWindow, toasts: tauri::State<'_, Toas
     Ok(())
 }
 
+// ── Local services (POC) ─────────────────────────────────────────────────
+// In the real product ticketd and the site are hosted online, like Steam's
+// servers. For the POC they live in this repo, on this machine: at launch,
+// AURA-64 starts whichever of them is not answering yet (hidden, logs in
+// %LOCALAPPDATA%\GameVault\logs) and stops what it started when it quits.
+// Already running (dev.cmd)? Nothing is started, nothing is stopped.
+
+#[derive(Default)]
+struct Services(Mutex<Vec<(String, std::process::Child)>>);
+
+/// The monorepo this launcher was built from (POC: services run from it).
+const REPO_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+
+fn port_open(port: u16) -> bool {
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(400)).is_ok()
+}
+
+#[tauri::command]
+async fn start_local_services(services: tauri::State<'_, Services>) -> Result<Value, String> {
+    let root = PathBuf::from(REPO_ROOT);
+    if !root.join("ticketd").join("package.json").is_file() {
+        return Err("dépôt GameVault introuvable : services locaux indisponibles".into());
+    }
+    let logs = std::env::var("LOCALAPPDATA")
+        .map(|d| PathBuf::from(d).join("GameVault").join("logs"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("GameVault-logs"));
+    let _ = std::fs::create_dir_all(&logs);
+    let mut started = Vec::new();
+    for (name, port, workspace) in [("ticketd", 8787u16, "@gamevault/ticketd"), ("web", 3000u16, "@gamevault/web")] {
+        if port_open(port) {
+            continue;
+        }
+        let log = std::fs::File::create(logs.join(format!("{name}.log"))).map_err(|e| format!("journal {name}: {e}"))?;
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.args(["/c", "npm", "run", "dev", "-w", workspace])
+            .current_dir(&root)
+            .stdin(std::process::Stdio::null())
+            .stdout(log.try_clone().map_err(|e| e.to_string())?)
+            .stderr(log);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
+        let child = cmd.spawn().map_err(|e| format!("lancement de {name}: {e}"))?;
+        services.0.lock().unwrap_or_else(|e| e.into_inner()).push((name.to_string(), child));
+        started.push(name);
+    }
+    // The launcher needs ticketd (tickets, friends, chat); the site can
+    // finish compiling in the background.
+    let ticketd = tauri::async_runtime::spawn_blocking(|| {
+        for _ in 0..60 {
+            if port_open(8787) {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500));
+        }
+        false
+    })
+    .await
+    .unwrap_or(false);
+    Ok(serde_json::json!({ "started": started, "ticketd": ticketd, "logs": logs.to_string_lossy() }))
+}
+
+/// Stop what AURA-64 started (the whole npm → node tree).
+fn stop_local_services(app: &AppHandle) {
+    let services = app.state::<Services>();
+    let mut list = services.0.lock().unwrap_or_else(|e| e.into_inner());
+    for (_, child) in list.iter_mut() {
+        let mut kill = std::process::Command::new("taskkill");
+        kill.args(["/PID", &child.id().to_string(), "/T", "/F"]);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            kill.creation_flags(0x0800_0000);
+        }
+        let _ = kill.status();
+        let _ = child.wait();
+    }
+    list.clear();
+}
+
 /// Started by Windows at login (the autostart entry passes --autostart).
 #[tauri::command]
 fn launched_at_startup() -> bool {
@@ -534,6 +617,7 @@ pub fn run() {
             Some(vec!["--autostart"]),
         ))
         .manage(Toasts::default())
+        .manage(Services::default())
         .manage(Arc::new(download::Downloads::default()))
         .manage(GameSession(Mutex::new(None)))
         .manage(NativeSession(Arc::new(Mutex::new(None))))
@@ -629,7 +713,8 @@ pub fn run() {
             toast_fit,
             toast_close,
             focus_main,
-            launched_at_startup
+            launched_at_startup,
+            start_local_services
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
@@ -640,6 +725,7 @@ pub fn run() {
                 let native = app.state::<NativeSession>();
                 let slot = native.0.clone();
                 end_native(app, &slot, true);
+                stop_local_services(app); // POC: the services AURA-64 started go with it
             }
         });
 }
