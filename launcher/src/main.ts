@@ -3853,6 +3853,7 @@ interface DlJob {
   netHist: number[];
   diskHist: number[];
   autoPaused?: boolean; // paused because a game started; resumes after it
+  resumeOnPaused?: boolean; // the game ended while its pause was still on the way
 }
 interface LibraryEntry {
   dir: string;
@@ -4105,6 +4106,8 @@ function applyGamePolicy(): void {
     if (j.autoPaused) {
       j.autoPaused = false;
       if (j.phase === "paused") j.phase = "queued";
+      // the pause request is still in flight: resume as soon as it lands
+      else if (ACTIVE_PHASES.includes(j.phase)) j.resumeOnPaused = true;
     }
   }
   pump();
@@ -4416,7 +4419,13 @@ function wireWishlist(root: HTMLElement): void {
 function wireDownloads(root: HTMLElement): void {
   root.querySelectorAll<HTMLButtonElement>("[data-dlopen]").forEach((b) => b.addEventListener("click", () => void openDownload(b.dataset.dlopen!)));
   root.querySelectorAll<HTMLButtonElement>("[data-repair]").forEach((b) => b.addEventListener("click", () => startRepair(b.dataset.repair!)));
-  root.querySelectorAll<HTMLButtonElement>("[data-dlpause]").forEach((b) => b.addEventListener("click", () => pauseJob(b.dataset.dlpause!)));
+  root.querySelectorAll<HTMLButtonElement>("[data-dlpause]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const j = dl.jobs[b.dataset.dlpause!];
+      if (j) j.resumeOnPaused = false; // the player's pause wins
+      pauseJob(b.dataset.dlpause!);
+    }),
+  );
   root.querySelectorAll<HTMLButtonElement>("[data-dlresume]").forEach((b) => b.addEventListener("click", () => resumeJob(b.dataset.dlresume!)));
   root.querySelectorAll<HTMLButtonElement>("[data-dlcancel]").forEach((b) => b.addEventListener("click", () => cancelJob(b.dataset.dlcancel!)));
   root.querySelectorAll<HTMLInputElement>("[data-dpchoice]").forEach((r) =>
@@ -4478,6 +4487,11 @@ void listen<{ id: string; phase: string; done?: number; total?: number; net_bps?
         void notify({ kind: "download", title: t("nt.dlError", { t: j.title }), body: p.error ?? "", action: () => go("downloads") });
       }
       if (p.phase === "cancelled") delete dl.jobs[p.id];
+      if (p.phase === "paused" && j.resumeOnPaused) {
+        j.resumeOnPaused = false;
+        if (holdForGame()) j.autoPaused = true; // a new game started meanwhile
+        else j.phase = "queued";
+      }
       void refreshLibrary().then(() => {
         render();
         pump();

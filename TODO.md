@@ -335,7 +335,7 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
 - [x] Repli IPFS jamais testé en vrai : le tester avec le gros build
       (ticketd coupé → morceaux depuis IPFS) si le pin passe (taille
       Pinata), sinon le noter.
-- [ ] Petite course connue : un jeu qui se ferme dans la même seconde où un
+- [x] (corrigée) Petite course connue : un jeu qui se ferme dans la même seconde où un
       téléchargement se met en pause peut laisser le job en pause.
 - [ ] « En attente de mise à jour » dans Téléchargements dépend du modèle
       de versions (contrat v1.2, item C) : prévu dans la vue, pas branché.
