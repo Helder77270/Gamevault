@@ -5,12 +5,14 @@
 #   kubectl apply -k k8s/overlays/minikube
 # Differences from production: local images (gamevault/*:dev), *.gamevault.local
 # hosts, no cert-manager (the controller's default certificate answers TLS),
-# one web replica minimum, small volume.
+# small volumes, autoscalers capped at 4.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: gamevault
 resources:
   - ../../base
+components:
+  - ../../components/postgres
 images:
   - name: ghcr.io/gamevault/ticketd
     newName: gamevault/ticketd
@@ -38,6 +40,13 @@ patches:
     patch: |-
       - { op: replace, path: /spec/minReplicas, value: 2 }
       - { op: replace, path: /spec/maxReplicas, value: 4 }
-  - target: { group: apps, version: v1, kind: StatefulSet, name: ticketd }
+  - target: { group: autoscaling, version: v2, kind: HorizontalPodAutoscaler, name: ticketd }
+    patch: |-
+      - { op: replace, path: /spec/maxReplicas, value: 4 }
+  - target: { group: apps, version: v1, kind: StatefulSet, name: postgres }
     patch: |-
       - { op: replace, path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage, value: 5Gi }
+      - { op: replace, path: /spec/template/spec/containers/0/resources/requests/memory, value: 256Mi }
+  - target: { version: v1, kind: PersistentVolumeClaim, name: postgres-backups }
+    patch: |-
+      - { op: replace, path: /spec/resources/requests/storage, value: 2Gi }

@@ -7,3 +7,5 @@ vault_attest_signer_privkey: "0x…"   # lending attestations
 vault_keystore_master_key: "…"       # content keys at rest — keep a copy OUTSIDE the cluster
 vault_pinata_jwt: "…"
 vault_registry_password: ""          # only for a private image registry
+vault_postgres_password: "…"         # hex only (URL-safe): openssl rand -hex 24
+vault_external_database_url: ""      # managed Postgres: postgres://user:pass@host:5432/db?sslmode=require

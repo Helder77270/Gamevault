@@ -13,8 +13,8 @@ if (-not $NoBuild) {
   docker build -f "$root\web\Dockerfile" --build-arg NEXT_PUBLIC_TICKETD_URL=https://api.gamevault.local -t gamevault/web:dev $root
 }
 
-& $mk status *> $null
-if ($LASTEXITCODE -ne 0) { & $mk start --driver=docker --cpus=4 --memory=6144 --kubernetes-version=v1.31.0 }
+$ErrorActionPreference = "Continue"; $state = & $mk status --format "{{.Host}}" 2>$null; $ErrorActionPreference = "Stop"
+if ($state -ne "Running") { & $mk start --driver=docker --cpus=4 --memory=6144 --kubernetes-version=v1.31.0 }
 & $mk addons enable ingress
 & $mk addons enable metrics-server
 
@@ -35,8 +35,7 @@ kubectl -n ingress-nginx patch configmap ingress-nginx-controller --type merge -
 
 kubectl apply -f "$root\k8s\base\namespace.yaml"
 # created once: a new KEYSTORE_MASTER_KEY would make stored game keys unreadable
-kubectl -n gamevault get secret gamevault-secrets *> $null
-if ($LASTEXITCODE -ne 0) {
+if (-not (kubectl -n gamevault get secret gamevault-secrets --ignore-not-found -o name)) {
   $hex = { -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) }) }
   kubectl -n gamevault create secret generic gamevault-secrets `
     --from-literal=TICKET_SIGNER_PRIVKEY="0x$(& $hex)" `
@@ -44,8 +43,20 @@ if ($LASTEXITCODE -ne 0) {
     --from-literal=KEYSTORE_MASTER_KEY="$(& $hex)" `
     --from-literal=PINATA_JWT=test-not-a-real-jwt
 }
+if (-not (kubectl -n gamevault get secret postgres-credentials --ignore-not-found -o name)) {
+  $pw = -join ((1..24) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) })  # hex: URL-safe
+  kubectl -n gamevault create secret generic postgres-credentials --from-literal=password=$pw
+}
+# before 2026-10-11 ticketd was a StatefulSet (SQLite on a volume): remove it
+kubectl -n gamevault delete statefulset ticketd --ignore-not-found
+kubectl -n gamevault delete pvc data-ticketd-0 --ignore-not-found --wait=false
+
 kubectl apply -k "$root\k8s\overlays\minikube"
-kubectl -n gamevault rollout status statefulset/ticketd --timeout=180s
+# same `dev` tag, new image: restart so the pods pick it up
+kubectl -n gamevault rollout restart deployment/ticketd deployment/web
+kubectl -n gamevault rollout status statefulset/postgres --timeout=240s
+kubectl -n gamevault rollout status deployment/redis --timeout=180s
+kubectl -n gamevault rollout status deployment/ticketd --timeout=240s
 kubectl -n gamevault rollout status deployment/web --timeout=180s
 kubectl -n gamevault get pods
 

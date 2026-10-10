@@ -1,0 +1,89 @@
+# The whole GameVault server side, production-like, on one machine
+# (2026-10-11): Postgres + Redis + 2 ticketd replicas + web.
+#
+#   docker compose up -d --build        # first time (builds the images)
+#   docker compose ps                   # all "healthy"
+#   curl http://127.0.0.1:18787/ready   # {"ready":true,"db":"postgres","live":"redis",…}
+#   docker compose down                 # stop (data kept in the pgdata volume)
+#   docker compose down -v              # stop AND wipe the database
+#
+# Ports don't clash with `npm run dev` (8787 / 3000): ticketd 18787 (two
+# replicas behind it would need a proxy; here replica 1 is exposed, replica
+# 2 on 18788 so you can hit both), web 13000.
+# Secrets: ticketd/.env (never committed). POSTGRES_PASSWORD below is a LOCAL
+# default — set a real one through the environment for anything shared.
+
+x-ticketd: &ticketd
+  build: { context: ., dockerfile: ticketd/Dockerfile }
+  image: gamevault/ticketd:dev
+  env_file:
+    - path: ticketd/.env
+      required: false
+  environment:
+    DATABASE_URL: postgres://gamevault:${POSTGRES_PASSWORD:-localdev}@postgres:5432/gamevault
+    REDIS_URL: redis://redis:6379
+    HOST: 0.0.0.0
+    PORT: "8787"
+    SHUTDOWN_DELAY_MS: "1000"
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  read_only: true
+  tmpfs: [/tmp, /app/ticketd/data]
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+    interval: 10s
+    timeout: 3s
+    retries: 3
+    start_period: 20s
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_USER: gamevault
+      POSTGRES_DB: gamevault
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localdev}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "gamevault", "-d", "gamevault"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    command: [--save, "", --appendonly, "no", --maxmemory, 256mb, --maxmemory-policy, volatile-ttl]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ticketd-1:
+    <<: *ticketd
+    ports: ["127.0.0.1:18787:8787"]
+
+  ticketd-2:
+    <<: *ticketd
+    ports: ["127.0.0.1:18788:8787"]
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        NEXT_PUBLIC_TICKETD_URL: http://127.0.0.1:18787
+    image: gamevault/web:dev
+    ports: ["127.0.0.1:13000:3000"]
+    read_only: true
+    tmpfs: [/tmp, /app/web/.next/cache]
+    restart: unless-stopped
+    depends_on:
+      ticketd-1: { condition: service_healthy }
+
+volumes:
+  pgdata:

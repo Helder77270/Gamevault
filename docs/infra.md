@@ -8,17 +8,22 @@
                     ▼
         ┌───────────────────────────┐
         │ ingress-nginx (2 à 6 pods)│  TLS Let's Encrypt (cert-manager)
-        │ load balancer · limites   │  limites par IP, tailles, timeouts
+        │ load balancer · limites   │  limites par IP (429), tailles, timeouts
         └──────┬─────────────┬──────┘
                │             │
      gamevault.example   api.gamevault.example
                │             │
-        ┌──────▼─────┐  ┌────▼──────────────┐
-        │ web        │  │ ticketd           │
-        │ Next.js    │  │ 1 pod (StatefulSet)│──► Base Sepolia (RPC)
-        │ 2 à 20 pods│  │ volume persistant  │──► Pinata / IPFS
-        │ (HPA CPU)  │  │ SQLite + builds    │
-        └────────────┘  └────────────────────┘
+        ┌──────▼─────┐  ┌────▼───────────┐
+        │ web        │  │ ticketd        │──► Base Sepolia (RPC)
+        │ Next.js    │  │ 2 à 8 pods     │──► Pinata / IPFS
+        │ 2 à 20 pods│  │ (HPA CPU)      │
+        └────────────┘  └──┬──────────┬──┘
+                           │          │
+                  ┌────────▼───┐  ┌───▼──────────┐
+                  │ Postgres   │  │ Redis        │
+                  │ données    │  │ temps réel   │
+                  │ + dumps    │  │ (jetable)    │
+                  └────────────┘  └──────────────┘
 ```
 
 Le launcher (application Windows) parle à `api.…` ; le navigateur parle aux
@@ -31,7 +36,14 @@ deux. La blockchain et le subgraph (Goldsky) sont externes.
 | `ticketd/Dockerfile` | Node 22, TypeScript exécuté nativement, utilisateur non-root, healthcheck `/health`, données dans `/app/ticketd/data` |
 | `web/Dockerfile` | build Next.js en sortie `standalone` (serveur autonome), non-root ; les `NEXT_PUBLIC_*` sont passés au build |
 | `.dockerignore` | contexte = racine du monorepo ; aucun `.env`, aucune donnée locale dans une image |
-| `k8s/base/` | manifests Kubernetes (kustomize) : namespace, ConfigMap, ticketd, web, 5 Ingress, NetworkPolicy |
+| `k8s/base/` | manifests Kubernetes (kustomize) : namespace, ConfigMap, ticketd, web, Redis, 5 Ingress, NetworkPolicy |
+| `k8s/components/postgres/` | composant optionnel : Postgres dans le cluster + sauvegarde nocturne + ticketd branché dessus (laisser hors de l'overlay avec un Postgres managé) |
+| `k8s/overlays/minikube/` | overlay de test local (images locales, `*.gamevault.local`) |
+| `k8s/ops/postgres-restore.yaml` | Job de restauration d'un dump (à la main) |
+| `docker-compose.yml` | toute la pile façon production sur un poste |
+| `deploy/minikube.ps1` | déploiement minikube d'une commande |
+| `deploy/e2e-multireplica.mjs` | test de bout en bout multi-réplicas (+ redémarrage progressif) |
+| `docs/runbook.md` | exploitation, incidents, sauvegardes, passage en production |
 | `k8s/base/secret.example.yaml` | forme du Secret (jamais de vraie valeur dans le dépôt) |
 | `k8s/platform/cluster-issuer.yaml` | émetteur Let's Encrypt (exemple ; Ansible pose le vrai) |
 | `deploy/ansible/` | playbook complet : serveurs → k3s → ingress + TLS → application |
@@ -68,28 +80,24 @@ deux. La blockchain et le subgraph (Goldsky) sont externes.
   au repos dans k3s, Secret applicatif créé par Ansible depuis un vault
   chiffré.
 
-## Le point dur, dit franchement : ticketd ne monte pas encore en charge
+## ticketd monte en charge (depuis le 11 octobre)
 
-ticketd garde un état local : SQLite (sessions, nonces anti-rejeu, clés de
-contenu chiffrées, amis, chat, profils, souhaits), et en mémoire la
-présence, les flux temps réel (SSE) et les tickets d'appairage en attente.
-Deux réplicas se partageraient cet état de travers (un nonce rejoué sur
-l'autre pod, un message de chat qui n'arrive jamais). **Il tourne donc en
-un seul pod** (StatefulSet + volume persistant), redémarré par Kubernetes en
-cas de panne — quelques secondes d'indisponibilité, sans perte de données.
+ticketd ne garde plus d'état local : le durable est dans **Postgres**
+(sessions, nonces anti-rejeu, clés de jeux chiffrées, amis, chat, profils,
+avatars, appareils, souhaits, confidentialité), le jetable dans **Redis**
+(présence, tickets d'appairage en attente, diffusion des événements temps
+réel entre pods, limite du chat). Il tourne donc en **Deployment de 2 à 8
+pods** avec autoscaler, comme le web. SQLite + mémoire restent le défaut
+sans `DATABASE_URL` / `REDIS_URL` : le dev local et le POC ne changent pas.
 
-Pour du volume de masse, le chantier suivant (noté dans TODO.md) :
-
-1. **Postgres** à la place de SQLite (même schéma, transactions déjà
-   isolées dans `db.ts`) — managé ou en StatefulSet avec sauvegardes.
-2. **Redis** pour la présence, les tickets d'appairage en attente (TTL) et
-   la diffusion des événements temps réel entre pods (pub/sub).
-3. ticketd passe alors en Deployment + HPA comme `web`.
+Détails d'exploitation (migrations, sauvegardes, incidents, capacité) :
+`docs/runbook.md`.
 
 ## Distribution des jeux à grande échelle
 
-Aujourd'hui ticketd sert `/build` depuis son volume (en flux, par plages
-d'octets), IPFS en secours. Pour beaucoup de joueurs simultanés : stockage
+Aujourd'hui chaque pod ticketd sert `/build` depuis son cache local (en flux,
+par plages d'octets), rechargé depuis IPFS et vérifié contre l'empreinte
+on-chain. Pour beaucoup de joueurs simultanés : stockage
 objet (S3, R2…) derrière un CDN qui gère les plages d'octets, ticketd ne
 renvoyant plus que l'adresse. L'intégrité ne change pas : chaque morceau
 est vérifié, puis l'empreinte inscrite on-chain.
@@ -178,14 +186,27 @@ Réglages machine faits le 11 octobre avec ton accord : Docker Desktop mis
 contrôleur mémoire en v1, indispensable à Kubernetes. Pour revenir en
 arrière : supprimer ce fichier puis `wsl --shutdown`.
 
+Vérifié le 11 octobre, migration Postgres + Redis :
+- selftest ticketd (40 contrôles) en mémoire **et** sur un vrai Postgres 16
+  + Redis 7 ; la vraie base locale copiée vers Postgres (`npm run migrate
+  -- --from-sqlite`) → mêmes réponses API, avatar à l'octet près ;
+- minikube : Postgres + Redis + 2 ticketd + 2 web, aucun redémarrage ;
+  `deploy/e2e-multireplica.mjs` : session ouverte sur un pod et valide sur
+  l'autre, rejeu refusé sur l'autre pod, amitié et chat entre pods, flux
+  temps réel reçu par l'autre pod (Redis pub/sub), présence, limite du
+  chat partagée, avatar partagé ; **redémarrage progressif sous charge :
+  0 requête perdue**, flux SSE fermés proprement ;
+- sauvegarde CronJob → restauration dans une base séparée : mêmes comptes ;
+- pannes : Redis coupé → mode dégradé, pods prêts, profils OK ; Postgres
+  coupé → pods hors trafic sans redémarrage, retour automatique ;
+- `docker compose up` : 5 conteneurs sains ; ansible-lint profil
+  production 0/0 ; les deux variantes Ansible (Postgres intégré / managé)
+  rendues et contrôlées.
+
 ## Ce qui reste avant une vraie mise en ligne
 
-- Le launcher a ses adresses de POC en dur (`127.0.0.1:8787`, le site en
-  `localhost:3000`) : il faut une configuration de build production
-  pointant vers `https://api.<domaine>` et le site public.
-- Sauvegarde automatique de la base ticketd (`npm run backup` existe ; à
-  brancher en CronJob, ou gratuit avec un Postgres managé). Garder
-  `KEYSTORE_MASTER_KEY` hors du cluster : sans elle, plus aucune clé de jeu.
-- Un RPC Base payant sous charge (les RPC publics limitent).
-- Observabilité : les métriques d'ingress-nginx sont activées ; ajouter
-  Prometheus/Grafana et la collecte des logs.
+La liste complète, avec le pourquoi de chaque point, est dans
+**`docs/runbook.md` §7** (Postgres managé, builds sur stockage objet + CDN,
+adresses de production du launcher, gestionnaire de secrets et rotation des
+clés, sauvegardes hors cluster, observabilité, RPC payant, NetworkPolicy
+éprouvées avec Calico/Cilium, tir de charge).

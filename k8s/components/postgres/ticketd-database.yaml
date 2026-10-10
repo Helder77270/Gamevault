@@ -1,0 +1,18 @@
+# ticketd -> the in-cluster Postgres. POSTGRES_PASSWORD comes first: the
+# URL references it with $(POSTGRES_PASSWORD). An env entry wins over the
+# Secret's envFrom.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ticketd
+  namespace: gamevault
+spec:
+  template:
+    spec:
+      containers:
+        - name: ticketd
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: postgres-credentials, key: password } }
+            - name: DATABASE_URL
+              value: postgres://gamevault:$(POSTGRES_PASSWORD)@postgres:5432/gamevault

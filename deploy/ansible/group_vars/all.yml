@@ -22,7 +22,15 @@ cert_manager_version: v1.16.2
 # Runtime
 rpc_url: https://sepolia.base.org
 gamelicense_address: "0x844cb5292c7Fe7a186F1dF0914f2463c7fFC3fE8"
-ticketd_storage: 50Gi
+# ticketd is stateless (Postgres + Redis): scale it out
+ticketd_min_replicas: 2
+ticketd_max_replicas: 8   # x PG_POOL_MAX 10 <= Postgres max_connections 200
+# in-cluster Postgres volume and its nightly dumps
+postgres_storage: 50Gi
+backup_storage: 50Gi
+# managed Postgres instead (recommended in production): its URL here, kept
+# in the vault (vault_external_database_url); empty = in-cluster Postgres
+external_database_url: "{{ vault_external_database_url | default('') }}"
 web_min_replicas: 2
 web_max_replicas: 20
 

@@ -1,21 +1,25 @@
-# ticketd — ONE replica, on purpose. It keeps state that is not shared yet:
-# SQLite (sessions, nonces, keys, social), presence + live SSE streams and
-# pending pairing tickets in memory. Two replicas would split that state
-# (a nonce replayed on the other pod, a chat event that never arrives).
-# Scaling it out = the next chantier: Postgres + Redis (docs/infra.md).
-# Until then: StatefulSet, persistent volume, Recreate-style rollout, and
-# Kubernetes restarts the pod as soon as a probe fails.
+# ticketd — STATELESS since 2026-10-11: durable data in Postgres
+# (postgres.yaml), live state in Redis (redis.yaml). Any number of
+# replicas; the HPA follows CPU. Each pod keeps only a local cache of game
+# builds (emptyDir) that refills itself from IPFS, verified against the
+# on-chain hash. At scale, serve builds from object storage + CDN instead
+# (docs/runbook.md).
+#
+# Rollouts are graceful: on SIGTERM ticketd fails /ready, waits
+# SHUTDOWN_DELAY_MS for the endpoints to update, closes its SSE streams
+# (clients reconnect to another replica) and finishes in-flight requests.
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: ticketd
   namespace: gamevault
   labels: { app.kubernetes.io/name: ticketd, app.kubernetes.io/part-of: gamevault }
 spec:
-  serviceName: ticketd
-  replicas: 1
-  podManagementPolicy: OrderedReady
-  updateStrategy: { type: RollingUpdate }
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
   selector:
     matchLabels: { app.kubernetes.io/name: ticketd }
   template:
@@ -29,6 +33,12 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
         seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: ticketd }
       containers:
         - name: ticketd
           image: ghcr.io/gamevault/ticketd:0.1.0 # set by kustomize `images:` / Ansible
@@ -38,40 +48,41 @@ spec:
           envFrom:
             - configMapRef: { name: ticketd-config }
             - secretRef: { name: gamevault-secrets }
+          env:
+            # DATABASE_URL: gamevault-secrets (managed Postgres) or the
+            # components/postgres component (in-cluster), which adds it here
+            - { name: REDIS_URL, value: "redis://redis:6379" }
+            - { name: SHUTDOWN_DELAY_MS, value: "5000" }
+            - name: HOSTNAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } } # names the replica in Postgres / Redis client lists
           resources:
-            requests: { cpu: 250m, memory: 512Mi }
-            limits: { cpu: "2", memory: 2Gi } # big builds are streamed, but a manifest hash reads 1 MiB at a time
-          startupProbe:
+            requests: { cpu: 200m, memory: 256Mi }
+            limits: { cpu: "2", memory: 1Gi }
+          startupProbe: # migrations run before listening
             httpGet: { path: /health, port: http }
             periodSeconds: 3
-            failureThreshold: 20
-          livenessProbe: # stuck event loop -> restart
+            failureThreshold: 40
+          livenessProbe: # the process answers; never the database (no restart storms)
             httpGet: { path: /health, port: http }
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
-          readinessProbe: # out of the Service while it can't answer
-            httpGet: { path: /health, port: http }
+          readinessProbe: # out of the Service while Postgres is unreachable or draining
+            httpGet: { path: /ready, port: http }
             periodSeconds: 5
-            timeoutSeconds: 2
+            timeoutSeconds: 3
             failureThreshold: 2
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: { drop: [ALL] }
           volumeMounts:
-            - { name: data, mountPath: /app/ticketd/data }
+            - { name: data, mountPath: /app/ticketd/data } # build cache only
             - { name: tmp, mountPath: /tmp }
       volumes:
-        - name: tmp
-          emptyDir: {}
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes: [ReadWriteOnce]
-        resources:
-          requests: { storage: 50Gi } # SQLite + avatars + build cache (a 500 MB game per edition)
+        - name: data
+          emptyDir: { sizeLimit: 10Gi }
+        - { name: tmp, emptyDir: {} }
 ---
 apiVersion: v1
 kind: Service
@@ -83,3 +94,31 @@ spec:
   selector: { app.kubernetes.io/name: ticketd }
   ports:
     - { name: http, port: 8787, targetPort: http }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ticketd
+  namespace: gamevault
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: ticketd }
+  minReplicas: 2
+  maxReplicas: 8 # x PG_POOL_MAX 10 = 80 Postgres connections (max_connections 200)
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ticketd
+  namespace: gamevault
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: ticketd }

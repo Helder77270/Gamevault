@@ -92,11 +92,27 @@ vehicle, the blockchain is the lock."
   RoyaltyPayment, Loan, PendingPayout. Feeds /provenance.
 - `shared/` — TypeScript types + ticket signing/verification lib (used by
   web, launcher, ticketd)
-- `k8s/` + `deploy/` — production infra (2026-10-11, docs/infra.md):
-  Dockerfiles (ticketd, web standalone), kustomize manifests, Ansible
-  playbook (k3s, ingress-nginx, cert-manager). ticketd stays ONE replica
-  until SQLite → Postgres + Redis (TODO P9); web scales out (HPA).
-  Offline checks: `kubectl kustomize k8s/base | python deploy/check-manifests.py`.
+- `k8s/` + `deploy/` — production infra (2026-10-11, docs/infra.md,
+  docs/runbook.md): Dockerfiles (ticketd, web standalone), kustomize
+  (`base`, optional `components/postgres`, `overlays/minikube`, `ops/`
+  restore Job), Ansible playbook (k3s, ingress-nginx, cert-manager),
+  `docker-compose.yml` (full stack on one machine), `deploy/minikube.ps1`,
+  `deploy/e2e-multireplica.mjs`. Offline checks:
+  `kubectl kustomize k8s/overlays/minikube | python deploy/check-manifests.py`.
+- ticketd storage (2026-10-11): `src/sql.ts` = one async SQL interface,
+  SQLite by default / Postgres when `DATABASE_URL`; versioned migrations
+  (`MIGRATIONS`, never edit an applied one); `src/live.ts` = presence,
+  pending tickets, SSE fan-out, chat rate limit in memory / Redis when
+  `REDIS_URL`. Every repository in db.ts is async. ticketd is stateless
+  in Kubernetes (2-8 replicas). `/health` liveness, `/ready` = Postgres
+  only (Redis down = degraded, not down), `/metrics` Prometheus, graceful
+  SIGTERM. Tests: `npm run selftest -w @gamevault/ticketd`, and with
+  `GAMEVAULT_TEST_BACKENDS=1 DATABASE_URL=… REDIS_URL=…` against real ones.
+- Local machine setup (2026-10-11): Docker Desktop 29, minikube 1.34
+  (`C:\Program Files\Kubernetes\Minikube`), `~/.wslconfig` forces cgroups v2
+  (WSL kernel 6.18 has no v1 memory controller), Ansible 2.13 + ansible-lint
+  in WSL Ubuntu (`/root/.local/bin`). `minikube image load` fails (wmic):
+  the script copies images into minikube's Docker instead.
 
 ## Launcher UI conventions (2026-10-11)
 - Profile screen mirrors the public web page (/u/<address>); privacy and RESTART live in Settings.

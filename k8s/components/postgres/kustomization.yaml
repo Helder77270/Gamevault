@@ -1,0 +1,11 @@
+# In-cluster Postgres (StatefulSet + nightly pg_dump CronJob + network
+# policy), and ticketd wired to it. Include it from an overlay:
+#   components: [../../components/postgres]
+# Leave it out to use a managed Postgres (DATABASE_URL in gamevault-secrets).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - postgres.yaml
+  - networkpolicy.yaml
+patches:
+  - path: ticketd-database.yaml

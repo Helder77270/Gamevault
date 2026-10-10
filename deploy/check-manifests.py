@@ -17,13 +17,19 @@ for d in docs:
 
 services = {s["metadata"]["name"]: s for s in by_kind.get("Service", [])}
 workloads = by_kind.get("Deployment", []) + by_kind.get("StatefulSet", [])
+# CronJobs: their pod template is checked too (no probes: jobs end)
+jobs = [
+    {"kind": "CronJob", "metadata": c["metadata"], "spec": {"selector": {"matchLabels": c["spec"]["jobTemplate"]["spec"]["template"]["metadata"]["labels"]},
+     "template": c["spec"]["jobTemplate"]["spec"]["template"]}, "_job": True}
+    for c in by_kind.get("CronJob", [])
+]
 
 
 def labels_match(selector: dict, labels: dict) -> bool:
     return all(labels.get(k) == v for k, v in selector.items())
 
 
-for w in workloads:
+for w in workloads + jobs:
     name = f'{w["kind"]}/{w["metadata"]["name"]}'
     spec = w["spec"]
     tpl = spec["template"]
@@ -38,8 +44,15 @@ for w in workloads:
     for c in tpl["spec"]["containers"]:
         cn = f"{name}/{c['name']}"
         for probe in ("livenessProbe", "readinessProbe", "startupProbe"):
-            if probe not in c:
+            if probe not in c and not w.get("_job"):
                 errors.append(f"{cn}: {probe} missing")
+        # $(VAR) in an env value must refer to a variable defined BEFORE it
+        seen_env: set[str] = set()
+        for e in c.get("env", []):
+            for ref in __import__("re").findall(r"\$\(([A-Z0-9_]+)\)", str(e.get("value", ""))):
+                if ref not in seen_env:
+                    errors.append(f"{cn}: env {e['name']} uses $({ref}) before it is defined")
+            seen_env.add(e["name"])
         res = c.get("resources", {})
         if "requests" not in res or "limits" not in res:
             errors.append(f"{cn}: resources requests/limits missing")

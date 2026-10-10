@@ -1,0 +1,79 @@
+# Redis for ticketd (2026-10-11) — the LIVE, disposable state shared by the
+# ticketd replicas: presence (90 s TTL), pending pairing tickets (10 min),
+# the SSE event fan-out (pub/sub) and the chat rate limit. Nothing here has
+# to survive a restart, so no persistence and no volume: a restart costs a
+# presence blink and, at worst, one pairing to redo.
+#
+# One instance is enough for a long time (pub/sub + small keys). For HA:
+# a managed Redis or Redis Sentinel, then set REDIS_URL accordingly.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: gamevault
+  labels: { app.kubernetes.io/name: redis, app.kubernetes.io/part-of: gamevault }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: redis }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: redis, app.kubernetes.io/part-of: gamevault }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999 # redis user of the alpine image
+        runAsGroup: 999
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          imagePullPolicy: IfNotPresent
+          args:
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+            - --maxmemory
+            - 256mb
+            - --maxmemory-policy
+            - volatile-ttl # every key ticketd writes has a TTL; the nearest expiry goes first
+          ports:
+            - { name: redis, containerPort: 6379 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 320Mi }
+          startupProbe:
+            exec: { command: [redis-cli, ping] }
+            periodSeconds: 2
+            failureThreshold: 15
+          livenessProbe:
+            exec: { command: [redis-cli, ping] }
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            exec: { command: [redis-cli, ping] }
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 2
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+      volumes:
+        - { name: data, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: gamevault
+  labels: { app.kubernetes.io/name: redis }
+spec:
+  selector: { app.kubernetes.io/name: redis }
+  ports:
+    - { name: redis, port: 6379, targetPort: redis }

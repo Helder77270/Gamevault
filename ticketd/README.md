@@ -9,9 +9,11 @@ web app and the launcher, every request body size-capped.
 
 | Route | Caller | Auth | Purpose |
 |---|---|---|---|
-| `GET /health` | launcher | – | liveness |
+| `GET /health` | launcher, Kubernetes | – | liveness (the process answers; never checks dependencies) |
+| `GET /ready` | Kubernetes | – | readiness: database reachable and not draining (503 otherwise); Redis reported as `liveOk` |
+| `GET /metrics` | Prometheus | – | responses by status class, open SSE streams, backends, heap |
 | `POST /ticket` | web `/pair` | SIWE pairing message (embeds the device pubkey) | issue a ticket sealed to that device |
-| `GET /pending/:nonce` | launcher | nonce | hand the ticket over once (10 min, memory) |
+| `GET /pending/:nonce` | launcher | nonce | hand the ticket over once (10 min; memory or Redis) |
 | `POST /publish` | web `/studio` | studio-signed message in `X-GameVault-Message` / `X-GameVault-Signature` | encrypt with a fresh key, pin to IPFS, store the key |
 | `GET /build/:cid` | launcher | – | build mirror: builds cached at publish, otherwise on-chain CIDs fetched from IPFS and sha256-checked |
 | `POST /session` · `POST /session/device` · `GET`/`DELETE /session` | web · launcher | one wallet signature · device-key proof built by the Rust core | 24 h social session (Bearer token, only its hash is stored) |
@@ -26,8 +28,9 @@ web app and the launcher, every request body size-capped.
 | `GET /events?token=` | web, launcher | session token | live stream (SSE): message, read, presence, friends |
 
 Signed messages (pairing, publish, device revoke, session opening): exact
-canonical format, ≤ 10 min old, single-use nonce persisted in SQLite (no
-replay after a restart). Social actions then use the session token.
+canonical format, ≤ 10 min old, single-use nonce persisted in the database
+(no replay after a restart, nor on another replica). Social actions then use
+the session token.
 
 ## Ticket issuance (`POST /ticket`)
 1. Parse and byte-compare the SIWE pairing message; chain + contract must match.
@@ -39,18 +42,33 @@ replay after a restart). Social actions then use the session token.
 5. ECIES-wrap the key to the DEVICE pubkey, expiry = min(30 days, loan end),
    sign with `TICKET_SIGNER_PRIVKEY`, register the device (LRU eviction past 2).
 
-## Storage
-`data/ticketd.db` (SQLite, WAL): `content_keys` (encrypted with
-`KEYSTORE_MASTER_KEY`, CID as AAD), `nonces`, `friend_requests`,
-`friendships`, `profiles` (+ bio, member since), `playstats`, `devices`,
-`sessions`, `activity`, `studio_pages`, `messages`. Avatars and cached builds
-are files under `data/`. Backup: `npm run backup -w @gamevault/ticketd`
-(the master key is deliberately not in the backup).
+## Storage (2026-10-11: SQLite or Postgres, memory or Redis)
+Durable data — `src/sql.ts` + `src/db.ts`:
+- **SQLite** `data/ticketd.db` (WAL) by default: local dev, the POC, the
+  selftest (in memory).
+- **Postgres** when `DATABASE_URL` is set: several replicas share it.
+Tables: `content_keys` (encrypted with `KEYSTORE_MASTER_KEY`, CID as AAD),
+`nonces`, `friend_requests`, `friendships`, `profiles`, `avatars`,
+`playstats`, `devices`, `sessions`, `activity`, `studio_pages`, `messages`,
+`wishlist`, `privacy`. Schema = versioned migrations (`MIGRATIONS` in
+`sql.ts`, table `schema_migrations`), applied at start-up under an advisory
+lock — add one, never edit an applied one.
+
+Live state — `src/live.ts`: presence, pending pairing tickets, the SSE fan-out
+and the chat rate limit, in memory by default or in **Redis** (`REDIS_URL`).
+Nothing there needs to survive a restart.
+
+Builds: a local cache in `data/builds` (refilled from IPFS on a miss, checked
+against the on-chain hash). Backup: `npm run backup -w @gamevault/ticketd`
+(SQLite file, or `pg_dump` with `DATABASE_URL`); the master key is
+deliberately not in the backup. Operations: `docs/runbook.md`.
 
 ## Run
 ```
 npm run dev -w @gamevault/ticketd        # http://localhost:8787, --watch, loads .env + .env.dev
-npm run selftest -w @gamevault/ticketd   # issuance proof: in-memory DB, no chain
+npm run selftest -w @gamevault/ticketd   # issuance + social proof: in-memory DB, no chain
+GAMEVAULT_TEST_BACKENDS=1 DATABASE_URL=postgres://… REDIS_URL=redis://… npm run selftest -w @gamevault/ticketd
+npm run migrate -w @gamevault/ticketd    # Postgres migrations (-- --status, -- --from-sqlite [file] [--force])
 npm run demo -w @gamevault/ticketd       # demo state: read-only report + plan
 npm run demo -w @gamevault/ticketd -- --apply --buyer 0x…   # prepare it (testnet, dev only)
 ```
@@ -60,4 +78,7 @@ owner) gets an unlent, unlisted licence of the demo edition (`--edition`,
 default 2 = Runner, bought and transferred by `DEV_WALLET_PRIVKEY`), the
 market keeps one listing, A and B (`--buyer`) become friends since 4 days,
 and it prints the step-by-step demo. Idempotent: run it before every demo.
-Configuration: see `.env.example` (variable names and roles).
+Configuration: see `.env.example` (variable names and roles). Scale-out
+settings: `DATABASE_URL`, `REDIS_URL`, `PG_POOL_MAX` (10), `PG_STATEMENT_TIMEOUT_MS`
+(10000), `DB_CONNECT_RETRIES` (30 × 2 s at start-up), `SHUTDOWN_DELAY_MS` (0;
+5000 in Kubernetes), `SHUTDOWN_GRACE_MS` (10000).

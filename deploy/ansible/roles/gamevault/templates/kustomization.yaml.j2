@@ -4,6 +4,11 @@ kind: Kustomization
 namespace: gamevault
 resources:
   - ../base
+{% if external_database_url | length == 0 %}
+# in-cluster Postgres (+ nightly dumps); a managed one: DATABASE_URL in the vault
+components:
+  - ../components/postgres
+{% endif %}
 images:
   - name: ghcr.io/gamevault/ticketd
     newName: {{ image_registry }}/ticketd
@@ -29,6 +34,15 @@ patches:
     patch: |-
       - { op: replace, path: /spec/minReplicas, value: {{ web_min_replicas }} }
       - { op: replace, path: /spec/maxReplicas, value: {{ web_max_replicas }} }
-  - target: { group: apps, version: v1, kind: StatefulSet, name: ticketd }
+{% if external_database_url | length == 0 %}
+  - target: { group: apps, version: v1, kind: StatefulSet, name: postgres }
     patch: |-
-      - { op: replace, path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage, value: {{ ticketd_storage }} }
+      - { op: replace, path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage, value: {{ postgres_storage }} }
+  - target: { version: v1, kind: PersistentVolumeClaim, name: postgres-backups }
+    patch: |-
+      - { op: replace, path: /spec/resources/requests/storage, value: {{ backup_storage }} }
+{% endif %}
+  - target: { group: autoscaling, version: v2, kind: HorizontalPodAutoscaler, name: ticketd }
+    patch: |-
+      - { op: replace, path: /spec/minReplicas, value: {{ ticketd_min_replicas }} }
+      - { op: replace, path: /spec/maxReplicas, value: {{ ticketd_max_replicas }} }

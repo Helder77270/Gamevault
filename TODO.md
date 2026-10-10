@@ -341,17 +341,24 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
       de versions (contrat v1.2, item C) : prévu dans la vue, pas branché.
 
 ## P9 — Avant une vraie mise en ligne (repéré pendant P8 #7, docs/infra.md)
-- [ ] ticketd multi-réplicas : SQLite → Postgres, présence / tickets en
-      attente / événements temps réel → Redis (pub/sub). Puis Deployment + HPA.
+- [x] (2026-10-11) ticketd multi-réplicas : SQLite → Postgres, présence /
+      tickets en attente / événements temps réel → Redis (pub/sub), Deployment
+      + HPA 2-8, sauvegarde nocturne + restauration testées, docker compose,
+      runbook (docs/runbook.md). Prouvé sur minikube (e2e multi-réplicas,
+      0 requête perdue en rolling update).
 - [ ] Builds servis par stockage objet + CDN (plages d'octets), ticketd ne
       renvoie que l'adresse ; IPFS reste le secours.
 - [ ] Launcher : adresses de production (aujourd'hui 127.0.0.1:8787 et
       localhost:3000 en dur) via une config de build.
-- [ ] Sauvegarde automatique de la base ticketd (CronJob ou Postgres
-      managé) ; KEYSTORE_MASTER_KEY gardée hors du cluster.
+- [x] (2026-10-11) Sauvegarde automatique (CronJob pg_dump, 14 jours) +
+      Job de restauration testé. Reste : copie hors cluster, et
+      KEYSTORE_MASTER_KEY gardée hors du cluster.
 - [ ] RPC Base payant ; observabilité (Prometheus/Grafana, logs).
-- [ ] Construire les images et passer ansible-lint / un déploiement de test
-      (k3s sur une VM).
+- [x] (2026-10-11) Images construites, ansible-lint profil production 0/0,
+      déploiement de test complet sur minikube. Reste : un vrai serveur.
+- [ ] Postgres managé (PITR) + Redis managé/Sentinel ; gestionnaire de
+      secrets et rotation des clés de signature ; tir de charge (k6) ;
+      NetworkPolicy éprouvées (Calico/Cilium). Détail : docs/runbook.md §7.
 
 ## Idées plus tard
 0G storage swap (1 fichier : shared/storage.ts) · World ID gating si besoin

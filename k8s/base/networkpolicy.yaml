@@ -43,3 +43,20 @@ spec:
             matchLabels: { app.kubernetes.io/name: web }
       ports:
         - { protocol: TCP, port: 8787 }
+---
+# Redis: only ticketd
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-from-ticketd
+  namespace: gamevault
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: redis }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: ticketd }
+      ports:
+        - { protocol: TCP, port: 6379 }
