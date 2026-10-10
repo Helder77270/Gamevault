@@ -99,6 +99,7 @@ vehicle, the blockchain is the lock."
   Offline checks: `kubectl kustomize k8s/base | python deploy/check-manifests.py`.
 
 ## Launcher UI conventions (2026-10-11)
+- Profile screen mirrors the public web page (/u/<address>); privacy and RESTART live in Settings.
 - Shapes = "Style A · Chanfrein" (45° cut corners, no pills) — see the
   art-direction skill; extend the chamfer block to any new component.
 - Game Shelf shows only the player's games (owned, on a card, lent,

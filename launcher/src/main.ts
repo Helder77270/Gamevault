@@ -1983,6 +1983,7 @@ interface MyProfile {
 }
 
 let myProfile: MyProfile | null = null;
+let myStudios: { id: string; name: string }[] = [];
 let myProfileState: "idle" | "loading" | "offline" = "idle";
 let avatarBust = 0;
 let profEdit: { name: string; bio: string; avatar: string; preview: string | null; busy: boolean; error: string } | null = null;
@@ -1996,6 +1997,8 @@ async function loadMyProfile(): Promise<void> {
     if (!res.ok) throw new Error(String(res.status));
     myProfile = (await res.json()) as MyProfile;
     myProfileState = "idle";
+    const st = await fetch(`${TICKETD_URL}/studios/of/${me}`, { signal: AbortSignal.timeout(4000) }).catch(() => null);
+    if (st?.ok) myStudios = (await st.json()) as { id: string; name: string }[];
   } catch {
     myProfileState = "offline";
   }
@@ -2041,27 +2044,7 @@ function myAvatar(size: number): string {
   return avatarBust ? html.replace(/(\/profile\/avatar\/[^"]+)"/, `$1?t=${avatarBust}"`) : html;
 }
 
-function wishlistCard(): string {
-  const rows = Object.keys(state.wish)
-    .map((id) => state.catalog.find((e) => e.editionId === id))
-    .filter((e): e is OnchainEdition => Boolean(e))
-    .map(
-      (e) => `<div class="prof-wish">
-        <button class="prof-wish-art" style="${artFor(e.editionId)}" data-storesel="${esc(e.editionId)}" aria-label="${esc(e.title)}"></button>
-        <div style="flex:1;min-width:0">
-          <button class="prof-link" data-storesel="${esc(e.editionId)}">${esc(e.title)}</button>
-          <div class="set-sub">${esc(formatEth(e.priceWei))} ETH${state.deals[e.editionId] && state.deals[e.editionId].price < e.priceWei ? ` · ${esc(t("store.usedFrom", { p: formatEth(state.deals[e.editionId].price) }))}` : ""}</div>
-        </div>
-        <button class="pillbtn" data-wish="${esc(e.editionId)}">${esc(t("prof.wishRemove"))}</button>
-      </div>`,
-    )
-    .join("");
-  return `<section class="set-card">
-    <div class="mono-label">${t("prof.wishlist")} · ${Object.keys(state.wish).length}</div>
-    ${rows || `<div class="set-sub">${esc(t("prof.wishEmpty"))}</div>`}
-  </section>`;
-}
-
+/** The profile, laid out like the public web page (/u/<address>). */
 function profileView(): string {
   const me = libraryAddress();
   if (!me) {
@@ -2072,92 +2055,173 @@ function profileView(): string {
   const p = myProfile;
   const name = p?.name ?? short(me, 6);
   const titleOf = (id: string) => state.catalog.find((e) => e.editionId === id)?.title ?? `#${id}`;
-  const owned = new Set(state.owned.map((o) => o.editionId)).size;
+  const playedOf = (id: string) => p?.topPlayed.find((r) => r.editionId === id)?.seconds ?? 0;
+  const now = Math.floor(Date.now() / 1000);
+  const meLc = me.toLowerCase();
 
-  const idCard = profEdit
-    ? `<section class="set-card prof-id">
-        <div class="prof-avwrap">
-          ${profEdit.preview ? `<span class="lc-av" style="width:96px;height:96px"><img src="${esc(profEdit.preview)}" alt="" /></span>` : profEdit.avatar === "none" ? avatarHtml({ addr: me, name: profEdit.name || null }, 96) : myAvatar(96)}
-          <label class="pillbtn" for="prof-file">${esc(t("prof.avatarChange"))}</label>
-          <input type="file" id="prof-file" accept="image/png,image/jpeg,image/webp" hidden />
-          ${p?.hasAvatar || profEdit.preview ? `<button class="pillbtn" id="prof-avnone">${esc(t("prof.avatarRemove"))}</button>` : ""}
-        </div>
-        <div class="prof-form">
-          <label class="set-sub" for="prof-name">${esc(t("prof.name"))}</label>
-          <input class="aura-input" id="prof-name" maxlength="24" value="${esc(profEdit.name)}" />
-          <label class="set-sub" for="prof-bio">${esc(t("prof.bio"))}</label>
-          <textarea class="aura-input prof-bio-in" id="prof-bio" maxlength="500" rows="4">${esc(profEdit.bio)}</textarea>
-          ${profEdit.error ? `<div class="errbox">${esc(profEdit.error)}</div>` : ""}
-          <div class="prof-btns">
-            <button class="pillbtn" id="prof-cancel">${esc(t("acc.cancel"))}</button>
-            <button class="cta" id="prof-save" ${profEdit.busy ? "disabled" : ""}>${esc(t(profEdit.busy ? "prof.saving" : "prof.save"))}</button>
+  // library: what the chain says (owned, lent, borrowed), like the web page
+  const lentIds = new Set(state.loans.filter((l) => l.owner.toLowerCase() === meLc).map((l) => l.tokenId));
+  const library = [
+    ...state.owned.map((o) => ({ id: o.tokenId, editionId: o.editionId, note: lentIds.has(o.tokenId) ? t("pp.lent") : "" })),
+    ...state.loans
+      .filter((l) => l.user.toLowerCase() === meLc && l.expires >= now)
+      .map((l) => ({ id: l.tokenId, editionId: l.editionId, note: t("pp.borrowed", { n: Math.max(0, Math.ceil((l.expires - now) / 86400)) }) })),
+  ];
+  const onSale = state.owned.filter((o) => {
+    const m = state.market[o.tokenId];
+    return m && m.seller.toLowerCase() === meLc && m.owner.toLowerCase() === meLc;
+  });
+  const showcase = (p?.favorites ?? []).slice(0, 3);
+  const presence = p?.presence?.state === "playing" ? p.presence : { state: "online" as const, editionId: null }; // this launcher is open
+
+  const modal = profEdit
+    ? `<div class="dp-scrim" id="prof-scrim"></div>
+      <div class="dp pp-edit" role="dialog" aria-labelledby="pp-edit-title">
+        <div class="mono-label">${t("prof.title")}</div>
+        <h2 id="pp-edit-title">${esc(t("pp.editTitle"))}</h2>
+        <div class="pp-edit-body">
+          <div class="prof-avwrap">
+            ${profEdit.preview ? `<span class="lc-av" style="width:96px;height:96px"><img src="${esc(profEdit.preview)}" alt="" /></span>` : profEdit.avatar === "none" ? avatarHtml({ addr: me, name: profEdit.name || null }, 96) : myAvatar(96)}
+            <label class="pillbtn" for="prof-file">${esc(t("prof.avatarChange"))}</label>
+            <input type="file" id="prof-file" accept="image/png,image/jpeg,image/webp" hidden />
+            ${p?.hasAvatar || profEdit.preview ? `<button class="pillbtn" id="prof-avnone">${esc(t("prof.avatarRemove"))}</button>` : ""}
+          </div>
+          <div class="prof-form">
+            <label class="set-sub" for="prof-name">${esc(t("prof.name"))}</label>
+            <input class="aura-input" id="prof-name" maxlength="24" value="${esc(profEdit.name)}" />
+            <label class="set-sub" for="prof-bio">${esc(t("prof.bio"))}</label>
+            <textarea class="aura-input prof-bio-in" id="prof-bio" maxlength="500" rows="5">${esc(profEdit.bio)}</textarea>
+            ${profEdit.error ? `<div class="errbox">${esc(profEdit.error)}</div>` : ""}
           </div>
         </div>
-      </section>`
-    : `<section class="set-card prof-id">
-        <div class="prof-avwrap">${myAvatar(96)}</div>
-        <div style="flex:1;min-width:0">
-          <div class="prof-name">${esc(name)}</div>
-          <div class="prof-addr">${esc(short(me, 8))}${p?.memberSince ? ` · ${esc(t("prof.since", { d: new Date(p.memberSince).toLocaleDateString(locale(), { month: "short", year: "numeric" }) }))}` : ""}</div>
-          <p class="prof-bio">${esc(p?.bio || t("prof.noBio"))}</p>
-          ${state.session ? `<button class="pillbtn" id="prof-edit">${esc(t("prof.edit"))}</button>` : ""}
+        <div class="dp-actions">
+          <button class="sx-btn ghost" id="prof-cancel">${esc(t("acc.cancel"))}</button>
+          <button class="sx-play dp-go" id="prof-save" ${profEdit.busy ? "disabled" : ""}>${esc(t(profEdit.busy ? "prof.saving" : "prof.save"))}</button>
         </div>
-      </section>`;
+      </div>`
+    : "";
 
-  const stats = `<div class="prof-stats">
-      <div class="pv-stat"><div class="k">${t("prof.playtime")}</div><div class="v">${p?.totalSeconds != null ? fmtDur(p.totalSeconds) : "—"}</div></div>
-      <div class="pv-stat"><div class="k">${t("prof.games")}</div><div class="v">${owned}</div></div>
-      <div class="pv-stat"><div class="k">${t("prof.friends")}</div><div class="v">${p?.friendsCount ?? "—"}</div></div>
-      <div class="pv-stat"><div class="k">${t("prof.devices")}</div><div class="v">${p?.devicesCount != null ? `${p.devicesCount} / 2` : "—"}</div></div>
-    </div>`;
-
-  const played = (p?.topPlayed ?? [])
-    .map((r) => `<div class="prof-row"><span class="prof-mini" style="${artFor(r.editionId)}"></span><span style="flex:1;min-width:0">${esc(titleOf(r.editionId))}</span><span class="set-sub">${fmtDur(r.seconds)}</span></div>`)
-    .join("");
-  const ago = (ms: number) => fmtAgo(ms);
   const feed = (p?.activity ?? [])
-    .slice(0, 8)
+    .slice(0, 10)
     .map((a) => {
       const what =
         a.kind === "played"
           ? t("prof.actPlayed", { g: titleOf(String(a.data.editionId)), d: fmtDur(Number(a.data.seconds)) })
           : t("prof.actFriend", { n: String((a.data.withName as string | null) ?? short(String(a.data.with), 6)) });
-      return `<div class="prof-row"><span style="flex:1;min-width:0">${esc(what)}</span><span class="set-sub">${esc(ago(a.at))}</span></div>`;
+      return `<div><span>${esc(what)}</span><small>${esc(fmtAgo(a.at))}</small></div>`;
     })
     .join("");
-  const friends = (p?.friends ?? []).map((f) => `<button class="prof-friend" data-profile="${esc(f.addr)}" title="${esc(f.name ?? f.addr)}">${avatarHtml(f, 40)}</button>`).join("");
 
   return `
-    <div class="shelf">
-      <div class="shelf-head">
-        <div style="display:flex;align-items:center;gap:18px">
-          <button class="backbtn" data-go="home">&#8592;</button>
-          <div>
-            <div class="shelf-title">${t("prof.title")}</div>
-            <div class="shelf-meta">${myProfileState === "offline" ? esc(t("prof.offline")) : esc(presenceLabel(p?.presence))}</div>
+    <div class="pp">
+      <div class="pp-scroll">
+        <div class="pp-banner"></div>
+        <div class="pp-head">
+          <span class="pp-av">${myAvatar(128)}</span>
+          <div class="pp-id">
+            <div class="pp-name">
+              ${esc(name)}
+              ${presence.state === "playing" ? `<span class="pp-pill playing">● ${esc(t("pp.playing", { g: titleOf(presence.editionId ?? "") }))}</span>` : `<span class="pp-pill online">● ${esc(t("pp.online"))}</span>`}
+              ${myStudios.length ? `<span class="pp-pill studio">STUDIO</span>` : ""}
+            </div>
+            <div class="pp-meta">${esc(short(me, 6))}${p?.memberSince ? ` · ${esc(t("pp.since", { d: new Date(p.memberSince).toLocaleDateString(locale(), { month: "short", year: "numeric" }) }))}` : ""}${p?.devicesCount != null ? ` · ${esc(t("pp.devices", { n: p.devicesCount }))}` : ""}</div>
+            ${myStudios.length ? `<div class="pp-meta">${myStudios.map((s) => esc(s.name)).join(" · ")}</div>` : ""}
+          </div>
+          <div class="pp-actions">
+            ${state.session ? `<button class="sx-play pp-btn" id="prof-edit">${esc(t("pp.edit"))}</button>` : ""}
+            <button class="sx-btn" data-profile="${esc(me)}">${esc(t("prof.public"))} ↗</button>
           </div>
         </div>
-        <div style="display:flex;gap:8px"><button class="pillbtn" data-profile="${esc(me)}">${t("prof.public")} ↗</button></div>
-      </div>
-      <div class="prof-wrap">
-        <div class="prof-col">
-          ${idCard}
-          ${stats}
-          <section class="set-card"><div class="mono-label">${t("prof.recent")}</div>${played || `<div class="set-sub">${esc(t("prof.nothing"))}</div>`}</section>
-          <section class="set-card"><div class="mono-label">${t("prof.activity")}</div>${feed || `<div class="set-sub">${esc(t("prof.nothing"))}</div>`}</section>
+        ${myProfileState === "offline" ? `<div class="errbox" style="margin:16px 40px 0">${esc(t("prof.offline"))}</div>` : ""}
+        <div class="pp-body">
+          <div class="pp-main">
+            <div class="pp-box">
+              <div class="pp-label">${t("pp.about")}</div>
+              <p class="pp-bio">${esc(p?.bio || t("pp.noBio"))}</p>
+            </div>
+            <div>
+              <div class="pp-label">${t("pp.showcase")} <span>${t("pp.soon")}</span></div>
+              <div class="pp-cards">
+                ${showcase
+                  .map(
+                    (id) => `<button class="pp-card" data-storesel="${esc(id)}">
+                      <div class="art" style="${artFor(id)}"></div>
+                      <div class="txt"><div class="t">${esc(titleOf(id))}</div><div class="s">${playedOf(id) ? fmtDur(playedOf(id)) : esc(t("pp.favorite"))}</div></div>
+                    </button>`,
+                  )
+                  .join("")}
+                ${Array.from({ length: Math.max(0, 3 - showcase.length) }, () => `<div class="pp-slot">${t("pp.freeSlot")}</div>`).join("")}
+              </div>
+            </div>
+            <div class="pp-box">
+              <div class="pp-label">${t("pp.library")} · ${library.length}</div>
+              ${
+                library.length
+                  ? library
+                      .map(
+                        (l) => `<button class="pp-row" data-prov="${esc(l.id)}" title="${esc(t("det.provTitle", { id: l.id }))}">
+                          <div class="art" style="${artFor(l.editionId)}"></div>
+                          <div style="flex:1;min-width:0">
+                            <div class="t">${esc(titleOf(l.editionId))} <span class="pp-dim">· ${esc(t("pp.licence", { id: l.id }))}</span></div>
+                            <div class="pp-dim">${playedOf(l.editionId) ? fmtDur(playedOf(l.editionId)) : esc(t("pp.notPlayed"))}</div>
+                          </div>
+                          ${l.note ? `<span class="lr-chip warn">${esc(l.note)}</span>` : ""}
+                        </button>`,
+                      )
+                      .join("")
+                  : `<p class="pp-dim">${esc(t("pp.noLicence"))}</p>`
+              }
+            </div>
+            <div class="pp-box">
+              <div class="pp-label">${t("pp.activity")}</div>
+              <div class="pp-feed">${feed || `<span class="pp-dim">${esc(t("prof.nothing"))}</span>`}</div>
+            </div>
+          </div>
+          <div class="pp-side">
+            <div class="pp-stats">
+              <div class="pp-stat"><small>${t("pp.statLicences")}</small><b>${state.owned.length}</b></div>
+              <div class="pp-stat"><small>${t("prof.playtime")}</small><b>${p?.totalSeconds != null ? fmtDur(p.totalSeconds) : "—"}</b></div>
+              <div class="pp-stat"><small>${t("pp.statLoans")}</small><b>${lentIds.size}</b></div>
+              <div class="pp-stat"><small>${t("prof.friends")}</small><b>${p?.friendsCount ?? "—"}</b></div>
+            </div>
+            <div class="pp-box">
+              <div class="pp-label">${t("pp.badges")} <span>${t("pp.soon")}</span></div>
+              <div class="pp-badges">${[0, 1, 2, 3].map(() => `<span class="pp-badge" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></span>`).join("")}</div>
+              <p class="pp-dim" style="margin:10px 0 0">${esc(t("pp.badgesSub"))}</p>
+            </div>
+            ${
+              onSale.length
+                ? `<div class="pp-box violet">
+                <div class="pp-label violet">${esc(t("pp.onSale", { n: name }))}</div>
+                ${onSale
+                  .map(
+                    (o) => `<button class="pp-row" data-offer="${esc(o.tokenId)}">
+                      <div class="art" style="${artFor(o.editionId)}"></div>
+                      <div style="flex:1;min-width:0"><div class="t">${esc(titleOf(o.editionId))} · #${esc(o.tokenId)}</div><div class="pp-violet">${esc(formatEth(state.market[o.tokenId].price))} ETH</div></div>
+                    </button>`,
+                  )
+                  .join("")}
+              </div>`
+                : ""
+            }
+            <div class="pp-box">
+              <div class="pp-label">${t("prof.friends")} · ${p?.friendsCount ?? 0}</div>
+              <div class="pp-friends">${(p?.friends ?? []).map((f) => `<button class="prof-friend" data-profile="${esc(f.addr)}" title="${esc(f.name ?? f.addr)}">${avatarHtml(f, 40)}</button>`).join("") || `<span class="pp-dim">${esc(t("fr.none"))}</span>`}</div>
+            </div>
+          </div>
         </div>
-        <div class="prof-col">
-          <section class="set-card"><div class="mono-label">${t("prof.friends")} · ${p?.friendsCount ?? 0}</div><div class="prof-friends">${friends || `<span class="set-sub">${esc(t("fr.none"))}</span>`}</div></section>
-          ${wishlistCard()}
-          ${privacyCard()}
-        </div>
       </div>
+      ${modal}
     </div>`;
 }
 
 function wireProfile(root: HTMLElement): void {
   root.querySelector("#prof-edit")?.addEventListener("click", () => {
     profEdit = { name: myProfile?.name ?? "", bio: myProfile?.bio ?? "", avatar: "keep", preview: null, busy: false, error: "" };
+    render();
+  });
+  root.querySelector("#prof-scrim")?.addEventListener("click", () => {
+    profEdit = null;
     render();
   });
   root.querySelector("#prof-cancel")?.addEventListener("click", () => {
@@ -2448,6 +2512,14 @@ function settingsView(): string {
           ${toggle("set-nt-security", settings.notif.security, t("set.nt.security"), t("set.nt.securitySub"))}
           ${toggle("set-nt-wishlist", settings.notif.wishlist, t("set.nt.wishlist"), t("set.nt.wishlistSub"))}
           <div class="set-row"><div><div class="set-label">${esc(t("set.nt.test"))}</div></div><button class="pillbtn" id="set-nt-test">${esc(t("set.nt.testBtn"))}</button></div>
+        </section>
+        ${privacyCard()}
+        <section class="set-card">
+          <div class="mono-label">${t("sys.title")}</div>
+          <div class="set-row">
+            <div><div class="set-label">${esc(t("sys.restart"))}</div><div class="set-sub">${esc(t("sys.restartSub"))}</div></div>
+            <button class="pillbtn" id="set-restart">${esc(t("sys.restartBtn"))}</button>
+          </div>
         </section>
         <section class="set-card">
           <div class="mono-label">${t("how.title")}</div>
@@ -2782,8 +2854,6 @@ function renderChrome(): void {
     "nav-settings": ["settings"],
     "nav-profile": ["profile"],
   };
-  const restart = document.getElementById("restart-btn");
-  if (restart) restart.hidden = !settings.dev; // a dev tool, not a console button
   const chip = document.getElementById("nav-profile");
   if (chip) {
     const me = libraryAddress();
@@ -3112,6 +3182,7 @@ function wire(root: HTMLElement): void {
       render();
     }),
   );
+  document.getElementById("set-restart")?.addEventListener("click", () => void runBoot());
   document.getElementById("set-nt-test")?.addEventListener("click", () =>
     void notify({ kind: "download", title: t("nt.dlDone", { t: "GameVault Runner" }), body: t("nt.dlDoneBody"), action: () => go("downloads") }),
   );
@@ -4670,7 +4741,6 @@ window.addEventListener("DOMContentLoaded", () => {
   void refreshAutostart();
   void refreshLibrary();
   loadSession();
-  document.getElementById("restart-btn")?.addEventListener("click", () => void runBoot());
   document.getElementById("store-btn")?.addEventListener("click", () => void openUrl(MARKETPLACE_URL));
   document.querySelectorAll<HTMLButtonElement>("[data-navgo]").forEach((b) =>
     b.addEventListener("click", () => {
