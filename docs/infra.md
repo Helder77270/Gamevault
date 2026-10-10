@@ -135,13 +135,34 @@ Vérifié :
 - Le service de builds en flux de ticketd (nécessaire au conteneur avec de
   gros jeux) est testé en vrai sur 480 Mio.
 
-Pas vérifié (pas d'outil installé, je n'ai rien téléchargé sans ton accord) :
-- **Construction des images Docker** : Docker Desktop n'était pas démarré.
-  La sortie `standalone` de Next.js est activée ; le CI (`npm run build`)
-  la construira au prochain push.
-- **`ansible-playbook --syntax-check` / ansible-lint** : Ansible n'est pas
-  installé (WSL a Python 3.8 sans Ansible).
-- **Déploiement réel** : aucun cluster disponible.
+Vérifié le 11 octobre (après ton feu vert pour Docker, Ansible, minikube) :
+- **Images construites** : `gamevault/ticketd` (296 Mo) et `gamevault/web`
+  (314 Mo). Les deux tournent en utilisateur non-root ; ticketd répond sur
+  `/health`, le web sert l'accueil et une fiche jeu même en système de
+  fichiers **en lecture seule** (comme dans Kubernetes).
+  Le build a révélé deux vrais bugs, corrigés : une apostrophe non échappée
+  (page studio) qui cassait `next build`, et un `NEXT_PUBLIC_*` vide qui
+  n'utilisait pas la valeur par défaut.
+- **Ansible** (ansible-core 2.13 + ansible-lint 6.8, installés dans WSL
+  pour l'utilisateur) : `--syntax-check` OK, **ansible-lint passe au
+  profil « production » : 0 erreur, 0 avertissement**.
+
+Pas vérifié :
+- **Déploiement sur minikube** : impossible sur cette machine en l'état.
+  Le noyau WSL est récent (6.18) et n'offre plus le contrôleur mémoire
+  des cgroups v1 ; Docker Desktop 20.10 (2021) n'utilise que les cgroups
+  v1. Résultat : `missing required cgroups: memory`, kubelet ne démarre
+  pas. Même blocage pour kind ou k3d (ils tournent dans le même Docker).
+  Deux façons d'en sortir (à toi de choisir) :
+  1. **Mettre à jour Docker Desktop** (une version récente gère les
+     cgroups v2 du noyau actuel) — le plus simple, il faut accepter sa
+     licence et les droits admin, donc c'est toi qui l'installes ;
+  2. passer WSL en cgroups v2 seuls (`.wslconfig` :
+     `kernelCommandLine = cgroup_no_v1=all`, puis `wsl --shutdown`) —
+     touche la configuration de WSL pour toutes les distributions, et un
+     Docker Desktop aussi ancien pourrait ne pas suivre.
+  Ensuite : `minikube start --driver=docker`, `minikube image load` des
+  deux images, `minikube addons enable ingress`, `kubectl apply -k`.
 
 ## Ce qui reste avant une vraie mise en ligne
 

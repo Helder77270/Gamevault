@@ -38,7 +38,7 @@
     k3s_join_token: "{{ k3s_token_raw.content | b64decode | trim }}"
   no_log: true
 
-- name: kubectl for root
+- name: Link kubectl for root
   ansible.builtin.file:
     src: /usr/local/bin/k3s
     dest: /usr/local/bin/kubectl

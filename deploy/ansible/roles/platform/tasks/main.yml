@@ -23,7 +23,7 @@
   changed_when: false
   environment: { KUBECONFIG: /etc/rancher/k3s/k3s.yaml }
 
-- name: ingress-nginx (2+ replicas, real client IPs, HPA)
+- name: Install ingress-nginx (2+ replicas, real client IPs, HPA)
   ansible.builtin.command: >
     helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx
     --namespace ingress-nginx --create-namespace
@@ -42,7 +42,7 @@
   register: ingress_nginx
   changed_when: "'has been upgraded' in ingress_nginx.stdout or 'STATUS: deployed' in ingress_nginx.stdout"
 
-- name: cert-manager
+- name: Install cert-manager
   ansible.builtin.command: >
     helm upgrade --install cert-manager jetstack/cert-manager
     --namespace cert-manager --create-namespace
