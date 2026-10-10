@@ -282,7 +282,7 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
 - [x] Liste des phrases retirées dans le rapport, pour en remettre si besoin.
 
 ### 5. Style A « Chanfrein » partout
-- [ ] Coins coupés à 45° (cartouche) sur boutons, vignettes, bannières,
+- [x] Coins coupés à 45° (cartouche) sur boutons, vignettes, bannières,
       panneaux, puces, segments, toasts — launcher, fenêtre des toasts,
       et web (même DA). LED carrées. Le sunset reste réservé à l'achat.
 - [ ] Skill art-direction mis à jour (formes : chanfrein, plus de pilules).

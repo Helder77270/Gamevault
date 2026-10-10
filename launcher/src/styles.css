@@ -1071,3 +1071,43 @@ button { font-family: inherit; }
 .lc-emoji { cursor: pointer; width: 34px; height: 34px; border: none; background: transparent; font-size: 20px; line-height: 1; }
 .lc-emoji:hover, .lc-emoji:focus-visible { background: rgba(226,240,255,0.12); outline: none; }
 .pv-hint:empty, .detail-hint:empty { display: none; }
+
+/* ══ Style A · Chanfrein (P8 #5, validé le 2026-10-10) ══════════════════
+   Plus de pilules ni de grands rayons : des coins coupés à 45°, comme une
+   cartouche taillée. --k = taille de la coupe (grande pour les panneaux,
+   petite pour les puces). Restent ronds : l'horloge orbitale, les blobs du
+   boot, la touche manette de la home et l'art de la veille. */
+:root { --cut-l: 14px; --cut: 9px; --cut-s: 6px; --cut-xs: 4px; }
+
+.pillbtn, .cta, .navbtn, .gearbtn, .avbtn, .backbtn, .winbtn, .sx-play, .sx-btn, .gm-item, .seg-btn,
+.view-toggle, .view-toggle button, .set-toggle, .dp-add, .lc-emoji-btn, .aura-input,
+.set-card, .gamecard, .listrow, .shelf-preview, .pv-banner, .pv-stat, .glass-menu, .hero-art, .stat,
+.errbox, .card-widget, .sx-friend, .sx-tile, .lc-friend, .lc-panel, .lc-loan, .lc-bubble,
+.dl-card, .dl-art, .dl-speed, .dl-item, .dl-thumb, .dl-empty, .dp-opt, .dp-none, .rp-steps li, .rp-log,
+.stg, .stg-row, .stg-ico, .acc-confirm, .tech-acc, .recent-tile, .recent-tile .rart, .step, .errcode,
+.sto-card, .sto-offer, .lr-art, .lc-loan-art, .lc-av, .skin-swatch, .boot-bar, .boot-bar > div,
+.lr-chip, .dl-chip, .dp-badge, .sx-kicker, .sx-chip, .ver, .lc-unread, .sto-badge, .lc-toast, .dl-bar, .dl-bar span,
+.dp-gauge, .stg-gauge, .home-store, .kbd-chip, .sx-kc, .slot-toast, .qr-zone img, .prof-wish-art, .prof-mini {
+  border-radius: 0 !important;
+  --k: var(--cut);
+  clip-path: polygon(var(--k) 0, 100% 0, 100% calc(100% - var(--k)), calc(100% - var(--k)) 100%, 0 100%, 0 var(--k));
+}
+.set-card, .shelf-preview, .lc-panel, .dl-card, .stg, .hero-art, .pv-banner, .glass-menu, .card-widget, .slot-toast { --k: var(--cut-l); }
+.pillbtn, .navbtn, .gearbtn, .avbtn, .backbtn, .winbtn, .gm-item, .seg-btn, .view-toggle button, .set-toggle,
+.aura-input, .listrow, .pv-stat, .stat, .lc-friend, .lc-bubble, .dl-item, .dp-opt, .stg-row, .sx-btn, .sto-offer,
+.lc-emoji-btn, .dp-add, .step, .rp-steps li, .tech-acc, .acc-confirm { --k: var(--cut-s); }
+.lr-chip, .dl-chip, .dp-badge, .sx-kicker, .sx-chip, .ver, .lc-unread, .sto-badge, .lc-av, .lr-art, .lc-loan-art,
+.dl-thumb, .skin-swatch, .sx-kc, .prof-mini, .lc-toast, .boot-bar, .boot-bar > div, .dl-bar, .dl-bar span, .dp-gauge, .stg-gauge { --k: var(--cut-xs); }
+.cta, .sx-play { --k: 11px; }
+/* chat: the speaker's corner stays square, the opposite one is cut */
+.lc-bubble { clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--k)), calc(100% - var(--k)) 100%, 0 100%); }
+.lc-bubble.mine { clip-path: polygon(var(--k) 0, 100% 0, 100% 100%, 0 100%, 0 var(--k)); }
+/* LEDs, knobs, dots: square */
+.led, .cw-led, .slot-led, .set-toggle .knob, .lc-dot::after, .st-led, .boot-dot, .step .sdot, .t-led { border-radius: 0 !important; }
+.set-toggle .knob { width: 16px; height: 16px; margin: 2px; }
+/* a clipped element cannot show an outside focus ring: draw it inside */
+.pillbtn:focus-visible, .cta:focus-visible, .navbtn:focus-visible, .gm-item:focus-visible, .seg-btn:focus-visible,
+.sx-btn:focus-visible, .sx-play:focus-visible, .sx-tile:focus-visible, .gamecard:focus-visible, .listrow:focus-visible,
+.lc-friend:focus-visible, .sto-card:focus-visible, .set-toggle:focus-visible, .aura-input:focus-visible, .avbtn:focus-visible {
+  outline: 2px solid var(--cyan); outline-offset: -3px;
+}

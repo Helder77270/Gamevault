@@ -4341,7 +4341,7 @@ async function loadPrivacy(): Promise<void> {
     privacy = (await res.json()) as Privacy;
     privacyState = "idle";
   } else privacyState = "offline";
-  if (state.screen === "settings") render();
+  if (state.screen === "settings" || state.screen === "profile") render();
 }
 
 async function setPrivacyLevel(section: keyof Privacy, level: PrivacyLevel): Promise<void> {

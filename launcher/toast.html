@@ -66,6 +66,10 @@
       @keyframes cardOut { from { transform: translateY(12px); opacity: 1; } to { transform: translateY(-16px); opacity: 0; } }
       @keyframes ledOn { to { background: oklch(0.8 0.14 var(--ok-h)); box-shadow: 0 0 8px oklch(0.8 0.14 var(--ok-h)); } }
       .calm, .calm.out, .calm .t-card, .calm .t-card.out, .calm .t-led { animation-duration: 0.01s !important; animation-delay: 0s !important; }
+      /* Style A · Chanfrein (P8 #5): cut corners, square LED and close button */
+      .t { border-radius: 0; clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px); }
+      .t-ico { border-radius: 0; clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px); }
+      .t-x, .t-led, .t-brand i { border-radius: 0; }
       @media (prefers-reduced-motion: reduce) { .t, .t.out, .t-card, .t-card.out, .t-led { animation-duration: 0.01s; animation-delay: 0s; } }
     </style>
   </head>

@@ -457,3 +457,33 @@ textarea.pe-input { resize: vertical; line-height: 1.55; min-height: 7rem; }
 .chat-emoji { cursor: pointer; width: 2.1rem; height: 2.1rem; border: none; background: transparent; font-size: 1.25rem; line-height: 1; }
 .chat-emoji:hover, .chat-emoji:focus-visible { background: rgba(226,240,255,0.12); outline: none; }
 @media (max-width: 520px) { .chat-emoji-pop { grid-template-columns: repeat(8, 2.1rem); } }
+
+/* ══ Style A · Chanfrein (P8 #5, validé le 2026-10-10) ══════════════════
+   Même DA que le launcher : coins coupés à 45°, plus de pilules. --k =
+   taille de la coupe. Les grands conteneurs de page passent seulement au
+   carré (une coupe y rognerait menus et popovers). */
+:root { --cut-l: 14px; --cut: 9px; --cut-s: 6px; --cut-xs: 4px; }
+
+.nav a, .btn, .mk-search, .mk-search button, .mk-hero, .mcard .mart, .mcard .soldout, .occbadge, .gd-art, .buybox,
+.stat, .howto, .tag, .notice, .error-box, .ok-box, .card, pre.msg, input, .pf-box, .pf-stat, .pf-card, .pf-slot,
+.pf-badge, .pf-row .art, .pill, .oc-tab, .oc-card, .chat-friend, .chat-unread, .chat-panel, .chat-bubble, .chat-loan,
+.chat-loan-art, .chat-compose input, .chat-emoji-btn, .chat-emoji-pop, .pe-public, .pe-nav a, .pe-card, .pe-text-btn, .pe-input,
+.pe-icon-btn, .pe-tile, .pe-rank, .pe-device, .pe-danger, .pe-pcard, .pe-pfav, .wish-art, .pv-row, .pv-seg, .pv-seg button,
+.mintbar, .mintbar > span, .av, .av-ring {
+  border-radius: 0 !important;
+  --k: var(--cut);
+  clip-path: polygon(var(--k) 0, 100% 0, 100% calc(100% - var(--k)), calc(100% - var(--k)) 100%, 0 100%, 0 var(--k));
+}
+.mk-hero, .gd-art, .buybox, .pf-box, .chat-panel, .pe-card, .pe-pcard, .oc-card { --k: var(--cut-l); }
+.nav a, .btn, .mk-search button, .stat, .pf-stat, .pf-row .art, .chat-friend, .chat-bubble, .chat-loan, .pe-nav a, .pe-input,
+.pe-icon-btn, .pe-tile, .pe-device, .pe-danger, .pe-public, .pe-text-btn, .pv-row, .pv-seg button, input, .chat-compose input,
+.chat-emoji-btn, .notice, .error-box, .ok-box, pre.msg { --k: var(--cut-s); }
+.tag, .pill, .oc-tab, .occbadge, .mcard .soldout, .chat-unread, .chat-loan-art, .pe-rank, .pe-pfav, .wish-art, .pf-badge,
+.mintbar, .mintbar > span, .av, .av-ring { --k: var(--cut-xs); }
+.chat-bubble { clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--k)), calc(100% - var(--k)) 100%, 0 100%); }
+.chat-bubble.mine { clip-path: polygon(var(--k) 0, 100% 0, 100% 100%, 0 100%, 0 var(--k)); }
+.hero, .pane, .pf-banner, .pe-savebar { border-radius: 0 !important; }
+.chat-dot::after, .pe-dot, .brand::before { border-radius: 0 !important; }
+.btn:focus-visible, .nav a:focus-visible, input:focus-visible, .pv-seg button:focus-visible, .chat-emoji-btn:focus-visible {
+  outline: 2px solid var(--cyan); outline-offset: -3px;
+}
