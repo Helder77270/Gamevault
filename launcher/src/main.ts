@@ -82,7 +82,10 @@ interface Settings {
   uiScale: number; // interface scale (native zoom), 1 = 100 %
   calmFx: boolean; // photosensitivity: no animation, no flicker, no decorative effects
   lowBandwidth: boolean; // downloads capped at 2 MB/s, network refreshes 4-6x rarer
+  cvd: "std" | "rg" | "by"; // colour vision: standard, red-green, blue-yellow
 }
+
+const CVD_MODES = ["std", "rg", "by"] as const;
 
 const UI_SCALES = [0.9, 1, 1.1, 1.25, 1.5];
 /** Windows "animation effects" off → reduced motion, whatever the setting says. */
@@ -97,7 +100,7 @@ const VEILLE_CHOICES = [1, 3, 5, 10, 0];
 const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3, libraries: [],
   notif: { download: true, message: true, card: true, security: true },
   startPage: "home", startInTray: false, localServices: true, dlLimitMBs: 0, dlDuringPlay: false,
-  uiScale: 1, calmFx: false, lowBandwidth: false };
+  uiScale: 1, calmFx: false, lowBandwidth: false, cvd: "std" };
 
 function loadSettings(): Settings {
   try {
@@ -114,6 +117,7 @@ function loadSettings(): Settings {
     if (!UI_SCALES.includes(Number(s.uiScale))) s.uiScale = 1;
     s.calmFx = Boolean(s.calmFx);
     s.lowBandwidth = Boolean(s.lowBandwidth);
+    if (!CVD_MODES.includes(s.cvd)) s.cvd = "std";
     s.notif = { ...SETTINGS_DEFAULT.notif, ...(typeof s.notif === "object" && s.notif ? s.notif : {}) };
     s.libraries = Array.isArray(s.libraries) ? s.libraries.filter((x) => typeof x === "string" && x.length > 2).slice(0, 8) : [];
     return s;
@@ -129,6 +133,8 @@ function applySettings(): void {
   root.dataset.skin = settings.skin;
   root.classList.toggle("reduced-motion", settings.reducedMotion || settings.calmFx || osReducedMotion());
   root.classList.toggle("calm-fx", settings.calmFx);
+  if (settings.cvd === "std") delete root.dataset.cvd;
+  else root.dataset.cvd = settings.cvd;
   void invoke("set_ui_scale", { scale: settings.uiScale }).catch(() => {});
   root.lang = getLang();
 }
@@ -1802,6 +1808,12 @@ function settingsView(): string {
               ${UI_SCALES.map((n) => `<button class="seg-btn ${settings.uiScale === n ? "on" : ""}" data-uiscale="${n}">${Math.round(n * 100)} %</button>`).join("")}
             </div>
           </div>
+          <div class="set-row">
+            <div><div class="set-label">${esc(t("set.cvd"))}</div><div class="set-sub">${esc(t("set.cvdSub"))}</div></div>
+            <div class="seg">
+              ${CVD_MODES.map((m) => `<button class="seg-btn ${settings.cvd === m ? "on" : ""}" data-cvd="${m}">${esc(t(`set.cvd.${m}` as "set.cvd.std"))}</button>`).join("")}
+            </div>
+          </div>
           ${toggle("set-motion", settings.reducedMotion || osReducedMotion(), t("set.motion"), osReducedMotion() ? t("set.motionOs") : t("set.motionSub"))}
           ${toggle("set-calmFx", settings.calmFx, t("set.calm"), t("set.calmSub"))}
         </section>
@@ -2949,6 +2961,13 @@ function wireStartup(root: HTMLElement): void {
       render();
     }),
   );
+  root.querySelectorAll<HTMLButtonElement>("[data-cvd]").forEach((b) =>
+    b.addEventListener("click", () => {
+      settings.cvd = b.dataset.cvd as Settings["cvd"];
+      saveSettings();
+      render();
+    }),
+  );
   document.getElementById("set-calmFx")?.addEventListener("click", () => {
     settings.calmFx = !settings.calmFx;
     saveSettings();
@@ -3049,6 +3068,7 @@ async function notify(n: Notif): Promise<void> {
       hint: n.action ? t("nt.clickHint") : undefined,
       out: n.out ?? false,
       calm: settings.calmFx || settings.reducedMotion || osReducedMotion(),
+      cvd: settings.cvd,
     },
   }).catch(() => {});
 }

@@ -14,6 +14,7 @@ interface Toast {
   hint?: string;
   out?: boolean; // card toasts: removed rather than inserted
   calm?: boolean; // accessibility: no slide, no drop animation
+  cvd?: string; // colour-vision mode of the launcher
 }
 
 const LIFE_MS = 6500;
@@ -45,6 +46,8 @@ function remove(el: HTMLElement): void {
 }
 
 function add(t: Toast): void {
+  if (t.cvd && t.cvd !== "std") document.documentElement.dataset.cvd = t.cvd;
+  else delete document.documentElement.dataset.cvd;
   while (stack.children.length >= MAX) stack.firstElementChild?.remove();
   const el = document.createElement("div");
   el.className = `t t-${t.kind}${t.calm ? " calm" : ""}`;

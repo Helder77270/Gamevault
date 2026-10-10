@@ -197,7 +197,7 @@ décision de conception, un redéploiement ou une infra en plus).
 - [x] **A** (2026-10-10) Réduction des mouvements et des effets étendue : plus de
       flash, de glitch ni d'animation clignotante (photosensibilité).
       Déjà là : le réglage « réduire les animations ».
-- [ ] **B** Modes daltonisme : palettes adaptées, et des états qui ne
+- [x] **B** (2026-10-10) Modes daltonisme : palettes adaptées, et des états qui ne
       reposent jamais sur la couleur seule (icône ou texte en plus).
 
 ### Son
