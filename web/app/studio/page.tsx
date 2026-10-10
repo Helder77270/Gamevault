@@ -264,7 +264,7 @@ export default function StudioPage() {
                 {resellable
                   ? "Les joueurs pourront revendre leur copie sur le marché d'occasion ; vous touchez la redevance à chaque revente."
                   : "Les copies resteront chez leur premier acheteur : ni revente ni cadeau. Le prêt entre amis reste possible."}
-                {" "}Ce choix est gravé avec l'édition et ne pourra plus changer.
+                {" "}Ce choix est gravé avec l&apos;édition et ne pourra plus changer.
               </p>
               <button className="btn" disabled={!file || !!status} onClick={() => void publishEdition()}>
                 {status || "Publier l'édition"}
