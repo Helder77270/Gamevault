@@ -106,6 +106,7 @@ fn play_game(
     let enc = std::fs::read(&build).map_err(|e| format!("build.enc: {e}"))?;
     let plain = crypto::decrypt_build(&enc, &content_key)
         .map_err(|e| format!("déchiffrement du build: {e}"))?;
+    drop(enc); // big builds: never hold the ciphertext and the plaintext longer than needed
 
     // The bytes describe their own runtime: PE executable ("MZ") -> native
     // process beside the launcher; anything else -> HTML in the webview.
@@ -141,8 +142,22 @@ fn launch_native(
     std::fs::write(&exe, &plain).map_err(|e| format!("écriture exe: {e}"))?;
 
     // Paranoia hash: what landed on disk is byte-for-byte what we decrypted
-    let on_disk = std::fs::read(&exe).map_err(|e| e.to_string())?;
-    if Sha256::digest(&on_disk) != Sha256::digest(&plain) {
+    // (streamed: a 500 MB game is not read back into memory a second time)
+    let on_disk = {
+        use std::io::Read;
+        let mut f = std::fs::File::open(&exe).map_err(|e| e.to_string())?;
+        let mut h = Sha256::new();
+        let mut buf = vec![0u8; 1 << 20];
+        loop {
+            let n = f.read(&mut buf).map_err(|e| e.to_string())?;
+            if n == 0 {
+                break;
+            }
+            h.update(&buf[..n]);
+        }
+        h.finalize()
+    };
+    if on_disk != Sha256::digest(&plain) {
         let _ = std::fs::remove_dir_all(&dir);
         return Err("empreinte disque != empreinte déchiffrée".into());
     }
@@ -641,6 +656,20 @@ fn reveal_folder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// DEV ONLY (P8 #6): damages `count` 4 MiB chunks of an installed library
+/// game (a folder holding gamevault.json + build.enc), to test VERIFY /
+/// repair for real. The UI offers it only in developer mode. Returns the
+/// damaged chunk numbers (1-based).
+#[tauri::command]
+fn dev_damage_build(dir: String, count: u32) -> Result<Vec<u64>, String> {
+    let folder = PathBuf::from(&dir);
+    let build = folder.join("build.enc");
+    if !folder.is_absolute() || !folder.join("gamevault.json").is_file() || !build.is_file() {
+        return Err("pas un dossier de jeu AURA-64".into());
+    }
+    download::damage_chunks(&build, count)
+}
+
 /// Started by Windows at login (the autostart entry passes --autostart).
 #[tauri::command]
 fn launched_at_startup() -> bool {
@@ -775,7 +804,8 @@ pub fn run() {
             focus_main,
             launched_at_startup,
             start_local_services,
-            reveal_folder
+            reveal_folder,
+            dev_damage_build
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

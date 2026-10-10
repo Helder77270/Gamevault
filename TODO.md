@@ -291,18 +291,18 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
 - [x] La vue n'affiche plus les jeux installés : seulement à installer,
       en attente / en cours / en pause, à réparer, et (plus tard) à mettre
       à jour.
-- [ ] Jeu de test LOURD : un build factice d'~500 Mo généré localement
+- [x] Jeu de test LOURD : un build factice d'~500 Mo généré localement
       (aléatoire déterministe, jamais téléchargé d'internet), qui reste
       jouable (vrai jeu + gros fichier de remplissage). Publié comme une
       vraie édition on-chain (Base Sepolia, clé de déploiement), servi
       par ticketd (/build en Range + manifest de ~125 morceaux), licence
       envoyée sur le wallet de Helder.
-- [ ] Mode d'emploi du test complet : télécharger, mettre en pause,
+- [x] Mode d'emploi du test complet : télécharger, mettre en pause,
       reprendre, couper le réseau, CASSER un morceau (outil dev qui abîme
       des octets de build.enc), VÉRIFIER → réparation des seuls morceaux
       abîmés. Ça teste enfin le parallèle à 4 morceaux et la limite de
       vitesse sur un vrai volume.
-- [ ] Vérifier que le lancement tient avec 500 Mo déchiffrés en mémoire
+- [x] Vérifier que le lancement tient avec 500 Mo déchiffrés en mémoire
       (sinon : le noter, ne pas casser le flux de la démo).
 
 ### 7. Infra : Docker, Kubernetes, Ansible (prêt pour du volume)
@@ -330,7 +330,7 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
 ### Oublis repérés ce soir (ajoutés)
 - [ ] 5 commits locaux P7 B non poussés (57a13b8 → 3e84fa7) : push après
       ton test.
-- [ ] Repli IPFS jamais testé en vrai : le tester avec le gros build
+- [x] Repli IPFS jamais testé en vrai : le tester avec le gros build
       (ticketd coupé → morceaux depuis IPFS) si le pin passe (taille
       Pinata), sinon le noter.
 - [ ] Petite course connue : un jeu qui se ferme dans la même seconde où un

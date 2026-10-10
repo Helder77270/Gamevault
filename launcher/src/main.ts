@@ -3053,6 +3053,17 @@ function wire(root: HTMLElement): void {
     localStorage.setItem("gv-shelfmode", "storage");
     render();
   });
+  // DEV: break a few chunks of an installed game, then VERIFY repairs them
+  root.querySelectorAll<HTMLButtonElement>("[data-damage]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      try {
+        const hit = await invoke<number[]>("dev_damage_build", { dir: b.dataset.damage!, count: 3 });
+        toast(t("dev.damaged", { n: hit.join(", ") }));
+      } catch (e) {
+        toast(String(e));
+      }
+    }),
+  );
   root.querySelectorAll<HTMLButtonElement>("[data-reveal]").forEach((b) =>
     b.addEventListener("click", () => void invoke("reveal_folder", { path: b.dataset.reveal }).catch((err) => toast(String(err)))),
   );
@@ -3486,6 +3497,7 @@ function storageBody(): string {
               ${r.resume ? `<button class="sx-btn primary" data-dlresume="${esc(r.resume)}">${t("dl.resume")}</button>` : ""}
               ${r.repair ? `<button class="sx-btn" data-repair="${esc(r.repair)}">${t("dl.verify")}</button>` : ""}
               ${r.reveal ? `<button class="sx-btn ghost" data-reveal="${esc(r.reveal)}" aria-label="${esc(t("stg.openGame"))}">${t("stg.open")}</button>` : ""}
+              ${settings.dev && r.reveal && r.repair ? `<button class="sx-btn ghost" data-damage="${esc(r.reveal)}" title="${esc(t("dev.damageTitle"))}">${t("dev.damage")}</button>` : ""}
             </div>
           </div>`,
                 )

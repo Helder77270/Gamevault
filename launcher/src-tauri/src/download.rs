@@ -37,6 +37,54 @@ fn app_sink(app: &AppHandle) -> Sink {
 }
 
 const SERVER: &str = "http://127.0.0.1:8787/build/";
+
+/// The GameVault server base. Tests can point it at a dead port to force
+/// the IPFS mirrors (never settable outside `cargo test`).
+fn server() -> String {
+    #[cfg(test)]
+    if let Some(s) = test_server::get() {
+        return s;
+    }
+    SERVER.to_string()
+}
+
+#[cfg(test)]
+mod test_server {
+    use std::sync::Mutex;
+    static OVERRIDE: Mutex<Option<String>> = Mutex::new(None);
+    pub fn set(v: Option<&str>) {
+        *OVERRIDE.lock().unwrap() = v.map(str::to_string);
+    }
+    pub fn get() -> Option<String> {
+        OVERRIDE.lock().unwrap().clone()
+    }
+}
+
+/// DEV/TEST (P8 #6): flips 64 bytes inside `count` chunks spread over the
+/// file, so VERIFY has something real to repair. Returns 1-based chunk numbers.
+pub fn damage_chunks(path: &Path, count: u32) -> Result<Vec<u64>, String> {
+    let mut f = OpenOptions::new().read(true).write(true).open(path).map_err(|e| e.to_string())?;
+    let size = f.metadata().map_err(|e| e.to_string())?.len();
+    let chunk = DEFAULT_CHUNK;
+    let chunks = size.div_ceil(chunk).max(1);
+    let n = u64::from(count.clamp(1, 16)).min(chunks);
+    let mut hit = Vec::new();
+    for i in 0..n {
+        let idx = (i * 2 + 1) * chunks / (n * 2);
+        let off = (idx * chunk + 4096).min(size.saturating_sub(64));
+        let mut buf = [0u8; 64];
+        f.seek(SeekFrom::Start(off)).map_err(|e| e.to_string())?;
+        let got = f.read(&mut buf).map_err(|e| e.to_string())?;
+        for b in &mut buf[..got] {
+            *b ^= 0xA5;
+        }
+        f.seek(SeekFrom::Start(off)).map_err(|e| e.to_string())?;
+        f.write_all(&buf[..got]).map_err(|e| e.to_string())?;
+        hit.push(idx + 1);
+    }
+    f.sync_all().map_err(|e| e.to_string())?;
+    Ok(hit)
+}
 const GATEWAYS: [&str; 3] = ["https://gateway.pinata.cloud/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/"];
 const WORKERS: usize = 4;
 const TRIES_PER_CHUNK: usize = 3;
@@ -223,7 +271,7 @@ fn agent() -> ureq::Agent {
 }
 
 fn sources(cid: &str) -> Vec<(String, String)> {
-    let mut v = vec![("SERVEUR GAMEVAULT".to_string(), format!("{SERVER}{cid}"))];
+    let mut v = vec![("SERVEUR GAMEVAULT".to_string(), format!("{}{cid}", server()))];
     for g in GATEWAYS {
         let label = g.trim_start_matches("https://").split('/').next().unwrap_or(g).to_uppercase();
         v.push((format!("IPFS · {label}"), format!("{g}{cid}")));
@@ -234,7 +282,7 @@ fn sources(cid: &str) -> Vec<(String, String)> {
 /// The server's chunk list, else the one saved beside an earlier verified
 /// download, else none (then only the final on-chain check applies).
 fn load_manifest(cid: &str, target: &Path) -> Option<Manifest> {
-    if let Ok(resp) = agent().get(&format!("{SERVER}{cid}/manifest")).call() {
+    if let Ok(resp) = agent().get(&format!("{}{cid}/manifest", server())).call() {
         if let Ok(m) = resp.into_json::<Manifest>() {
             if m.chunk_size > 0 && m.chunks.iter().all(|c| hex_ok(c)) {
                 return Some(m);
@@ -943,6 +991,76 @@ mod tests {
         // the library scan finds it by its gamevault.json
         let found = scan_library(&[dir.to_string_lossy().into_owned()]);
         assert!(found.iter().any(|e| e.cid == CID && e.status == "installed"), "scan");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Live, heavy (P8 #6): the 480 MiB "Stress Test 500" build (edition #4).
+    /// Needs ticketd on 127.0.0.1:8787 and internet for the IPFS part.
+    /// cargo test --release -- --ignored download_big_live --nocapture
+    #[test]
+    #[ignore]
+    fn download_big_live() {
+        let cid = std::env::var("GV_BIG_CID").unwrap_or_else(|_| "QmTJ6tfcc13tknqu4s7VMXfznpZawWa7zd1Y8Lh73EsXmD".into());
+        let sha = std::env::var("GV_BIG_SHA").unwrap_or_else(|_| "a94e2b375bd0f864a95aba3a75cf7d0b4c79fbfea91d1c6f7c0c32fd16ac589e".into());
+        let events: Arc<Mutex<Vec<(String, serde_json::Value)>>> = Arc::default();
+        let ev = Arc::clone(&events);
+        let dir = std::env::temp_dir().join(format!("gv-big-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = library_target(&dir.to_string_lossy(), &cid, "Stress Test 500").unwrap();
+        mark_game_folder(&target, &cid, "Stress Test 500", "4").unwrap();
+
+        // 1 · download, paused at ~25 %, resumed
+        let ctl = Arc::new(Ctl::default());
+        let pause = Arc::clone(&ctl);
+        let sink: Sink = Arc::new(move |e, v| {
+            if e == "dl-progress" {
+                let (d, t) = (v["done"].as_u64().unwrap_or(0), v["total"].as_u64().unwrap_or(1));
+                if t > 0 && d * 4 > t {
+                    pause.pause.store(true, Ordering::Relaxed);
+                }
+            }
+            ev.lock().unwrap().push((e.to_string(), v));
+        });
+        let t0 = Instant::now();
+        run_download(&sink, &cid, &cid, &sha, &target, ctl).expect("first part");
+        assert!(part_of(&target).is_file(), "paused: resumable part on disk");
+        let quiet: Sink = Arc::new(|_, _| {});
+        run_download(&quiet, &cid, &cid, &sha, &target, Arc::new(Ctl::default())).expect("resume");
+        let secs = t0.elapsed().as_secs_f64();
+        assert_eq!(file_sha(&target).unwrap(), sha);
+        let size = std::fs::metadata(&target).unwrap().len();
+        println!("download+resume: {} MiB in {secs:.1} s ({:.0} MiB/s)", size >> 20, (size >> 20) as f64 / secs);
+
+        // 2 · damage 3 chunks, repair from the server
+        let hit = damage_chunks(&target, 3).unwrap();
+        println!("damaged chunks {hit:?}");
+        let logs: Arc<Mutex<Vec<String>>> = Arc::default();
+        let lg = Arc::clone(&logs);
+        let logsink: Sink = Arc::new(move |e, v| {
+            if e == "dl-log" {
+                lg.lock().unwrap().push(v["line"].to_string());
+            }
+        });
+        run_repair(&logsink, &cid, &cid, &sha, &target, Arc::new(Ctl::default())).expect("repair");
+        assert_eq!(file_sha(&target).unwrap(), sha, "repaired");
+        println!("repair log: {:?}", logs.lock().unwrap().iter().rev().take(6).collect::<Vec<_>>());
+
+        // 3 · server down: the same repair through the IPFS mirrors
+        damage_chunks(&target, 2).unwrap();
+        test_server::set(Some("http://127.0.0.1:9/build/"));
+        let mirror = Arc::new(AtomicU64::new(0));
+        let m = Arc::clone(&mirror);
+        let msink: Sink = Arc::new(move |e, v| {
+            if e == "dl-progress" {
+                m.fetch_max(v["mirror_chunks"].as_u64().unwrap_or(0), Ordering::Relaxed);
+            }
+        });
+        let r = run_repair(&msink, &cid, &cid, &sha, &target, Arc::new(Ctl::default()));
+        test_server::set(None);
+        r.expect("repair through IPFS");
+        assert_eq!(file_sha(&target).unwrap(), sha, "repaired through IPFS");
+        println!("chunks served by IPFS mirrors: {}", mirror.load(Ordering::Relaxed));
+        assert!(mirror.load(Ordering::Relaxed) > 0, "IPFS mirrors used");
         let _ = std::fs::remove_dir_all(dir);
     }
 
