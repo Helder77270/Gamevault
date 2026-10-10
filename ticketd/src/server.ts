@@ -5,12 +5,13 @@
 // size-capped.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createReadStream } from "node:fs";
 import {
   attestFriendship,
   backdateFriendship,
   devicesOf,
   deviceStatus,
-  getBuild,
+  buildFile,
   getBuildManifest,
   issueTicket,
   revokeDevice,
@@ -391,8 +392,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   const buildMatch = (GET || HEAD) && match("/build/([A-Za-z0-9]{10,100})");
   if (buildMatch) {
     try {
-      const bytes = await getBuild(buildMatch[1]);
-      const total = bytes.length;
+      const { path: file, size: total } = await buildFile(buildMatch[1]);
       const range = /^bytes=(\d+)-(\d*)$/.exec(String(req.headers.range ?? ""));
       if (range) {
         const start = Number(range[1]);
@@ -409,11 +409,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
           "Accept-Ranges": "bytes",
           ...cors,
         });
-        res.end(HEAD ? undefined : Buffer.from(bytes.subarray(start, end + 1)));
+        if (HEAD) res.end();
+        else createReadStream(file, { start, end }).on("error", () => res.destroy()).pipe(res);
         return;
       }
       res.writeHead(200, { "Content-Type": "application/octet-stream", "Content-Length": total, "Accept-Ranges": "bytes", ...cors });
-      res.end(HEAD ? undefined : Buffer.from(bytes));
+      if (HEAD) res.end();
+      else createReadStream(file).on("error", () => res.destroy()).pipe(res);
       return;
     } catch (e) {
       return fail(404, `build ${buildMatch[1]}`, e);

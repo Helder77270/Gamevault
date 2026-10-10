@@ -5,7 +5,7 @@ import { createPublicClient, http, verifyMessage } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { signTicket, wrapKey, hex, unhex, encryptBuild, type SignedTicket, type Ticket } from "@gamevault/shared";
@@ -196,6 +196,15 @@ function cacheBuild(cid: string, bytes: Uint8Array): void {
   writeFileSync(join(BUILDS_DIR, cid), bytes);
 }
 
+/** Where a build lives on disk (filled from IPFS on a cache miss), for
+ *  streaming: big builds (hundreds of MB) are never read whole per request. */
+export async function buildFile(cid: string): Promise<{ path: string; size: number }> {
+  if (!/^[A-Za-z0-9]{10,100}$/.test(cid)) throw new Error("CID invalide");
+  const p = join(BUILDS_DIR, cid);
+  if (!existsSync(p)) await getBuild(cid);
+  return { path: p, size: statSync(p).size };
+}
+
 export async function getBuild(cid: string): Promise<Uint8Array> {
   if (!/^[A-Za-z0-9]{10,100}$/.test(cid)) throw new Error("CID invalide");
   const p = join(BUILDS_DIR, cid);
@@ -232,18 +241,29 @@ const manifests = new Map<string, BuildManifest>();
 export async function getBuildManifest(cid: string): Promise<BuildManifest> {
   const hit = manifests.get(cid);
   if (hit) return hit;
-  const bytes = await getBuild(cid);
+  const { path, size } = await buildFile(cid);
   const chunks: string[] = [];
-  for (let off = 0; off < bytes.length; off += CHUNK_SIZE) {
-    chunks.push(createHash("sha256").update(bytes.subarray(off, off + CHUNK_SIZE)).digest("hex"));
+  const whole = createHash("sha256");
+  let part = createHash("sha256");
+  let inPart = 0;
+  // streamed: a 500 MB build is hashed without holding it in memory
+  for await (const buf of createReadStream(path, { highWaterMark: 1024 * 1024 }) as AsyncIterable<Buffer>) {
+    whole.update(buf);
+    let off = 0;
+    while (off < buf.length) {
+      const take = Math.min(CHUNK_SIZE - inPart, buf.length - off);
+      part.update(buf.subarray(off, off + take));
+      inPart += take;
+      off += take;
+      if (inPart === CHUNK_SIZE) {
+        chunks.push(part.digest("hex"));
+        part = createHash("sha256");
+        inPart = 0;
+      }
+    }
   }
-  const m: BuildManifest = {
-    cid,
-    size: bytes.length,
-    chunkSize: CHUNK_SIZE,
-    sha256: `0x${createHash("sha256").update(bytes).digest("hex")}`,
-    chunks,
-  };
+  if (inPart > 0 || size === 0) chunks.push(part.digest("hex"));
+  const m: BuildManifest = { cid, size, chunkSize: CHUNK_SIZE, sha256: `0x${whole.digest("hex")}`, chunks };
   manifests.set(cid, m);
   return m;
 }
