@@ -399,6 +399,26 @@ fn set_ui_scale(app: AppHandle, scale: f64) -> Result<(), String> {
     w.set_zoom(scale.clamp(0.75, 2.0)).map_err(|e| e.to_string())
 }
 
+fn cache_roots() -> Vec<PathBuf> {
+    let base = PathBuf::from(std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".into())).join("GameVault");
+    vec![base.join("run"), base.join("logs")]
+}
+
+/// Size of the disposable files (interrupted downloads, chunk lists, native
+/// run leftovers, logs) — installed games are never counted.
+#[tauri::command]
+fn cache_info(dirs: Vec<String>) -> download::CacheReport {
+    download::cache_report(&dirs, &cache_roots())
+}
+
+#[tauri::command]
+fn clear_cache(dirs: Vec<String>, dl: tauri::State<Arc<download::Downloads>>) -> Result<download::CacheReport, String> {
+    if download::any_active(&dl) {
+        return Err("un téléchargement est en cours : mettez-le en pause d'abord".into());
+    }
+    Ok(download::clear_cache(&dirs, &cache_roots()))
+}
+
 /// Download speed limit in bytes per second (0 = unlimited), live.
 #[tauri::command]
 fn dl_set_limit(bps: u64) {
@@ -740,6 +760,8 @@ pub fn run() {
             dl_pause,
             dl_set_limit,
             set_ui_scale,
+            cache_info,
+            clear_cache,
             dl_cancel,
             disk_space,
             library_scan,

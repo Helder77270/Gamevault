@@ -507,6 +507,10 @@ fn register(dl: &Downloads, id: &str) -> Result<Arc<Ctl>, String> {
     Ok(ctl)
 }
 
+pub fn any_active(dl: &Downloads) -> bool {
+    !dl.0.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+}
+
 pub fn pause(dl: &Downloads, id: &str) {
     if let Some(c) = dl.0.lock().unwrap_or_else(|e| e.into_inner()).get(id) {
         c.pause.store(true, Ordering::Relaxed);
@@ -778,6 +782,67 @@ fn run_repair(sink: &Sink, id: &str, cid: &str, want: &str, target: &Path, ctl: 
     Ok(())
 }
 
+/// The launcher's disposable files: interrupted downloads (.part + state),
+/// chunk lists (re-fetched at the next repair), leftovers of native runs,
+/// service logs. An installed build.enc is never one of them.
+fn cache_files(dirs: &[String], extra: &[PathBuf]) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for dir in dirs {
+        let Ok(rd) = std::fs::read_dir(dir) else { continue };
+        for e in rd.flatten() {
+            if !e.path().join("gamevault.json").is_file() {
+                continue;
+            }
+            let Ok(files) = std::fs::read_dir(e.path()) else { continue };
+            for f in files.flatten() {
+                let name = f.file_name().to_string_lossy().into_owned();
+                if name.ends_with(".enc.part") || name.ends_with(".enc.dl.json") || name.ends_with(".enc.manifest.json") {
+                    out.push(f.path());
+                }
+            }
+        }
+    }
+    for root in extra {
+        let mut stack = vec![root.clone()];
+        while let Some(d) = stack.pop() {
+            let Ok(rd) = std::fs::read_dir(&d) else { continue };
+            for e in rd.flatten() {
+                if e.path().is_dir() {
+                    stack.push(e.path());
+                } else {
+                    out.push(e.path());
+                }
+            }
+        }
+    }
+    out
+}
+
+#[derive(Serialize)]
+pub struct CacheReport {
+    pub bytes: u64,
+    pub files: u32,
+}
+
+pub fn cache_report(dirs: &[String], extra: &[PathBuf]) -> CacheReport {
+    let files = cache_files(dirs, extra);
+    CacheReport { bytes: files.iter().filter_map(|f| std::fs::metadata(f).ok()).map(|m| m.len()).sum(), files: files.len() as u32 }
+}
+
+/// Delete the disposable files; a file in use (a running service's log) is
+/// skipped. Returns what was actually freed.
+pub fn clear_cache(dirs: &[String], extra: &[PathBuf]) -> CacheReport {
+    let mut freed = CacheReport { bytes: 0, files: 0 };
+    for f in cache_files(dirs, extra) {
+        let len = std::fs::metadata(&f).map(|m| m.len()).unwrap_or(0);
+        if std::fs::remove_file(&f).is_ok() {
+            freed.bytes += len;
+            freed.files += 1;
+        }
+    }
+    freed
+}
+
 #[derive(Serialize)]
 pub struct LibraryEntry {
     pub dir: String,
@@ -879,6 +944,26 @@ mod tests {
         let found = scan_library(&[dir.to_string_lossy().into_owned()]);
         assert!(found.iter().any(|e| e.cid == CID && e.status == "installed"), "scan");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn clear_cache_never_touches_an_installed_game() {
+        let lib = std::env::temp_dir().join(format!("gv-cache-{}", std::process::id()));
+        let game = lib.join("Runner (QmRGYZtA)");
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::write(game.join("gamevault.json"), "{}").unwrap();
+        std::fs::write(game.join("build.enc"), vec![1u8; 1000]).unwrap();
+        std::fs::write(game.join("build.enc.part"), vec![2u8; 300]).unwrap();
+        std::fs::write(game.join("build.enc.manifest.json"), "{}").unwrap();
+        let dirs = vec![lib.to_string_lossy().into_owned()];
+        let r = cache_report(&dirs, &[]);
+        assert_eq!((r.files, r.bytes), (2, 302));
+        let freed = clear_cache(&dirs, &[]);
+        assert_eq!(freed.files, 2);
+        assert!(game.join("build.enc").is_file(), "the installed game stays");
+        assert!(game.join("gamevault.json").is_file());
+        assert_eq!(cache_report(&dirs, &[]).files, 0);
+        let _ = std::fs::remove_dir_all(lib);
     }
 
     #[test]

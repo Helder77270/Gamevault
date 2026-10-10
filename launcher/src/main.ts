@@ -81,6 +81,7 @@ interface Settings {
   dlDuringPlay: boolean; // false: downloads pause while a game runs, resume after
   uiScale: number; // interface scale (native zoom), 1 = 100 %
   calmFx: boolean; // photosensitivity: no animation, no flicker, no decorative effects
+  lowBandwidth: boolean; // downloads capped at 2 MB/s, network refreshes 4-6x rarer
 }
 
 const UI_SCALES = [0.9, 1, 1.1, 1.25, 1.5];
@@ -96,7 +97,7 @@ const VEILLE_CHOICES = [1, 3, 5, 10, 0];
 const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3, libraries: [],
   notif: { download: true, message: true, card: true, security: true },
   startPage: "home", startInTray: false, localServices: true, dlLimitMBs: 0, dlDuringPlay: false,
-  uiScale: 1, calmFx: false };
+  uiScale: 1, calmFx: false, lowBandwidth: false };
 
 function loadSettings(): Settings {
   try {
@@ -112,6 +113,7 @@ function loadSettings(): Settings {
     s.dlDuringPlay = Boolean(s.dlDuringPlay);
     if (!UI_SCALES.includes(Number(s.uiScale))) s.uiScale = 1;
     s.calmFx = Boolean(s.calmFx);
+    s.lowBandwidth = Boolean(s.lowBandwidth);
     s.notif = { ...SETTINGS_DEFAULT.notif, ...(typeof s.notif === "object" && s.notif ? s.notif : {}) };
     s.libraries = Array.isArray(s.libraries) ? s.libraries.filter((x) => typeof x === "string" && x.length > 2).slice(0, 8) : [];
     return s;
@@ -1818,6 +1820,16 @@ function settingsView(): string {
             </div>
           </div>
           ${toggle("set-dlDuringPlay", settings.dlDuringPlay, t("set.dlDuringPlay"), t("set.dlDuringPlaySub"))}
+          ${toggle("set-lowBandwidth", settings.lowBandwidth, t("set.eco"), t("set.ecoSub", { n: ECO_LIMIT_MBS }))}
+          <div class="set-row" id="set-cache">
+            <div><div class="set-label">${esc(t("cache.title"))}</div><div class="set-sub">${esc(t("cache.sub"))}</div></div>
+            ${cacheAsk ? "" : `<button class="pillbtn" id="cache-clear" ${cacheInfo && cacheInfo.files && !activeJob() ? "" : "disabled"}>${esc(cacheInfo ? (cacheInfo.files ? t("cache.btn", { n: fmtBytes(cacheInfo.bytes) }) : t("cache.empty")) : "…")}</button>`}
+          </div>
+          ${cacheAsk ? `<div class="acc-confirm" role="alertdialog" aria-labelledby="cache-q">
+            <div id="cache-q" class="set-label">${esc(t("cache.confirmQ", { n: fmtBytes(cacheInfo?.bytes ?? 0), f: cacheInfo?.files ?? 0 }))}</div>
+            <div class="set-sub">${esc(t("cache.confirmSub"))}</div>
+            <div class="acc-btns"><button class="pillbtn" id="cache-cancel">${esc(t("acc.cancel"))}</button><button class="pillbtn danger" id="cache-yes">${esc(t("cache.yes"))}</button></div>
+          </div>` : ""}
         </section>
         <section class="set-card">
           <div class="mono-label">${t("set.lang")}</div>
@@ -2185,7 +2197,7 @@ function renderChrome(): void {
   syncDownloadsWithGame();
   const aj = activeJob();
   const barDl = document.getElementById("bar-dl");
-  if (barDl) barDl.textContent = aj ? `↓ ${aj.title.toUpperCase()} ${dlPercent(aj)} % · ${fmtRate(aj.netBps)}` : "";
+  if (barDl) barDl.textContent = `${settings.lowBandwidth ? `${t("set.ecoBadge")}${aj ? " · " : ""}` : ""}${aj ? `↓ ${aj.title.toUpperCase()} ${dlPercent(aj)} % · ${fmtRate(aj.netBps)}` : ""}`;
   for (const [id, screens] of Object.entries(navMap)) {
     document.getElementById(id)?.classList.toggle("active", screens.includes(state.screen));
   }
@@ -2291,6 +2303,8 @@ function sigOf(): string {
     ses: state.session?.address ?? null,
     lo: logoutAsk,
     au: autostartOn,
+    ci: cacheInfo ? [cacheInfo.bytes, cacheInfo.files] : null,
+    ca: cacheAsk,
     p: state.pairing?.status ?? null,
     i: state.installing ? [state.installing.stage, state.installing.status, state.installing.volumes.length] : null,
     a: libraryAddress(),
@@ -2689,7 +2703,8 @@ async function refresh(): Promise<void> {
     }
     state.games = newGames;
     state.lastScan = new Date().toLocaleTimeString();
-    if (scanCount % 15 === 0) {
+    // Low-bandwidth mode: the network refreshes run 4 to 6 times rarer.
+    if (scanCount % (settings.lowBandwidth ? 60 : 15) === 0) {
       void fetchOnchainCatalog(chainClient ?? undefined)
         .then((c) => {
           state.catalog = c;
@@ -2698,7 +2713,7 @@ async function refresh(): Promise<void> {
       void fetchFriends();
     }
     if (scanCount % 5 === 0) void refreshLibrary();
-    if (scanCount++ % 5 === 0) {
+    if (scanCount++ % (settings.lowBandwidth ? 30 : 5) === 0) {
       await fetchMarketState();
       await fetchOwned();
     }
@@ -2947,6 +2962,22 @@ function wireStartup(root: HTMLElement): void {
       render();
     }),
   );
+  document.getElementById("set-lowBandwidth")?.addEventListener("click", () => {
+    settings.lowBandwidth = !settings.lowBandwidth;
+    saveSettings();
+    applyDownloadLimit();
+    render();
+  });
+  if (document.getElementById("set-cache") && cacheInfo === null) void refreshCacheInfo();
+  document.getElementById("cache-clear")?.addEventListener("click", () => {
+    cacheAsk = true;
+    render();
+  });
+  document.getElementById("cache-cancel")?.addEventListener("click", () => {
+    cacheAsk = false;
+    render();
+  });
+  document.getElementById("cache-yes")?.addEventListener("click", () => void clearCache());
   document.getElementById("set-dlDuringPlay")?.addEventListener("click", () => {
     settings.dlDuringPlay = !settings.dlDuringPlay;
     saveSettings();
@@ -3400,8 +3431,38 @@ function syncDownloadsWithGame(): void {
   applyGamePolicy();
 }
 
+const ECO_LIMIT_MBS = 2;
+function effectiveLimitMBs(): number {
+  if (!settings.lowBandwidth) return settings.dlLimitMBs;
+  return settings.dlLimitMBs ? Math.min(settings.dlLimitMBs, ECO_LIMIT_MBS) : ECO_LIMIT_MBS;
+}
 function applyDownloadLimit(): void {
-  void invoke("dl_set_limit", { bps: settings.dlLimitMBs * 1_000_000 }).catch(() => {});
+  void invoke("dl_set_limit", { bps: effectiveLimitMBs() * 1_000_000 }).catch(() => {});
+}
+
+// ── Cache (P7 B) ─────────────────────────────────────────────────────────
+let cacheInfo: { bytes: number; files: number } | null = null;
+let cacheAsk = false;
+async function refreshCacheInfo(): Promise<void> {
+  try {
+    cacheInfo = await invoke<{ bytes: number; files: number }>("cache_info", { dirs: settings.libraries });
+  } catch {
+    cacheInfo = { bytes: 0, files: 0 }; // never null after a try: no refetch loop
+  }
+  if (state.screen === "settings") render();
+}
+async function clearCache(): Promise<void> {
+  try {
+    const r = await invoke<{ bytes: number; files: number }>("clear_cache", { dirs: settings.libraries });
+    // interrupted downloads are gone: so are their resumable jobs
+    for (const j of Object.values(dl.jobs)) if (j.phase === "paused" && j.kind === "download") delete dl.jobs[j.id];
+    toast(t("cache.cleared", { n: fmtBytes(r.bytes), f: r.files }));
+  } catch (err) {
+    toast(String(err));
+  }
+  cacheAsk = false;
+  await refreshLibrary();
+  await refreshCacheInfo();
 }
 
 function dlCard(j: DlJob): string {
@@ -3469,7 +3530,7 @@ function downloadsView(): string {
         </div>
         <div class="dl-totals">
           ${a ? `<span>${t("dl.net")} <b class="cy" id="dl-tot-net">${fmtRate(a.netBps)}</b> · ${t("dl.disk")} <b class="vi" id="dl-tot-disk">${fmtRate(a.diskBps)}</b></span>` : ""}
-          <button class="pillbtn" data-go="settings" title="${esc(t("set.dl"))}">${settings.dlLimitMBs ? esc(t("dl.limitOn", { n: settings.dlLimitMBs })) : esc(t("dl.limitOff"))}</button>
+          <button class="pillbtn" data-go="settings" title="${esc(t("set.dl"))}">${effectiveLimitMBs() ? esc(t(settings.lowBandwidth ? "dl.limitEco" : "dl.limitOn", { n: effectiveLimitMBs() })) : esc(t("dl.limitOff"))}</button>
           <button class="pillbtn" id="dl-addlib">${t("dl.add")}</button>
         </div>
       </div>
@@ -3839,14 +3900,19 @@ window.addEventListener("DOMContentLoaded", () => {
       if (state.screen === "boot" || state.playing || state.nativeRun) return;
       const s = b.dataset.navgo as Screen;
       if (s === "friends") void fetchFriends().then(() => render());
+      if (s === "settings") cacheInfo = null;
       go(s);
     }),
   );
   void runBoot();
   setInterval(() => void refresh(), 2000);
   setInterval(renderChrome, 1000); // bottom-bar clock ticks every second
-  setInterval(pushPresence, 60_000); // friends see "online" / "playing X"
-  setInterval(() => void checkDeviceSlot(), 60_000);
+  let netTick = 0;
+  setInterval(() => {
+    netTick++;
+    if (!settings.lowBandwidth || netTick % 2 === 0) pushPresence(); // friends see "online" / "playing X"
+    if (!settings.lowBandwidth || netTick % 3 === 0) void checkDeviceSlot();
+  }, 60_000);
   window.setTimeout(() => void checkDeviceSlot(), 8000);
   pushPresence();
 });

@@ -175,9 +175,9 @@ décision de conception, un redéploiement ou une infra en plus).
 - [x] **A** (2026-10-10) Limiter la vitesse de téléchargement.
 - [x] **A** (2026-10-10) Autoriser ou non les téléchargements pendant une partie (défaut :
       pause automatique pendant le jeu, reprise après).
-- [ ] **B** Mode faible bande passante (téléchargement plafonné, moins de
+- [x] **B** (2026-10-10) Mode faible bande passante (téléchargement plafonné, moins de
       requêtes réseau, visuels allégés).
-- [ ] **B** Vider le cache : téléchargements interrompus, listes de morceaux,
+- [x] **B** (2026-10-10) Vider le cache : téléchargements interrompus, listes de morceaux,
       données du webview. Les jeux installés ne sont pas touchés.
 - [ ] **C** Choisir sa région de téléchargement : utile seulement avec
       plusieurs serveurs (aujourd'hui un serveur + IPFS).
