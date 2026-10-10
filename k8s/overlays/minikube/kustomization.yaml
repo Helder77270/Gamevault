@@ -1,0 +1,43 @@
+# Local test cluster (minikube, docker driver) — 2026-10-11.
+#   minikube addons enable ingress && minikube addons enable metrics-server
+#   (images: built locally, then copied into minikube's Docker — see docs/infra.md)
+#   kubectl create secret generic gamevault-secrets -n gamevault --from-literal=…   (test values)
+#   kubectl apply -k k8s/overlays/minikube
+# Differences from production: local images (gamevault/*:dev), *.gamevault.local
+# hosts, no cert-manager (the controller's default certificate answers TLS),
+# one web replica minimum, small volume.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: gamevault
+resources:
+  - ../../base
+images:
+  - name: ghcr.io/gamevault/ticketd
+    newName: gamevault/ticketd
+    newTag: dev
+  - name: ghcr.io/gamevault/web
+    newName: gamevault/web
+    newTag: dev
+patches:
+  - path: config.yaml
+  - target: { group: networking.k8s.io, version: v1, kind: Ingress, name: web }
+    patch: |-
+      - { op: replace, path: /spec/rules/0/host, value: gamevault.local }
+      - { op: replace, path: /spec/tls/0/hosts/0, value: gamevault.local }
+      - { op: remove, path: /metadata/annotations/cert-manager.io~1cluster-issuer }
+  - target: { group: networking.k8s.io, version: v1, kind: Ingress, name: api }
+    patch: |-
+      - { op: replace, path: /spec/rules/0/host, value: api.gamevault.local }
+      - { op: replace, path: /spec/tls/0/hosts/0, value: api.gamevault.local }
+      - { op: remove, path: /metadata/annotations/cert-manager.io~1cluster-issuer }
+  - target: { group: networking.k8s.io, version: v1, kind: Ingress, name: "api-(auth|publish|stream)" }
+    patch: |-
+      - { op: replace, path: /spec/rules/0/host, value: api.gamevault.local }
+      - { op: replace, path: /spec/tls/0/hosts/0, value: api.gamevault.local }
+  - target: { group: autoscaling, version: v2, kind: HorizontalPodAutoscaler, name: web }
+    patch: |-
+      - { op: replace, path: /spec/minReplicas, value: 2 }
+      - { op: replace, path: /spec/maxReplicas, value: 4 }
+  - target: { group: apps, version: v1, kind: StatefulSet, name: ticketd }
+    patch: |-
+      - { op: replace, path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage, value: 5Gi }

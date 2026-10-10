@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ticketd-config
+  namespace: gamevault
+data:
+  CORS_ORIGINS: "https://gamevault.local"
