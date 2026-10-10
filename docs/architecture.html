@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Architecture technique GameVault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Space+Mono:wght@400;700&display=swap">
+<style>
+/* Layout: sticky table of contents on the left (desktop), single reading column ~72ch; stacks on phones. */
+:root {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #eef0f8;
+  --fg: #171a2b;
+  --muted: #5a6078;
+  --line: #d9dcea;
+  --accent: #6a3fd1;      /* Midnight Drive violet */
+  --accent-2: #0a8fa8;    /* cyan */
+  --sunset: #c2551f;      /* Chrome Sunset, used sparingly */
+  --ok: #1d7a4a;
+  --warn: #9a6400;
+  --bad: #b3261e;
+  --code-bg: #eceef7;
+  --diagram-bg: #ffffff;
+  --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "Space Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1020; --surface: #15182c; --surface-2: #1c2038; --fg: #e6e8f5; --muted: #9aa0bd;
+    --line: #2a2f4d; --accent: #a98bff; --accent-2: #4fd3ea; --sunset: #ff9a5c;
+    --ok: #5fd39a; --warn: #f2c25b; --bad: #ff7b72; --code-bg: #1f2340; --diagram-bg: #f4f5fb;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1020; --surface: #15182c; --surface-2: #1c2038; --fg: #e6e8f5; --muted: #9aa0bd;
+  --line: #2a2f4d; --accent: #a98bff; --accent-2: #4fd3ea; --sunset: #ff9a5c;
+  --ok: #5fd39a; --warn: #f2c25b; --bad: #ff7b72; --code-bg: #1f2340; --diagram-bg: #f4f5fb;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 400 16px/1.6 var(--body); }
+.wrap { display: grid; grid-template-columns: 17rem minmax(0, 1fr); gap: 2.5rem; max-width: 84rem; margin: 0 auto; padding-inline: 24px; padding-block: 0 4rem; }
+nav.toc { position: sticky; top: env(safe-area-inset-top, 0px); align-self: start; max-height: 100vh; overflow-y: auto; padding-block: 2rem; font-size: 0.86rem; }
+nav.toc .brand { font: 700 1.05rem/1.2 var(--display); letter-spacing: 0.04em; color: var(--accent); margin-bottom: 1rem; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; }
+nav.toc ol ol { padding-left: 0.9rem; margin-block: 0.2rem 0.4rem; border-left: 1px solid var(--line); }
+nav.toc a { color: var(--muted); text-decoration: none; display: block; padding: 0.12rem 0.4rem; border-radius: 4px; }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--fg); background: var(--surface-2); outline: none; }
+main { min-width: 0; padding-block: 2rem; }
+main > section, main > header { max-width: 50rem; }
+header.hero { padding-block: 1.5rem 2rem; border-bottom: 1px solid var(--line); margin-bottom: 2rem; }
+.eyebrow { font: 600 0.75rem/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-2); }
+h1 { font: 700 clamp(2rem, 4vw, 2.8rem)/1.1 var(--display); margin: 0.6rem 0 0.8rem; text-wrap: balance; letter-spacing: 0.01em; }
+h2 { font: 700 1.6rem/1.2 var(--display); margin: 3.2rem 0 0.8rem; padding-top: 0.6rem; border-top: 2px solid var(--accent); text-wrap: balance; scroll-margin-top: 1rem; }
+h3 { font: 600 1.18rem/1.3 var(--display); margin: 2.2rem 0 0.6rem; scroll-margin-top: 1rem; text-wrap: balance; }
+h4 { font: 600 0.95rem/1.3 var(--body); margin: 1.4rem 0 0.4rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.8rem; }
+p, li { max-width: 72ch; }
+.lede { font-size: 1.1rem; color: var(--muted); }
+a { color: var(--accent); }
+code, kbd { font: 400 0.84em/1.4 var(--mono); background: var(--code-bg); padding: 0.08em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+pre.code { font: 400 0.8rem/1.5 var(--mono); background: var(--code-bg); padding: 0.9rem 1rem; border-radius: 6px; overflow-x: auto; max-width: 100%; }
+.tbl { overflow-x: auto; max-width: 100%; margin-block: 0.8rem 1.2rem; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; vertical-align: top; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--line); }
+th { font: 600 0.74rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: var(--surface-2); position: sticky; top: 0; }
+tr:last-child td { border-bottom: 0; }
+td code { white-space: nowrap; }
+td.wrap code { white-space: normal; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.8rem; margin-block: 1rem; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0.9rem 1rem; min-width: 0; }
+.card h4 { margin-top: 0; }
+.card p { margin: 0.3rem 0 0; font-size: 0.9rem; }
+figure.diagram { margin: 1.2rem 0; background: var(--diagram-bg); border: 1px solid var(--line); border-radius: 8px; padding: 1rem; overflow-x: auto; max-width: 100%; }
+figure.diagram figcaption { font-size: 0.8rem; color: #5a6078; margin-top: 0.6rem; }
+pre.mermaid { margin: 0; background: transparent; }
+.scenario { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.2rem 0.6rem; margin-block: 1.2rem; }
+.scenario > h3 { margin-top: 0.2rem; }
+.meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.6rem; }
+.meta b { color: var(--fg); font-weight: 600; }
+ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0.4rem 0 0.8rem; display: grid; gap: 0.55rem; }
+ol.steps > li { counter-increment: s; display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 0.2rem 0.6rem; max-width: none; }
+ol.steps > li::before { content: counter(s); font: 700 0.8rem/1.9rem var(--mono); text-align: center; width: 1.9rem; height: 1.9rem; border-radius: 50%; background: var(--surface-2); color: var(--accent); }
+ol.steps > li > div { min-width: 0; }
+.who { display: inline-block; font: 700 0.68rem/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 0.3em 0.5em; border-radius: 3px; margin-right: 0.4rem; vertical-align: 0.1em; border: 1px solid currentColor; }
+.w-player { color: var(--accent); } .w-studio { color: var(--sunset); } .w-web { color: var(--accent-2); }
+.w-launcher { color: var(--accent); } .w-ticketd { color: var(--ok); } .w-chain { color: var(--warn); } .w-admin { color: var(--bad); }
+.where { display: block; font: 400 0.78rem/1.4 var(--mono); color: var(--muted); margin-top: 0.15rem; overflow-wrap: anywhere; }
+.note, .gap { border-left: 3px solid var(--accent-2); background: var(--surface-2); padding: 0.6rem 0.9rem; border-radius: 0 6px 6px 0; margin-block: 0.8rem; font-size: 0.92rem; }
+.gap { border-left-color: var(--warn); }
+.gap b { color: var(--warn); }
+.pill { display: inline-block; font: 600 0.7rem/1 var(--mono); padding: 0.28em 0.55em; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); white-space: nowrap; }
+.pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); }
+.yes { color: var(--ok); font-weight: 700; } .no { color: var(--muted); }
+dl.gloss { display: grid; grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr); gap: 0.45rem 1.2rem; margin: 1rem 0; }
+dl.gloss dt { font-weight: 600; }
+dl.gloss dd { margin: 0; color: var(--fg); max-width: 62ch; }
+.tree { font: 400 0.82rem/1.6 var(--mono); background: var(--code-bg); padding: 0.8rem 1rem; border-radius: 6px; overflow-x: auto; white-space: pre; }
+footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; max-width: 50rem; }
+@media (max-width: 900px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; padding-inline: 16px; }
+  nav.toc { position: static; max-height: none; padding-block: 1.5rem 0; border-bottom: 1px solid var(--line); }
+  nav.toc > ol > li > ol { display: none; }
+  dl.gloss { grid-template-columns: minmax(0, 1fr); }
+  dl.gloss dd { margin-bottom: 0.5rem; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+html { scroll-behavior: smooth; }
+
+.toc-docs { display: grid; gap: 1rem; margin-block: 1.5rem; }
+.toc-docs a.card { text-decoration: none; color: var(--fg); display: block; }
+.toc-docs a.card:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="toc" aria-label="Sommaire">
+  <div class="brand">GAMEVAULT · ARCHITECTURE</div>
+  <ol>
+    <li><a href="#lire">Comment lire ce document</a></li>
+    <li><a href="#principes">1. Principes</a></li>
+    <li><a href="#composants">2. Composants</a></li>
+    <li><a href="#vue">3. Vue d'ensemble</a></li>
+    <li><a href="#deploiements">4. Déploiements</a>
+      <ol>
+        <li><a href="#dep-dev">Poste de dev</a></li>
+        <li><a href="#dep-compose">Docker Compose</a></li>
+        <li><a href="#dep-k8s">Kubernetes</a></li>
+        <li><a href="#dep-ansible">Serveurs (Ansible)</a></li>
+      </ol>
+    </li>
+    <li><a href="#donnees">5. Données</a>
+      <ol>
+        <li><a href="#ou">Où vit chaque donnée</a></li>
+        <li><a href="#schema">Schéma Postgres / SQLite</a></li>
+        <li><a href="#redis">Redis</a></li>
+        <li><a href="#carte">Cartouche et bibliothèque</a></li>
+      </ol>
+    </li>
+    <li><a href="#cles">6. Clés et secrets</a></li>
+    <li><a href="#flux">7. Flux</a>
+      <ol>
+        <li><a href="#f-publish">Publication</a></li>
+        <li><a href="#f-pair">Appairage</a></li>
+        <li><a href="#f-launch">Lancement</a></li>
+        <li><a href="#f-dl">Téléchargement</a></li>
+        <li><a href="#f-resale">Revente</a></li>
+        <li><a href="#f-live">Temps réel multi-réplicas</a></li>
+      </ol>
+    </li>
+    <li><a href="#ref">8. Référence</a>
+      <ol>
+        <li><a href="#r-contrats">Contrats</a></li>
+        <li><a href="#r-api">API ticketd</a></li>
+        <li><a href="#r-tauri">Commandes du launcher</a></li>
+        <li><a href="#r-web">Pages web</a></li>
+        <li><a href="#r-shared">Bibliothèque shared</a></li>
+        <li><a href="#r-subgraph">Subgraph</a></li>
+        <li><a href="#r-env">Variables d'environnement</a></li>
+        <li><a href="#r-err">Codes d'erreur</a></li>
+      </ol>
+    </li>
+    <li><a href="#securite">9. Sécurité</a></li>
+    <li><a href="#qualite">10. Qualité et exploitation</a></li>
+    <li><a href="#dette">11. Écarts et dette</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="eyebrow">Architecture technique · état au 11 octobre 2026 · contrats v1.1 · Base Sepolia</div>
+  <h1>Architecture technique GameVault</h1>
+  <p class="lede">Comment le système est construit, où vivent les données et les clés, comment les pièces se parlent, et comment on le déploie, du poste de développement au cluster Kubernetes.</p>
+</header>
+
+<section id="lire">
+  <h2>Comment lire ce document</h2>
+  <p>Les sections 1 à 3 donnent le modèle : principes, composants, vue d'ensemble. La section 4 décrit les trois façons de faire tourner la plateforme. Les sections 5 à 7 détaillent les données, les clés et les flux, avec le fichier où se trouve le code. La section 8 est une référence à consulter. Les sections 9 à 11 disent ce qui est garanti, comment on vérifie, et ce qui reste à faire.</p>
+  <p>Le parcours utilisateur, les écrans et les règles métier sont dans le document compagnon : <a href="fonctionnel.html"><b>Dossier fonctionnel GameVault</b></a>. L'exploitation au quotidien est dans <code>docs/runbook.md</code>.</p>
+  <p class="note">Une pastille indique qui agit : <span class="who w-player">joueur</span><span class="who w-studio">studio</span><span class="who w-launcher">launcher</span><span class="who w-web">site</span><span class="who w-ticketd">ticketd</span><span class="who w-chain">blockchain</span>. Les chemins sont relatifs à la racine du dépôt.</p>
+</section>
+
+<section id="principes">
+  <h2>1. Principes</h2>
+  <div class="grid2">
+    <div class="card"><h4>Le support transporte, la blockchain verrouille</h4><p>Le build est chiffré une seule fois (AES-256-GCM). La licence est un jeton ERC-721 ; posséder le jeton donne le droit d'obtenir un ticket pour sa machine.</p></div>
+    <div class="card"><h4>La clé suit la machine, pas le wallet</h4><p>Un wallet ne sait pas déchiffrer. La clé de contenu est enveloppée (ECIES) pour une <b>clé d'appareil</b> rangée dans le coffre Windows ; le wallet ne fait que signer l'autorisation.</p></div>
+    <div class="card"><h4>Contrôle hybride</h4><p>En ligne : <code>ownerOf</code> / <code>userOf</code> en direct (révocation immédiate, toutes les 20 s en partie). Hors ligne : signature plateforme + expiration (30 jours).</p></div>
+    <div class="card"><h4>Le clair reste dans Rust</h4><p>Le déchiffrement se fait dans le cœur Rust du launcher ; un jeu web est servi depuis la mémoire, un jeu natif n'existe sur disque que pendant la partie.</p></div>
+    <div class="card"><h4>Vérification de propriété, pas DRM</h4><p>Sans puce sécurisée, un utilisateur technique peut extraire une copie avant de revendre. C'est assumé et dit (section 9).</p></div>
+    <div class="card"><h4>Services sans état</h4><p>Depuis le 11 octobre, ticketd garde le durable dans Postgres et le jetable dans Redis : il tourne en plusieurs réplicas. SQLite + mémoire restent le défaut en local.</p></div>
+  </div>
+</section>
+
+<section id="composants">
+  <h2>2. Composants</h2>
+  <p>Monorepo npm (workspaces). Chaque composant a son dossier ; <code>shared/</code> porte le code commun.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Composant</th><th>Dossier</th><th>Technologie</th><th>Rôle</th></tr></thead>
+    <tbody>
+      <tr><td>Contrats</td><td><code>contracts/</code></td><td>Solidity 0.8.24, Foundry, OpenZeppelin 5</td><td>Catalogue (GameRegistry), licences + royalties ERC-2981 + prêts ERC-4907 (GameLicense), revente (Marketplace). Source de vérité de « qui possède quoi ».</td></tr>
+      <tr><td>ticketd</td><td><code>ticketd/</code></td><td>Node 22 (TypeScript natif), node:http, viem, SQLite ou Postgres, mémoire ou Redis</td><td>Émet les tickets après contrôle on-chain, chiffre et distribue les builds, garde les clés de contenu chiffrées, couche sociale (sessions, amis, chat, profils, présence, souhaits, confidentialité), registre des appareils.</td></tr>
+      <tr><td>Launcher</td><td><code>launcher/</code></td><td>Tauri 2 : cœur Rust + interface TypeScript (Vite)</td><td>Cartouches, appairage, vérification des tickets, déchiffrement en mémoire, lancement des jeux, gestionnaire de téléchargements, boutique, bibliothèque, amis et chat, profil, notifications de bureau.</td></tr>
+      <tr><td>Site web</td><td><code>web/</code></td><td>Next.js 15 (sortie standalone), React 19, wagmi 2, RainbowKit</td><td>Tout ce qui demande une signature de wallet : achat, appairage, revente, prêt, studio, profil, confidentialité ; pages publiques (catalogue, occasions, profils, studios, provenance).</td></tr>
+      <tr><td>shared</td><td><code>shared/</code></td><td>TypeScript, @noble/curves, @noble/ciphers</td><td>Format et signature des tickets, ECIES, chiffrement des builds, message d'appairage, adresses et ABI des contrats, accès IPFS, catalogue on-chain, emojis du chat.</td></tr>
+      <tr><td>Subgraph</td><td><code>subgraph/</code></td><td>The Graph, AssemblyScript, hébergé sur Goldsky</td><td>Indexe les événements pour l'historique des licences (provenance), les bibliothèques et les ventes des profils.</td></tr>
+      <tr><td>Jeux de test</td><td><code>game/</code></td><td>Phaser (HTML autonome), Rust (<code>native-test</code>)</td><td>Runner et Snake (web), un .exe pour le runtime natif ; « Stress Test 500 » = cet exe + 480 Mio de remplissage.</td></tr>
+      <tr><td>Infra</td><td><code>k8s/</code>, <code>deploy/</code>, <code>docker-compose.yml</code></td><td>Docker, Kustomize, Kubernetes, Ansible, k3s</td><td>Images, manifests (base, composant Postgres, overlays), playbook serveurs, tests de déploiement.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="vue">
+  <h2>3. Vue d'ensemble</h2>
+  <figure class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph PC["Machine du joueur"]
+    SD[("Cartouche SD/USB<br/>/gamevault/ (clé)")]
+    LIB[("Bibliothèque PC<br/>dossier GameVault")]
+    L["Launcher Tauri<br/>cœur Rust + interface"]
+    KS[("Coffre Windows<br/>clé d'appareil")]
+  end
+  WAL["Wallet<br/>(joueur, studio)"]
+  W["Site web<br/>Next.js"]
+  T["ticketd<br/>(1 à 8 réplicas)"]
+  PG[("Postgres<br/>(ou SQLite en local)")]
+  RD[("Redis<br/>(ou mémoire)")]
+  C[("Contrats Base Sepolia<br/>Registry · License · Marketplace")]
+  G["Subgraph<br/>Goldsky"]
+  I[("IPFS<br/>Pinata + passerelles")]
+  L -- "ticket, meta" --> SD
+  L -- "build.enc" --> LIB
+  L -- "clé privée" --> KS
+  L -- "ownerOf, userOf, catalogue, annonces" --> C
+  L -- "tickets, builds par morceaux, social" --> T
+  L -. "morceaux de secours" .-> I
+  L -- "ouvre /pair /trade /game" --> W
+  W -- "signatures" --> WAL
+  W -- "transactions" --> C
+  W -- "API, session" --> T
+  W -- "historique" --> G
+  T --> PG
+  T --> RD
+  T -- "ownerOf, editions" --> C
+  T -- "épingle, recharge" --> I
+  C -- "événements" --> G
+</pre>
+  <figcaption>Le wallet ne signe que dans le navigateur ; il ne touche jamais la carte, le launcher ni ticketd.</figcaption>
+  </figure>
+  <p>Trois canaux relient les pièces : <b>HTTP</b> (launcher et site vers ticketd), <b>transactions et lectures</b> sur la blockchain (site, launcher, ticketd), et <b>fichiers</b> sur la cartouche et dans la bibliothèque du PC. Le launcher ouvre les pages du site pour tout ce qui exige le wallet (acheter, appairer, revendre, prêter).</p>
+</section>
+
+<section id="deploiements">
+  <h2>4. Déploiements</h2>
+  <p>Le même code tourne de trois façons. Le choix des moteurs est fait par l'environnement : sans <code>DATABASE_URL</code>, ticketd utilise SQLite ; sans <code>REDIS_URL</code>, la mémoire.</p>
+
+  <h3 id="dep-dev">Poste de développement</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Service</th><th>Adresse</th><th>Lancement</th><th>Stockage</th></tr></thead>
+    <tbody>
+      <tr><td>ticketd</td><td><code>127.0.0.1:8787</code></td><td><code>npm run dev -w @gamevault/ticketd</code></td><td>SQLite <code>ticketd/data/ticketd.db</code>, mémoire</td></tr>
+      <tr><td>Site</td><td><code>localhost:3000</code></td><td><code>npm run dev -w @gamevault/web</code></td><td>—</td></tr>
+      <tr><td>Launcher</td><td>fenêtre Tauri (Vite 1420)</td><td><code>launcher\dev.cmd</code> ; exe release dans <code>launcher/src-tauri/target/release/</code></td><td>localStorage, coffre Windows, cartes, bibliothèque</td></tr>
+      <tr><td>Tout</td><td>—</td><td><code>dev.cmd</code> à la racine</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+  <p>Mode POC : au démarrage, le launcher peut lancer lui-même ticketd et le site s'ils ne tournent pas, et les arrêter en quittant (<code>start_local_services</code>, Paramètres › Démarrage). Pour voir l'interface du launcher dans un navigateur sans Tauri : <code>node launcher/dev/make-preview.mjs</code>, puis <code>/preview.html</code> (cœur Rust simulé).</p>
+
+  <h3 id="dep-compose">Docker Compose (un poste, façon production)</h3>
+  <p><code>docker compose up -d --build</code> démarre Postgres 16, Redis 7, deux réplicas ticketd (ports 18787 et 18788) et le site (13000). Conteneurs non-root, systèmes de fichiers en lecture seule, sondes de santé, dépendances ordonnées (ticketd attend Postgres et Redis sains). Les secrets viennent de <code>ticketd/.env</code>.</p>
+
+  <h3 id="dep-k8s">Kubernetes</h3>
+  <figure class="diagram">
+<pre class="mermaid">
+flowchart TB
+  U["Internet"] --> ING["ingress-nginx (2 à 6)<br/>TLS cert-manager · limites par IP"]
+  ING -- "gamevault.example" --> WEB["web · Deployment<br/>2 à 20 · HPA CPU"]
+  ING -- "api.gamevault.example<br/>5 classes de trafic" --> TK["ticketd · Deployment<br/>2 à 8 · HPA CPU"]
+  TK --> PG[("postgres · StatefulSet<br/>volume 20 à 50 Gio")]
+  TK --> RD[("redis · Deployment<br/>sans persistance")]
+  CJ["CronJob postgres-backup<br/>03:17, 14 jours"] --> PG
+  CJ --> BK[("volume postgres-backups")]
+</pre>
+  <figcaption>Namespace <code>gamevault</code>, Pod Security « restricted », NetworkPolicy : seul l'ingress entre ; Postgres n'accepte que ticketd et les sauvegardes ; Redis que ticketd.</figcaption>
+  </figure>
+  <div class="tbl"><table>
+    <thead><tr><th>Fichier</th><th>Contenu</th></tr></thead>
+    <tbody>
+      <tr><td><code>k8s/base/</code></td><td>namespace, ConfigMap, ticketd (Deployment, Service, HPA, PDB), web (idem), Redis, 5 Ingress, NetworkPolicy</td></tr>
+      <tr><td><code>k8s/components/postgres/</code></td><td>composant optionnel : Postgres StatefulSet, CronJob de sauvegarde, sa NetworkPolicy, et ticketd branché dessus (<code>DATABASE_URL</code> construit depuis le Secret). Laisser hors de l'overlay avec un Postgres managé.</td></tr>
+      <tr><td><code>k8s/overlays/minikube/</code></td><td>images locales <code>gamevault/*:dev</code>, domaines <code>*.gamevault.local</code>, petits volumes</td></tr>
+      <tr><td><code>k8s/ops/postgres-restore.yaml</code></td><td>Job de restauration d'un dump (à la main)</td></tr>
+      <tr><td><code>deploy/minikube.ps1</code></td><td>tout le déploiement local d'une commande</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Classes de trafic</b> (une Ingress chacune, limites par IP, réponse 429 au-delà) : <code>web</code> 30 req/s ; <code>api</code> 10 req/s, corps 1 Mo ; <code>api-auth</code> (<code>/ticket</code>, <code>/session</code>, <code>/devices/revoke</code>) 30 req/min ; <code>api-publish</code> 6 req/min, corps 110 Mo, 10 min ; <code>api-stream</code> (<code>/events</code>, <code>/build</code>) sans tampon, connexions tenues 1 h.</p>
+  <p><b>Sondes</b> : <code>/health</code> (vivacité : le processus répond, sans dépendance), <code>/ready</code> (disponibilité : Postgres joignable et pas en arrêt). <b>Arrêt propre</b> sur SIGTERM : <code>/ready</code> passe à 503, attente de 5 s pour la mise à jour des endpoints, fermeture des flux SSE (les clients se reconnectent ailleurs), fin des requêtes en cours. Vérifié : redémarrage progressif sous charge sans requête perdue.</p>
+
+  <h3 id="dep-ansible">Serveurs (Ansible)</h3>
+  <p><code>deploy/ansible/site.yml</code> : rôles <code>common</code> (mises à jour, pare-feu ufw, réglages noyau), <code>k3s_server</code> / <code>k3s_agent</code> (Kubernetes léger, secrets chiffrés au repos, Traefik désactivé), <code>platform</code> (Helm, ingress-nginx, cert-manager, émetteur Let's Encrypt), <code>gamevault</code> (overlay rendu depuis <code>group_vars</code>, Secrets depuis un vault chiffré, déploiement, attente des rollouts, test HTTPS sur <code>/ready</code>). Variante Postgres managé : <code>vault_external_database_url</code>. ansible-lint passe au profil « production ».</p>
+</section>
+
+<section id="donnees">
+  <h2>5. Données</h2>
+  <h3 id="ou">Où vit chaque donnée</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Donnée</th><th>Emplacement</th><th>Écrite par</th><th>Lue par</th></tr></thead>
+    <tbody>
+      <tr><td>Propriété des licences, prêts, annonces</td><td>Blockchain (GameLicense, Marketplace)</td><td>transactions des wallets</td><td>tous</td></tr>
+      <tr><td>Catalogue (studios, jeux, éditions, prix, CID, hash, revente)</td><td>Blockchain (GameRegistry)</td><td>studios</td><td>tous</td></tr>
+      <tr><td>Build chiffré</td><td>bibliothèque PC ou carte ; cache des pods ticketd ; IPFS</td><td>ticketd (publication), launcher (téléchargement)</td><td>launcher</td></tr>
+      <tr><td>Clés de contenu</td><td>table <code>content_keys</code>, chiffrées par <code>KEYSTORE_MASTER_KEY</code></td><td>ticketd (publication)</td><td>ticketd (émission de ticket)</td></tr>
+      <tr><td>Tickets</td><td>carte : <code>/gamevault/tickets/&lt;clé d'appareil&gt;.json</code></td><td>launcher</td><td>launcher</td></tr>
+      <tr><td>Clé privée d'appareil</td><td>coffre Windows (service <code>gamevault-launcher</code>, compte <code>device-key</code>)</td><td>launcher (premier lancement)</td><td>cœur Rust uniquement</td></tr>
+      <tr><td>Sessions, nonces, amis, chat, profils, avatars, appareils, activité, souhaits, confidentialité, pages studio, temps de jeu</td><td>Postgres (ou SQLite)</td><td>ticketd</td><td>ticketd → site, launcher</td></tr>
+      <tr><td>Présence, tickets d'appairage en attente, compteurs du chat</td><td>Redis (ou mémoire), avec durée de vie</td><td>ticketd</td><td>ticketd</td></tr>
+      <tr><td>Réglages, langue, historique de jeu local, session, compte suivi, vue du shelf</td><td>localStorage du launcher (<code>gv-settings</code>, <code>gv-lang</code>, <code>gv-playlog</code>, <code>gv-session</code>, <code>gv-watch</code>, <code>gv-shelfmode</code>)</td><td>launcher</td><td>launcher</td></tr>
+      <tr><td>Session sociale du site</td><td>localStorage du navigateur (jeton par adresse)</td><td>site</td><td>site</td></tr>
+      <tr><td>Historique indexé</td><td>Subgraph</td><td>The Graph</td><td>site (provenance, profils, studios)</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="schema">Schéma Postgres / SQLite</h3>
+  <p>Une seule interface SQL asynchrone (<code>ticketd/src/sql.ts</code>) sert les deux moteurs ; les dépôts de <code>ticketd/src/db.ts</code> écrivent du SQL portable. Le schéma évolue par <b>migrations numérotées</b> (<code>MIGRATIONS</code>, table <code>schema_migrations</code>), appliquées au démarrage sous verrou consultatif : avec plusieurs réplicas, une seule les applique. On ajoute une migration, on ne modifie jamais une migration appliquée. Horodatages en millisecondes (BIGINT sous Postgres), binaires en BLOB / BYTEA.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Table</th><th>Contenu</th><th>Migration</th></tr></thead>
+    <tbody>
+      <tr><td><code>content_keys</code></td><td>CID, clé chiffrée (nonce ‖ AES-GCM, CID en donnée associée), wallet et studio de publication</td><td>1</td></tr>
+      <tr><td><code>nonces</code></td><td>nonces utilisés et expiration (anti-rejeu atomique par clé primaire, purge continue)</td><td>1</td></tr>
+      <tr><td><code>sessions</code></td><td>empreinte SHA-256 du jeton, wallet, appareil (sessions launcher), expiration</td><td>1</td></tr>
+      <tr><td><code>friend_requests</code>, <code>friendships</code></td><td>demandes en attente ; amitiés (paire triée) et date de début</td><td>1</td></tr>
+      <tr><td><code>profiles</code></td><td>pseudo, bio, type d'avatar, favoris (JSON), dates</td><td>1</td></tr>
+      <tr><td><code>avatars</code></td><td>image de l'avatar (partagée par tous les réplicas)</td><td>2</td></tr>
+      <tr><td><code>playstats</code></td><td>secondes jouées par adresse et édition</td><td>1</td></tr>
+      <tr><td><code>devices</code></td><td>appareils par compte, appairage, dernière activité</td><td>1</td></tr>
+      <tr><td><code>activity</code></td><td>fil public (parties, nouveaux amis)</td><td>1</td></tr>
+      <tr><td><code>messages</code></td><td>conversations (texte, cartes de prêt), lecture</td><td>1</td></tr>
+      <tr><td><code>studio_pages</code></td><td>description, liens, équipe</td><td>1</td></tr>
+      <tr><td><code>wishlist</code></td><td>éditions souhaitées et dernier prix vu (privé)</td><td>1</td></tr>
+      <tr><td><code>privacy</code></td><td>niveaux de visibilité des 4 sections du profil</td><td>1</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Atomicité entre réplicas</b> : <code>tx(fn, lockKey)</code> prend un verrou consultatif Postgres de transaction sur une clé métier (le wallet, la paire d'amis). Il garantit les plafonds : 2 appareils, 16 amis (500 pour un studio), 50 souhaits. Sous SQLite, toutes les instructions passent par une seule connexion sérialisée.</p>
+  <p><b>Outils</b> : <code>npm run migrate -w @gamevault/ticketd</code> (appliquer, <code>--status</code>, <code>--from-sqlite</code> : copie complète SQLite → Postgres en une transaction, après avoir vérifié que la clé maître déchiffre les clés de la source) ; <code>npm run backup</code> (copie SQLite ou <code>pg_dump</code>).</p>
+
+  <h3 id="redis">Redis (état jetable)</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Clé / canal</th><th>Contenu</th><th>Durée</th></tr></thead>
+    <tbody>
+      <tr><td><code>gv:presence:&lt;wallet&gt;</code></td><td><code>{ playing }</code> — battement du launcher toutes les 60 s ; <code>SET … GET</code> rend l'état précédent</td><td>90 s</td></tr>
+      <tr><td><code>gv:pending:&lt;nonce&gt;</code></td><td>ticket signé en attente du launcher, remis une fois (<code>GETDEL</code>)</td><td>10 min</td></tr>
+      <tr><td><code>gv:rate:chat:&lt;wallet&gt;:&lt;fenêtre&gt;</code></td><td>compteur de messages (fenêtre fixe)</td><td>1 min</td></tr>
+      <tr><td>canal <code>gv:events</code></td><td>événements temps réel <code>{ wallet, event, data }</code> diffusés à tous les réplicas</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+  <p>Sans persistance (<code>--save ""</code>, <code>--appendonly no</code>, 256 Mo, <code>volatile-ttl</code>). Une panne de Redis ne coupe pas le service : <code>/ready</code> reste vert, la présence se lit « hors ligne », les événements ne sont pas diffusés, la limite du chat laisse passer.</p>
+
+  <h3 id="carte">Cartouche et bibliothèque</h3>
+  <p>La carte est la <b>clé</b> ; le jeu s'installe par défaut dans un dossier du PC, ou sur la carte si elle a la place. Sans carte insérée, on ne joue pas.</p>
+  <div class="tree">E:\gamevault\
+├── ticket.json              dernier ticket écrit (sert à la détection de la carte)
+├── tickets\
+│   └── &lt;clé d'appareil&gt;.json  un ticket par machine appairée (2 gardés)
+├── meta.json                titre, studio, édition (affichage)
+└── build.enc                facultatif : le jeu sur la carte
+
+D:\GameVault\                bibliothèque PC (proposée à la création)
+└── Stress Test 500 (QmTJ6tfc)\
+    ├── build.enc            le jeu chiffré, vérifié
+    ├── gamevault.json       identité du dossier (CID, titre, édition)
+    ├── build.enc.part       téléchargement en cours (reprise)
+    ├── build.enc.dl.json    état des morceaux
+    └── build.enc.manifest.json  liste des morceaux (réparation hors ligne)</div>
+  <p>Détection : tout volume amovible qui contient <code>/gamevault/ticket.json</code> (Rust, <code>sysinfo</code>, <code>launcher/src-tauri/src/media.rs</code>). Le ticket porte <code>tokenId</code>, <code>contract</code>, <code>chainId</code>, <code>ownerAddress</code>, <code>devicePubKey</code>, <code>wrappedContentKey</code>, <code>issuedAt</code>, <code>expiresAt</code> et la signature plateforme sur le SHA-256 d'un JSON canonique (<code>shared/src/ticket.ts</code>, miroir Rust <code>ticket.rs</code>). <code>build.enc</code> = nonce 12 octets ‖ données ‖ tag GCM, identique pour toutes les copies.</p>
+</section>
+
+<section id="cles">
+  <h2>6. Clés et secrets</h2>
+  <p>Chaque clé a un seul rôle : une fuite ne donne que le pouvoir de ce rôle.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Clé</th><th>Où elle vit</th><th>Ce qu'elle signe ou protège</th><th>Si elle fuit</th></tr></thead>
+    <tbody>
+      <tr><td>Wallet du joueur / studio</td><td>wallet (navigateur, téléphone)</td><td>achats, ventes, prêts, appairage, sessions web, révocation d'appareil, publication</td><td>c'est le compte : vol des licences</td></tr>
+      <tr><td>Clé d'appareil</td><td>coffre Windows, lue par le cœur Rust seul</td><td>déballe les clés de contenu des tickets de cette machine ; signe la preuve de session du launcher</td><td>déchiffrer les tickets de cette machine, agir socialement jusqu'à la révocation</td></tr>
+      <tr><td><code>TICKET_SIGNER_PRIVKEY</code></td><td>Secret ticketd</td><td>les tickets ; sa clé publique est dans le launcher</td><td>tickets valides hors ligne ; rotation = nouvelle version du launcher</td></tr>
+      <tr><td><code>ATTEST_SIGNER_PRIVKEY</code></td><td>Secret ticketd</td><td>attestations d'amitié EIP-712 lues par <code>lend()</code></td><td>contourner la règle des 3 jours ; rotation par <code>setAttestationSigner</code></td></tr>
+      <tr><td><code>KEYSTORE_MASTER_KEY</code></td><td>Secret ticketd + copie hors des serveurs</td><td>chiffre les clés de contenu au repos</td><td>avec la base : toutes les clés de jeux ; <b>perdue : plus aucun jeu servi</b> (absente des sauvegardes, volontairement)</td></tr>
+      <tr><td>Mot de passe Postgres / <code>DATABASE_URL</code></td><td>Secret <code>postgres-credentials</code> ou vault</td><td>accès à la base</td><td>lecture des données sociales ; les clés de jeux restent chiffrées</td></tr>
+      <tr><td><code>PINATA_JWT</code></td><td>Secret ticketd</td><td>épingler sur IPFS</td><td>remplir le quota</td></tr>
+      <tr><td>Clé admin</td><td><code>contracts/.env</code> (à déplacer sur wallet matériel)</td><td>propriétaire de GameLicense, reçoit les frais</td><td>changer la clé d'attestation, détourner les futurs frais</td></tr>
+      <tr><td>Clé de gaz / wallet de dev</td><td><code>contracts/.env</code>, <code>ticketd/.env</code></td><td>déploiements, données de test</td><td>perte d'ETH de test ; aucun rôle</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Les fichiers <code>.env</code>, <code>ticketd/data/</code>, l'inventaire et le vault Ansible sont hors de git ; aucune image Docker ne contient de secret (<code>.dockerignore</code>).</p>
+</section>
+
+<section id="flux">
+  <h2>7. Flux</h2>
+
+  <h3 id="f-publish">Publication d'un build</h3>
+  <ol class="steps">
+    <li><div><span class="who w-studio">studio</span>Choisit le fichier (.html ou .exe, reconnu par « MZ ») ; le navigateur calcule son SHA-256 et fait signer le message « GameVault Publish ».<span class="where">web/app/studio/page.tsx · publishEdition</span></div></li>
+    <li><div><span class="who w-ticketd">ticketd</span>Vérifie signature, âge, nonce, hash et propriété du studio on-chain ; génère une clé aléatoire, chiffre, épingle sur IPFS, garde la clé chiffrée et une copie du build en cache.<span class="where">POST /publish · service.ts · publishBuild</span></div></li>
+    <li><div><span class="who w-studio">studio</span>Crée l'édition on-chain avec prix, stock, revente oui/non, redevance et le couple CID + hash.<span class="where">GameRegistry.createEdition</span></div></li>
+  </ol>
+  <p>La clé est liée au studio qui a publié et à la première édition qui référence ce CID (une autre édition ne peut pas obtenir de ticket pour ce build).</p>
+
+  <h3 id="f-pair">Appairage d'une machine</h3>
+  <figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  actor J as Joueur
+  participant L as Launcher
+  participant W as Site /pair
+  participant T as ticketd (un réplica)
+  participant R as Redis
+  participant C as GameLicense
+  L->>L: nonce, QR (clé d'appareil)
+  J->>W: ouvre /pair, signe le message SIWE
+  W->>T: POST /ticket
+  T->>T: format, chaîne, âge, nonce (Postgres), signature
+  T->>C: ownerOf, userOf, userExpires
+  T->>T: clé de contenu, ECIES vers l'appareil, signature
+  T->>T: registre des appareils (2 max, verrou par wallet)
+  T->>R: gv:pending:nonce (10 min)
+  loop toutes les 1,5 s, n'importe quel réplica
+    L->>T: GET /pending/nonce
+    T->>R: GETDEL
+  end
+  T-->>L: ticket (une fois)
+  L->>L: vérification TS puis Rust, écrit tickets/clé.json
+</pre>
+  <figcaption>Le ticket peut être retiré auprès d'un autre réplica que celui qui l'a émis : il passe par Redis.</figcaption>
+  </figure>
+
+  <h3 id="f-launch">Lancement d'un jeu</h3>
+  <ol class="steps">
+    <li><div><span class="who w-launcher">launcher</span>PLAY n'est actif que si la carte est authentique (forme, chaîne, signature, expiration, machine) et le build présent (carte ou bibliothèque).<span class="where">judge · isOurs · playableNow</span></div></li>
+    <li><div><span class="who w-launcher">launcher</span>En ligne (2 s) : <code>ownerOf</code> / <code>userOf</code> ; pendant un prêt seul l'emprunteur joue. Puis : cet appareil est-il encore actif ? Hors ligne : fenêtre de 30 jours.<span class="where">checkOwnerOnline · deviceStillActive</span></div></li>
+    <li><div><span class="who w-launcher">cœur Rust</span>Revérifie tout le ticket (contrat lu à la compilation dans <code>deployments.ts</code>), lit la clé d'appareil, déballe la clé de contenu, déchiffre en mémoire, libère aussitôt le chiffré.<span class="where">play_game · ticket.rs · crypto.rs</span></div></li>
+    <li><div><span class="who w-launcher">cœur Rust</span>Web : HTML servi depuis la mémoire par <code>game://</code>. Natif : exe écrit dans <code>%LOCALAPPDATA%\GameVault\run\…</code>, empreinte revérifiée en flux, lancé et surveillé ; dossier effacé à la fin.<span class="where">lib.rs · launch_native</span></div></li>
+    <li><div><span class="who w-launcher">launcher</span>Pendant la partie, contrôle en ligne toutes les 20 s : revente ou appareil déconnecté → partie coupée (ERR 0x52 / 0x53).<span class="where">startSessionWatchdog</span></div></li>
+  </ol>
+
+  <h3 id="f-dl">Téléchargement par morceaux et réparation</h3>
+  <ol class="steps">
+    <li><div><span class="who w-launcher">launcher</span>Demande la liste des morceaux à ticketd : morceaux de 4 Mio, SHA-256 de chacun, SHA-256 global = l'empreinte inscrite on-chain.<span class="where">GET /build/:cid/manifest · download.rs · load_manifest</span></div></li>
+    <li><div><span class="who w-launcher">cœur Rust</span>4 workers en parallèle, plages HTTP : ticketd d'abord, passerelles IPFS (Pinata, ipfs.io, dweb.link) en secours, morceau par morceau. Chaque morceau est vérifié à l'arrivée ; état persisté (reprise après pause ou redémarrage).<span class="where">fetch_chunks · fetch_range</span></div></li>
+    <li><div><span class="who w-launcher">cœur Rust</span>Limite de vitesse par seau à jetons partagé ; pause automatique pendant une partie (option) ; empreinte finale comparée à la valeur on-chain, la racine de confiance.<span class="where">throttle · set_limit</span></div></li>
+    <li><div><span class="who w-ticketd">ticketd</span>Sert les plages en flux depuis son disque (jamais le fichier entier en mémoire) et calcule la liste des morceaux en flux.<span class="where">server.ts · /build · service.ts · getBuildManifest</span></div></li>
+    <li><div><span class="who w-launcher">launcher</span>VÉRIFIER relit les morceaux, ne retélécharge que les abîmés, puis revérifie l'empreinte finale.<span class="where">run_repair</span></div></li>
+  </ol>
+  <p class="note">Vérifié sur le build de 480 Mio : 121 morceaux, pause et reprise, 3 morceaux abîmés réparés exactement, 2 morceaux réparés via IPFS avec le serveur coupé.</p>
+
+  <h3 id="f-resale">Revente et révocation</h3>
+  <figure class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  actor V as Vendeur
+  actor A as Acheteur
+  participant M as Marketplace
+  participant G as GameLicense
+  participant LV as Launcher du vendeur
+  V->>G: approve(Marketplace, licence)
+  V->>M: list(licence, prix)
+  A->>M: buy(licence) au prix exact
+  M->>G: royaltyInfo, transferFrom (tue un prêt)
+  M-->>V: 85 % (crédit si refus)
+  M-->>M: 10 % studio, 5 % plateforme
+  LV->>G: ownerOf (toutes les 20 s en partie)
+  G-->>LV: acheteur
+  LV->>LV: ERR 0x52, partie coupée
+  A->>A: appaire sa machine (même build, nouvelle enveloppe)
+</pre>
+  </figure>
+
+  <h3 id="f-live">Temps réel avec plusieurs réplicas</h3>
+  <p>Un flux SSE (<code>GET /events?token=</code>) est tenu par le réplica qui l'a accepté. Un événement (message, lecture, présence, amis) est publié sur le canal Redis <code>gv:events</code> ; chaque réplica le reçoit et le remet aux flux qu'il tient pour ce wallet. Sans Redis, la remise se fait en mémoire (un seul processus). À l'arrêt d'un réplica, ses flux sont fermés et les clients se reconnectent ailleurs.</p>
+</section>
+
+<section id="ref">
+  <h2>8. Référence</h2>
+
+  <h3 id="r-contrats">Contrats (Base Sepolia, chainId 84532)</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Contrat</th><th>Adresse</th><th>Fonctions principales</th></tr></thead>
+    <tbody>
+      <tr><td>GameRegistry</td><td><code>0x713072aB1826f4608B0a26a441F2FF954F9243E6</code></td><td><code>registerStudio</code>, <code>createGame</code>, <code>createEdition(gameId, supply, price, royaltyBps ≤ 2000, resellable, buildCid, buildHash)</code>, <code>isResellable</code>, <code>recordMint</code> (License seule) ; lectures <code>studios</code>, <code>games</code>, <code>editions</code></td></tr>
+      <tr><td>GameLicense</td><td><code>0x844cb5292c7Fe7a186F1dF0914f2463c7fFC3fE8</code></td><td><code>buy</code> (92 % studio, 8 % plateforme), ERC-721 (transfert refusé si non revendable, compteur <code>transferCount</code>), ERC-2981 <code>royaltyInfo</code>, prêt <code>lend</code> / <code>endLoan</code> / <code>userOf</code> / <code>userExpires</code> (3 j d'amitié attestée, 14 j max, 24 h de repos), <code>setAttestationSigner</code>, Ownable2Step</td></tr>
+      <tr><td>Marketplace</td><td><code>0x0E16549E5282a91C5bA189da67D9E7eC57BE0632</code></td><td><code>list</code> (mémorise <code>transferCount</code>), <code>unlist</code>, <code>buy</code> (paiements à 30 000 gaz, repli en crédit), <code>withdraw</code> ; 5 % plateforme, sans admin</td></tr>
+    </tbody>
+  </table></div>
+  <p>Déployés au bloc 47862131. Adresses : <code>shared/src/deployments.ts</code> (source unique) et <code>subgraph/subgraph.yaml</code>. Édition de test lourde : #4 « Stress Test 500 ».</p>
+
+  <h3 id="r-api">API ticketd</h3>
+  <p>Écoute en local par défaut (<code>HOST</code> pour un conteneur), CORS limité au site et au launcher, corps plafonnés (16 Ko messages signés, 600 Ko profil, 100 Mo build), URL masquées dans les erreurs.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Route</th><th>Appelant</th><th>Auth</th><th>Rôle</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /health</code> · <code>/ready</code> · <code>/metrics</code></td><td>Kubernetes, Prometheus</td><td>—</td><td>vivacité ; disponibilité (Postgres, arrêt) ; métriques</td></tr>
+      <tr><td><code>POST /ticket</code></td><td>site /pair</td><td>message SIWE signé</td><td>émet un ticket</td></tr>
+      <tr><td><code>GET /pending/:nonce</code></td><td>launcher</td><td>le nonce</td><td>remet le ticket une fois</td></tr>
+      <tr><td><code>POST /publish</code></td><td>site /studio</td><td>message « Publish » signé (en-têtes)</td><td>chiffre, épingle, garde la clé</td></tr>
+      <tr><td><code>GET/HEAD /build/:cid</code> · <code>/build/:cid/manifest</code></td><td>launcher</td><td>—</td><td>build en plages (206/416) ; liste des morceaux</td></tr>
+      <tr><td><code>POST /session</code> · <code>/session/device</code> · <code>GET/DELETE /session</code></td><td>site · launcher</td><td>signature wallet · preuve de clé d'appareil</td><td>session de 24 h (jeton Bearer, seule l'empreinte est stockée)</td></tr>
+      <tr><td><code>GET /events?token=</code></td><td>site, launcher</td><td>jeton</td><td>flux SSE : message, lecture, présence, amis</td></tr>
+      <tr><td><code>GET /devices/:wallet</code> · <code>/devices/:wallet/:pubkey/status</code> · <code>POST /devices/revoke</code></td><td>site, launcher</td><td>révocation signée</td><td>2 appareils actifs par compte</td></tr>
+      <tr><td><code>GET /friends/:addr</code> · <code>POST /friends/action</code> · <code>/friends/attest</code></td><td>site, launcher</td><td>session (lecture : session facultative)</td><td>amis, demandes ; attestation EIP-712 pour le prêt</td></tr>
+      <tr><td><code>GET /chat</code> · <code>GET/POST /chat/:addr</code> · <code>POST /chat/:addr/read</code></td><td>site, launcher</td><td>session, amis</td><td>conversations (1000 caractères, 30/min)</td></tr>
+      <tr><td><code>GET /profile/:addr</code> · <code>/profile/avatar/:addr</code> · <code>/profile/search</code> · <code>/profiles/names</code></td><td>site, launcher</td><td>session facultative</td><td>profil filtré selon qui regarde (confidentialité)</td></tr>
+      <tr><td><code>POST /profile</code> · <code>GET/POST /profile/privacy</code></td><td>site, launcher</td><td>session</td><td>pseudo, bio, avatar, favoris ; niveaux de visibilité</td></tr>
+      <tr><td><code>POST /presence</code> · <code>/profile/playstat</code></td><td>launcher</td><td>session d'appareil</td><td>en ligne / en jeu ; temps de jeu</td></tr>
+      <tr><td><code>GET/POST /wishlist</code> · <code>POST /wishlist/seen</code></td><td>site, launcher</td><td>session</td><td>liste de souhaits privée, dernier prix vu</td></tr>
+      <tr><td><code>GET/POST /studio/:id/page</code> · <code>GET /studios/of/:addr</code></td><td>site, launcher</td><td>écriture : propriétaire on-chain</td><td>page publique du studio ; studios d'un compte</td></tr>
+      <tr><td><code>POST /friends/backdate</code></td><td>développeur</td><td><code>GAMEVAULT_DEV=1</code> seulement</td><td>antidate une amitié</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="r-tauri">Commandes du launcher (<code>launcher/src-tauri/src/lib.rs</code>)</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Domaine</th><th>Commandes</th></tr></thead>
+    <tbody>
+      <tr><td>Identité</td><td><code>get_device_pubkey</code>, <code>device_session_proof</code></td></tr>
+      <tr><td>Cartes</td><td><code>scan_cartridges</code>, <code>list_removable_volumes</code>, <code>install_cartridge</code>, <code>write_ticket</code> (vérification complète, 2 tickets gardés), <code>write_build</code></td></tr>
+      <tr><td>Jeu</td><td><code>play_game(mount_point, build_path)</code>, <code>stop_game</code>, <code>native_status</code>, protocole <code>game://</code></td></tr>
+      <tr><td>Téléchargements</td><td><code>dl_start</code>, <code>dl_repair</code>, <code>dl_pause</code>, <code>dl_cancel</code>, <code>dl_set_limit</code>, <code>dl_preview</code>, <code>disk_space</code>, <code>library_scan</code>, <code>default_library</code>, <code>create_library</code>, <code>cache_info</code>, <code>clear_cache</code> ; événements <code>dl-progress</code>, <code>dl-log</code></td></tr>
+      <tr><td>Fenêtres, système</td><td><code>desktop_toast</code>, <code>toast_ready</code>, <code>toast_fit</code>, <code>toast_close</code>, <code>focus_main</code>, <code>launched_at_startup</code>, <code>start_local_services</code>, <code>reveal_folder</code>, <code>set_ui_scale</code></td></tr>
+      <tr><td>Développement</td><td><code>dev_damage_build</code> (abîme 3 morceaux, mode développeur)</td></tr>
+    </tbody>
+  </table></div>
+  <p>Toute commande qui touche une carte refuse un chemin qui n'est pas un volume amovible détecté (<code>known_mount</code>) ; un build de bibliothèque n'est accepté qu'à côté de son <code>gamevault.json</code>. Plugins : opener, dialog, autostart. Fenêtre principale sans décoration, fermeture vers la zone de notification ; fenêtre « toast » transparente, toujours au-dessus.</p>
+
+  <h3 id="r-web">Pages web (<code>web/app</code>)</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Page</th><th>Rôle</th><th>Signatures</th></tr></thead>
+    <tbody>
+      <tr><td><code>/</code></td><td>catalogue on-chain, nouveautés, occasions, studios</td><td>—</td></tr>
+      <tr><td><code>/game/[editionId]</code></td><td>fiche, achat neuf, souhait, meilleure occasion</td><td>1 transaction</td></tr>
+      <tr><td><code>/occasions</code></td><td>marché d'occasion avec vendeurs</td><td>1 transaction pour acheter</td></tr>
+      <tr><td><code>/trade</code></td><td>mettre en vente, retirer, acheter (ouvert par le launcher)</td><td>1 à 2 transactions</td></tr>
+      <tr><td><code>/pair</code></td><td>cible du QR : places d'appareils, message SIWE</td><td>1 signature</td></tr>
+      <tr><td><code>/studio</code>, <code>/studios</code>, <code>/studio/[id]</code></td><td>publier ; pages publiques des studios</td><td>3 transactions + 1 signature</td></tr>
+      <tr><td><code>/friends</code>, <code>/chat</code></td><td>amis, prêts ; messages (emojis)</td><td>session ; transactions pour les prêts</td></tr>
+      <tr><td><code>/profile</code>, <code>/u/[address]</code></td><td>édition (confidentialité, souhaits, appareils, gains) ; profil public filtré</td><td>session ; révocation signée</td></tr>
+      <tr><td><code>/provenance/[tokenId]</code></td><td>historique d'une licence (subgraph)</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="r-shared">Bibliothèque shared (<code>shared/src</code>)</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Module</th><th>Contenu</th></tr></thead>
+    <tbody>
+      <tr><td><code>ticket.ts</code></td><td>format, JSON canonique, <code>signTicket</code>, <code>verifyTicket</code>, <code>isExpired</code></td></tr>
+      <tr><td><code>ecies.ts</code>, <code>buildcrypto.ts</code></td><td>enveloppe ECIES (secp256k1, SHA-256, AES-GCM) ; chiffrement des builds</td></tr>
+      <tr><td><code>siwe.ts</code></td><td>message d'appairage (construction et relecture exactes)</td></tr>
+      <tr><td><code>storage.ts</code></td><td>IPFS : <code>putBuild</code> (Pinata), <code>fetchBuild</code> (miroirs, hash) — point de bascule vers un autre stockage</td></tr>
+      <tr><td><code>deployments.ts</code>, <code>abi.ts</code>, <code>registryCatalog.ts</code></td><td>chaîne et adresses ; ABI minimales ; catalogue on-chain</td></tr>
+      <tr><td><code>emoji.ts</code>, <code>achievements.ts</code>, <code>devkeys.ts</code></td><td>emojis du chat ; format des succès (pas encore branché) ; clés de développement publiques</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="r-subgraph">Subgraph</h3>
+  <p>Entités <code>Studio</code>, <code>Game</code>, <code>Edition</code>, <code>License</code>, <code>Transfer</code>, <code>RoyaltyPayment</code>, <code>Loan</code>, <code>PendingPayout</code>, construites depuis les événements des trois contrats. Goldsky, projet <code>gamevault</code> 0.3.0, étiquette <code>prod</code> ; URL publique en lecture seule dans <code>deployments.ts</code>. Une fin de prêt naturelle n'émet pas d'événement : comparer <code>loanExpires</code> à l'heure.</p>
+
+  <h3 id="r-env">Variables d'environnement</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Service</th><th>Variables (noms seulement)</th></tr></thead>
+    <tbody>
+      <tr><td>ticketd</td><td class="wrap"><code>TICKET_SIGNER_PRIVKEY</code>, <code>ATTEST_SIGNER_PRIVKEY</code>, <code>KEYSTORE_MASTER_KEY</code>, <code>PINATA_JWT</code>, <code>GAMELICENSE_ADDRESS</code>, <code>RPC_URL</code>, <code>PORT</code>, <code>HOST</code>, <code>CORS_ORIGINS</code>, <code>DATABASE_URL</code>, <code>REDIS_URL</code>, <code>PG_POOL_MAX</code> (10), <code>PG_STATEMENT_TIMEOUT_MS</code>, <code>DB_CONNECT_RETRIES</code> (30 × 2 s), <code>SHUTDOWN_DELAY_MS</code>, <code>SHUTDOWN_GRACE_MS</code>, <code>GAMEVAULT_DEV</code>, <code>GAMEVAULT_SKIP_OWNER_CHECK</code> et <code>GAMEVAULT_TEST_BACKENDS</code> (tests)</td></tr>
+      <tr><td>Site</td><td class="wrap"><code>NEXT_PUBLIC_TICKETD_URL</code>, <code>NEXT_PUBLIC_SUBGRAPH_URL</code>, <code>NEXT_PUBLIC_WC_PROJECT_ID</code> (figées au build)</td></tr>
+      <tr><td>Launcher</td><td class="wrap">adresses de POC dans le code (ticketd <code>127.0.0.1:8787</code>, site <code>localhost:3000</code>) ; <code>GAMEVAULT_DEV_MEDIA_DIR</code> fait passer un dossier pour une carte</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="r-err">Codes d'erreur du launcher</h3>
+  <div class="tbl"><table>
+    <thead><tr><th>Code</th><th>Quand</th></tr></thead>
+    <tbody>
+      <tr><td><code>ERR 0x21</code></td><td>ticket invalide à l'appairage, ou refusé par le cœur Rust au lancement</td></tr>
+      <tr><td><code>ERR 0x31 · PAIRING TIMEOUT</code></td><td>appairage ouvert plus de 10 minutes</td></tr>
+      <tr><td><code>ERR 0x42 · CARD WRITE FAILED</code></td><td>téléchargement ou écriture de la carte en échec</td></tr>
+      <tr><td><code>ERR 0x51 · LICENCE MOVED</code></td><td>licence revendue, ou prêtée (pour le prêteur)</td></tr>
+      <tr><td><code>ERR 0x52 · RESOLD MID-SESSION</code></td><td>revente détectée pendant une partie</td></tr>
+      <tr><td><code>ERR 0x53 · DEVICE SLOT RELEASED</code></td><td>machine déconnectée du compte</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="securite">
+  <h2>9. Sécurité</h2>
+  <h3>Garanti</h3>
+  <ul>
+    <li>Le wallet ne signe que dans le navigateur ; sa clé privée n'atteint ni le launcher, ni la carte, ni ticketd.</li>
+    <li>Un ticket est scellé pour une machine : copier la carte ne sert à rien sans la clé d'appareil.</li>
+    <li>Le ticket est vérifié en TypeScript puis dans Rust avant tout déchiffrement ; un ticket d'un autre déploiement du contrat est refusé.</li>
+    <li>Le clair reste en mémoire (jeu web) ou n'existe que pendant la partie (jeu natif, empreinte revérifiée).</li>
+    <li>En ligne, revente et prêt révoquent l'ancien détenteur au lancement et en partie (20 s).</li>
+    <li>Messages signés non rejouables, même après redémarrage et même sur un autre réplica (nonces en base).</li>
+    <li>Téléchargements : chaque morceau vérifié, empreinte finale comparée à la valeur on-chain ; un serveur ou un miroir menteur est toujours détecté.</li>
+    <li>Clés de contenu chiffrées au repos ; une clé par rôle ; aucun destinataire ne peut bloquer une revente.</li>
+    <li>Infra : conteneurs non-root, lecture seule, Pod Security « restricted », NetworkPolicy, limites de débit par IP, TLS, secrets hors du dépôt et des images.</li>
+  </ul>
+  <h3>Limites assumées</h3>
+  <ul>
+    <li><b>Copie déchiffrée</b> : un utilisateur technique peut extraire la clé avant de revendre. « Vérification de propriété, pas DRM ».</li>
+    <li><b>Fenêtre hors ligne</b> : un vendeur resté hors ligne joue jusqu'à 30 jours après la vente.</li>
+    <li><b>ticketd est un tiers de confiance</b> : il détient les clés de contenu et la clé des tickets.</li>
+    <li><b>Chat non chiffré de bout en bout</b> ; une session volée permet des actions sociales pendant 24 h.</li>
+    <li><b>Exe natifs non signés</b> (Authenticode pas encore vérifié).</li>
+  </ul>
+</section>
+
+<section id="qualite">
+  <h2>10. Qualité et exploitation</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Vérification</th><th>Commande</th><th>Couvre</th></tr></thead>
+    <tbody>
+      <tr><td>Typecheck</td><td><code>npm run typecheck</code></td><td>shared, ticketd, launcher, web (strict)</td></tr>
+      <tr><td>Selftest shared</td><td><code>npm run selftest -w @gamevault/shared</code></td><td>tickets, ECIES, chiffrement</td></tr>
+      <tr><td>Selftest ticketd</td><td><code>npm run selftest -w @gamevault/ticketd</code> (+ <code>GAMEVAULT_TEST_BACKENDS=1</code>)</td><td>40 contrôles : émission, sessions, amis, chat, temps réel, avatars, souhaits, confidentialité, limite — en mémoire et sur Postgres + Redis</td></tr>
+      <tr><td>Contrats</td><td><code>cd contracts &amp;&amp; forge test</code></td><td>48 tests Foundry</td></tr>
+      <tr><td>Launcher</td><td><code>cargo test</code> (avec vcvars64)</td><td>15 tests ; 2 tests réels ignorés par défaut (<code>download_repair_live</code>, <code>download_big_live</code>)</td></tr>
+      <tr><td>Manifests</td><td><code>kubectl kustomize k8s/overlays/minikube | python deploy/check-manifests.py</code></td><td>sondes, ressources, sécurité, références, Ingress, HPA</td></tr>
+      <tr><td>Multi-réplicas</td><td><code>node deploy/e2e-multireplica.mjs --rollout</code></td><td>état partagé entre pods, redémarrage progressif sans perte</td></tr>
+      <tr><td>CI GitHub</td><td>à chaque push</td><td>typecheck, selftests, build du site, <code>npm audit</code> bloquant (high), Foundry, bundle et tests Rust du launcher</td></tr>
+    </tbody>
+  </table></div>
+  <p>Exploitation, incidents, capacité, sauvegardes et restauration (testées), liste de mise en production : <code>docs/runbook.md</code>. Infra détaillée : <code>docs/infra.md</code>.</p>
+</section>
+
+<section id="dette">
+  <h2>11. Écarts et dette</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Zone</th><th>Écart</th><th>Nature</th></tr></thead>
+    <tbody>
+      <tr><td>Launcher</td><td>Adresses de ticketd et du site en dur (POC) dans <code>main.ts</code> et <code>download.rs</code> : il faut une configuration de build production.</td><td>avant mise en ligne</td></tr>
+      <tr><td>Distribution</td><td>Chaque pod ticketd recharge les builds depuis IPFS ; à grande échelle : stockage objet + CDN.</td><td>à l'échelle</td></tr>
+      <tr><td>Launcher</td><td>La session SIWE n'est pas revérifiée au lancement ; la possession de la clé d'appareil est prouvée implicitement par le déballage ECIES.</td><td>décision</td></tr>
+      <tr><td>Lectures chaîne</td><td>Le site et le launcher parcourent les jetons un par un sur le RPC (licences, annonces, prêts) ; basculer sur le subgraph quand le volume grandira.</td><td>à l'échelle</td></tr>
+      <tr><td>Contrats</td><td>Vente neuve en paiement direct au studio (sans repli en crédit) ; règles 3 j / 24 h et partage 85/10/5 écrits en dur dans le site.</td><td>prochain redéploiement</td></tr>
+      <tr><td>Mises à jour de jeux</td><td>Une édition porte un seul build figé on-chain : publier une nouvelle version demande un modèle de versions (contrat v1.2).</td><td>conception</td></tr>
+      <tr><td>Infra</td><td>NetworkPolicy non éprouvées (le réseau de minikube ne les applique pas), pas encore de tir de charge, secrets dans un vault Ansible plutôt qu'un gestionnaire.</td><td>avant mise en ligne</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<footer>Document établi à partir du code du dépôt le 11 octobre 2026 (après la migration Postgres + Redis). Compagnon : <a href="fonctionnel.html"><b>Dossier fonctionnel GameVault</b></a> · exploitation : <code>docs/runbook.md</code>.</footer>
+</main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral" });</script>
+</body>
+</html>

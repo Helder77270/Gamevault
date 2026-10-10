@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dossier fonctionnel GameVault</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Space+Mono:wght@400;700&display=swap">
+<style>
+/* Layout: sticky table of contents on the left (desktop), single reading column ~72ch; stacks on phones. */
+:root {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #eef0f8;
+  --fg: #171a2b;
+  --muted: #5a6078;
+  --line: #d9dcea;
+  --accent: #6a3fd1;      /* Midnight Drive violet */
+  --accent-2: #0a8fa8;    /* cyan */
+  --sunset: #c2551f;      /* Chrome Sunset, used sparingly */
+  --ok: #1d7a4a;
+  --warn: #9a6400;
+  --bad: #b3261e;
+  --code-bg: #eceef7;
+  --diagram-bg: #ffffff;
+  --display: "Chakra Petch", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "Space Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1020; --surface: #15182c; --surface-2: #1c2038; --fg: #e6e8f5; --muted: #9aa0bd;
+    --line: #2a2f4d; --accent: #a98bff; --accent-2: #4fd3ea; --sunset: #ff9a5c;
+    --ok: #5fd39a; --warn: #f2c25b; --bad: #ff7b72; --code-bg: #1f2340; --diagram-bg: #f4f5fb;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1020; --surface: #15182c; --surface-2: #1c2038; --fg: #e6e8f5; --muted: #9aa0bd;
+  --line: #2a2f4d; --accent: #a98bff; --accent-2: #4fd3ea; --sunset: #ff9a5c;
+  --ok: #5fd39a; --warn: #f2c25b; --bad: #ff7b72; --code-bg: #1f2340; --diagram-bg: #f4f5fb;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 400 16px/1.6 var(--body); }
+.wrap { display: grid; grid-template-columns: 17rem minmax(0, 1fr); gap: 2.5rem; max-width: 84rem; margin: 0 auto; padding-inline: 24px; padding-block: 0 4rem; }
+nav.toc { position: sticky; top: env(safe-area-inset-top, 0px); align-self: start; max-height: 100vh; overflow-y: auto; padding-block: 2rem; font-size: 0.86rem; }
+nav.toc .brand { font: 700 1.05rem/1.2 var(--display); letter-spacing: 0.04em; color: var(--accent); margin-bottom: 1rem; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; }
+nav.toc ol ol { padding-left: 0.9rem; margin-block: 0.2rem 0.4rem; border-left: 1px solid var(--line); }
+nav.toc a { color: var(--muted); text-decoration: none; display: block; padding: 0.12rem 0.4rem; border-radius: 4px; }
+nav.toc a:hover, nav.toc a:focus-visible { color: var(--fg); background: var(--surface-2); outline: none; }
+main { min-width: 0; padding-block: 2rem; }
+main > section, main > header { max-width: 50rem; }
+header.hero { padding-block: 1.5rem 2rem; border-bottom: 1px solid var(--line); margin-bottom: 2rem; }
+.eyebrow { font: 600 0.75rem/1 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-2); }
+h1 { font: 700 clamp(2rem, 4vw, 2.8rem)/1.1 var(--display); margin: 0.6rem 0 0.8rem; text-wrap: balance; letter-spacing: 0.01em; }
+h2 { font: 700 1.6rem/1.2 var(--display); margin: 3.2rem 0 0.8rem; padding-top: 0.6rem; border-top: 2px solid var(--accent); text-wrap: balance; scroll-margin-top: 1rem; }
+h3 { font: 600 1.18rem/1.3 var(--display); margin: 2.2rem 0 0.6rem; scroll-margin-top: 1rem; text-wrap: balance; }
+h4 { font: 600 0.95rem/1.3 var(--body); margin: 1.4rem 0 0.4rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.8rem; }
+p, li { max-width: 72ch; }
+.lede { font-size: 1.1rem; color: var(--muted); }
+a { color: var(--accent); }
+code, kbd { font: 400 0.84em/1.4 var(--mono); background: var(--code-bg); padding: 0.08em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+pre.code { font: 400 0.8rem/1.5 var(--mono); background: var(--code-bg); padding: 0.9rem 1rem; border-radius: 6px; overflow-x: auto; max-width: 100%; }
+.tbl { overflow-x: auto; max-width: 100%; margin-block: 0.8rem 1.2rem; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; vertical-align: top; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--line); }
+th { font: 600 0.74rem/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); background: var(--surface-2); position: sticky; top: 0; }
+tr:last-child td { border-bottom: 0; }
+td code { white-space: nowrap; }
+td.wrap code { white-space: normal; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.8rem; margin-block: 1rem; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0.9rem 1rem; min-width: 0; }
+.card h4 { margin-top: 0; }
+.card p { margin: 0.3rem 0 0; font-size: 0.9rem; }
+figure.diagram { margin: 1.2rem 0; background: var(--diagram-bg); border: 1px solid var(--line); border-radius: 8px; padding: 1rem; overflow-x: auto; max-width: 100%; }
+figure.diagram figcaption { font-size: 0.8rem; color: #5a6078; margin-top: 0.6rem; }
+pre.mermaid { margin: 0; background: transparent; }
+.scenario { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.2rem 0.6rem; margin-block: 1.2rem; }
+.scenario > h3 { margin-top: 0.2rem; }
+.meta { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.6rem; }
+.meta b { color: var(--fg); font-weight: 600; }
+ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0.4rem 0 0.8rem; display: grid; gap: 0.55rem; }
+ol.steps > li { counter-increment: s; display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: 0.2rem 0.6rem; max-width: none; }
+ol.steps > li::before { content: counter(s); font: 700 0.8rem/1.9rem var(--mono); text-align: center; width: 1.9rem; height: 1.9rem; border-radius: 50%; background: var(--surface-2); color: var(--accent); }
+ol.steps > li > div { min-width: 0; }
+.who { display: inline-block; font: 700 0.68rem/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 0.3em 0.5em; border-radius: 3px; margin-right: 0.4rem; vertical-align: 0.1em; border: 1px solid currentColor; }
+.w-player { color: var(--accent); } .w-studio { color: var(--sunset); } .w-web { color: var(--accent-2); }
+.w-launcher { color: var(--accent); } .w-ticketd { color: var(--ok); } .w-chain { color: var(--warn); } .w-admin { color: var(--bad); }
+.where { display: block; font: 400 0.78rem/1.4 var(--mono); color: var(--muted); margin-top: 0.15rem; overflow-wrap: anywhere; }
+.note, .gap { border-left: 3px solid var(--accent-2); background: var(--surface-2); padding: 0.6rem 0.9rem; border-radius: 0 6px 6px 0; margin-block: 0.8rem; font-size: 0.92rem; }
+.gap { border-left-color: var(--warn); }
+.gap b { color: var(--warn); }
+.pill { display: inline-block; font: 600 0.7rem/1 var(--mono); padding: 0.28em 0.55em; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); white-space: nowrap; }
+.pill.ok { color: var(--ok); } .pill.warn { color: var(--warn); } .pill.bad { color: var(--bad); }
+.yes { color: var(--ok); font-weight: 700; } .no { color: var(--muted); }
+dl.gloss { display: grid; grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr); gap: 0.45rem 1.2rem; margin: 1rem 0; }
+dl.gloss dt { font-weight: 600; }
+dl.gloss dd { margin: 0; color: var(--fg); max-width: 62ch; }
+.tree { font: 400 0.82rem/1.6 var(--mono); background: var(--code-bg); padding: 0.8rem 1rem; border-radius: 6px; overflow-x: auto; white-space: pre; }
+footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.85rem; max-width: 50rem; }
+@media (max-width: 900px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; padding-inline: 16px; }
+  nav.toc { position: static; max-height: none; padding-block: 1.5rem 0; border-bottom: 1px solid var(--line); }
+  nav.toc > ol > li > ol { display: none; }
+  dl.gloss { grid-template-columns: minmax(0, 1fr); }
+  dl.gloss dd { margin-bottom: 0.5rem; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+html { scroll-behavior: smooth; }
+
+.toc-docs { display: grid; gap: 1rem; margin-block: 1.5rem; }
+.toc-docs a.card { text-decoration: none; color: var(--fg); display: block; }
+.toc-docs a.card:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav class="toc" aria-label="Sommaire">
+  <div class="brand">GAMEVAULT · FONCTIONNEL</div>
+  <ol>
+    <li><a href="#lire">Comment lire ce document</a></li>
+    <li><a href="#produit">1. Le produit</a></li>
+    <li><a href="#glossaire">2. Glossaire</a></li>
+    <li><a href="#acteurs">3. Acteurs et droits</a></li>
+    <li><a href="#regles">4. Règles métier</a></li>
+    <li><a href="#launcher">5. Le launcher, écran par écran</a></li>
+    <li><a href="#site">6. Le site</a></li>
+    <li><a href="#parcours">7. Parcours</a>
+      <ol>
+        <li><a href="#p1">P1 Premier lancement</a></li>
+        <li><a href="#p2">P2 Un studio publie</a></li>
+        <li><a href="#p3">P3 Découvrir et acheter</a></li>
+        <li><a href="#p4">P4 Télécharger le jeu</a></li>
+        <li><a href="#p5">P5 Appairer une machine</a></li>
+        <li><a href="#p6">P6 Jouer</a></li>
+        <li><a href="#p7">P7 Hors ligne, renouveler</a></li>
+        <li><a href="#p8">P8 Revendre</a></li>
+        <li><a href="#p9">P9 Vérifier, réparer</a></li>
+        <li><a href="#p10">P10 Souhaits et baisses de prix</a></li>
+        <li><a href="#p11">P11 Amis et chat</a></li>
+        <li><a href="#p12">P12 Prêter un jeu</a></li>
+        <li><a href="#p13">P13 Profil et confidentialité</a></li>
+        <li><a href="#p14">P14 Deux machines par compte</a></li>
+        <li><a href="#p15">P15 Notifications</a></li>
+        <li><a href="#p16">P16 Réglages</a></li>
+        <li><a href="#p17">P17 Provenance</a></li>
+        <li><a href="#p18">P18 Gains en attente</a></li>
+      </ol>
+    </li>
+    <li><a href="#limites">8. Limites et pistes</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="eyebrow">Dossier fonctionnel · état au 11 octobre 2026 · contrats v1.1 · Base Sepolia</div>
+  <h1>Dossier fonctionnel GameVault</h1>
+  <p class="lede">Ce que fait GameVault pour les joueurs et les studios : les règles, les écrans du launcher AURA-64, les pages du site, et chaque parcours de bout en bout.</p>
+</header>
+
+<section id="lire">
+  <h2>Comment lire ce document</h2>
+  <p>Les sections 1 à 4 posent le produit, le vocabulaire, les rôles et les règles chiffrées. Les sections 5 et 6 décrivent ce qu'on voit à l'écran. La section 7 raconte chaque parcours dans l'ordre réel. Le « comment c'est construit » est dans le document compagnon : <a href="architecture.html"><b>Architecture technique GameVault</b></a>.</p>
+  <p class="note">Une pastille indique qui agit : <span class="who w-player">joueur</span><span class="who w-studio">studio</span><span class="who w-launcher">launcher</span><span class="who w-web">site</span><span class="who w-ticketd">plateforme</span><span class="who w-chain">blockchain</span>.</p>
+</section>
+
+<section id="produit">
+  <h2>1. Le produit</h2>
+  <p>GameVault vend des jeux indépendants sous forme de <b>licences</b> : chaque copie est un jeton sur la blockchain Base Sepolia. Le joueur joue dans <b>AURA-64</b>, le launcher de bureau, avec une carte SD ou une clé USB, la « cartouche », qui sert de clé.</p>
+  <div class="grid2">
+    <div class="card"><h4>Posséder vraiment</h4><p>La licence appartient au joueur : il peut la prêter à un ami ou la revendre, si le studio l'autorise.</p></div>
+    <div class="card"><h4>La carte est la clé</h4><p>Le jeu s'installe sur le PC (ou sur la carte) ; il ne se lance qu'avec la carte insérée et une machine autorisée par le propriétaire.</p></div>
+    <div class="card"><h4>Jouable hors ligne</h4><p>Une fois la machine appairée, on joue sans connexion pendant 30 jours.</p></div>
+    <div class="card"><h4>Les studios gagnent à chaque revente</h4><p>92 % de la vente neuve, et la redevance choisie (jusqu'à 20 %) sur chaque revente, automatiquement.</p></div>
+  </div>
+  <p>Autour de ce cœur, une couche sociale façon Steam : profils, amis, chat, présence « en jeu », pages studio, marché d'occasion où l'on voit qui vend, liste de souhaits avec alerte quand une occasion passe sous le prix vu. Le positionnement est assumé : <b>vérification de propriété, pas DRM</b>.</p>
+</section>
+
+<section id="glossaire">
+  <h2>2. Glossaire</h2>
+  <dl class="gloss">
+    <dt>Licence</dt><dd>Le droit de jouer à une copie d'un jeu, sous forme de jeton numéroté (#4…). Celui qui la détient dans son wallet en est le propriétaire.</dd>
+    <dt>Édition</dt><dd>Une offre d'un jeu par un studio : prix, nombre d'exemplaires, revente autorisée ou non, redevance. Fixée une fois pour toutes.</dd>
+    <dt>Cartouche</dt><dd>Carte SD ou clé USB qui porte les tickets du joueur (et parfois le jeu). Sans elle, pas de partie.</dd>
+    <dt>Bibliothèque</dt><dd>Le dossier du PC où le launcher installe les jeux (proposé : <code>GameVault</code>).</dd>
+    <dt>Appairage</dt><dd>Autoriser une machine à jouer : le propriétaire signe une fois avec son wallet, gratuitement.</dd>
+    <dt>Ticket</dt><dd>L'autorisation, inscrite sur la carte, pour une machine précise. Valable 30 jours, renouvelable.</dd>
+    <dt>Wallet</dt><dd>Le portefeuille du joueur ou du studio : il signe les achats, ventes, prêts et appairages, dans le navigateur.</dd>
+    <dt>Occasion</dt><dd>Une licence remise en vente par un joueur sur le marché.</dd>
+    <dt>Prêt</dt><dd>Confier le droit de jouer à un ami pour 1 à 14 jours ; le prêteur perd l'accès pendant ce temps, comme une vraie cartouche prêtée.</dd>
+    <dt>Session</dt><dd>24 h pendant lesquelles les actions sociales (amis, chat, profil) se font sans signer à chaque fois.</dd>
+    <dt>Présence</dt><dd>« En ligne » ou « en jeu · titre », visible des amis selon la confidentialité choisie.</dd>
+  </dl>
+</section>
+
+<section id="acteurs">
+  <h2>3. Acteurs et droits</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Acteur</th><th>Qui</th><th>Peut</th></tr></thead>
+    <tbody>
+      <tr><td>Visiteur</td><td>n'importe qui, sans wallet</td><td>parcourir le catalogue, les occasions, les profils publics et les pages studio, voir l'historique d'une licence</td></tr>
+      <tr><td>Joueur propriétaire</td><td>détient une licence</td><td>télécharger, appairer 2 machines, jouer, revendre, retirer de la vente, prêter, reprendre un prêt, souhaiter, gérer son profil</td></tr>
+      <tr><td>Emprunteur</td><td>ami à qui un jeu est prêté</td><td>appairer et jouer jusqu'à la fin du prêt, rendre plus tôt</td></tr>
+      <tr><td>Acheteur</td><td>tout wallet avec des ETH</td><td>acheter neuf ou d'occasion</td></tr>
+      <tr><td>Ami</td><td>deux comptes liés</td><td>chatter, voir ce que l'autre a réservé aux amis, prêter après 3 jours</td></tr>
+      <tr><td>Studio</td><td>wallet qui a enregistré un studio</td><td>créer jeux et éditions, publier un build, toucher ventes et redevances, éditer sa page, inviter des joueurs</td></tr>
+      <tr><td>Plateforme</td><td>l'opérateur de GameVault</td><td>reçoit 8 % des ventes neuves et 5 % des reventes ; ne peut ni bouger les licences ni changer les prix</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="regles">
+  <h2>4. Règles métier</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>Domaine</th><th>Règle</th></tr></thead>
+    <tbody>
+      <tr><td>Vente neuve</td><td>prix fixe de l'édition ; <b>92 % au studio, 8 % à la plateforme</b> ; stock limité</td></tr>
+      <tr><td>Revente</td><td>au choix du studio, fixé à la création. Si autorisée : prix libre ; redevance du studio de 0 à 20 % (10 % sur les éditions actuelles), 5 % plateforme, le reste au vendeur (85 % à 10 %). Si interdite : la copie ne change jamais de main (le prêt reste possible).</td></tr>
+      <tr><td>Révocation</td><td>dès que la licence change de main, l'ancien propriétaire perd l'accès : au lancement suivant en ligne, ou en cours de partie sous 20 secondes</td></tr>
+      <tr><td>Hors ligne</td><td>un ticket vaut <b>30 jours</b> (ou moins si un prêt finit avant) ; après, renouvellement en ligne</td></tr>
+      <tr><td>Machines</td><td><b>2 machines actives</b> par compte ; en appairer une 3<sup>e</sup> déconnecte la moins utilisée ; la carte garde un ticket par machine (2)</td></tr>
+      <tr><td>Prêt</td><td>entre amis depuis <b>3 jours</b> ; durée 1 à <b>14 jours</b> ; <b>24 h</b> de repos entre deux prêts d'une licence ; un emprunteur à la fois ; une revente met fin au prêt</td></tr>
+      <tr><td>Amis</td><td>16 amis maximum (500 pour un studio) ; entre un studio et un joueur, seul le studio envoie la demande</td></tr>
+      <tr><td>Chat</td><td>entre amis seulement ; 1000 caractères ; 30 messages par minute</td></tr>
+      <tr><td>Profil</td><td>pseudo 2 à 24 caractères (pas forcément unique), bio 500 caractères, avatar 256 px / 300 Ko, 12 favoris</td></tr>
+      <tr><td>Confidentialité</td><td>4 sections (profil, présence, activité, bibliothèque) × 3 niveaux (public, amis, privé) ; pseudo et avatar toujours visibles ; la propriété des licences reste publique sur la blockchain</td></tr>
+      <tr><td>Souhaits</td><td>50 jeux maximum, liste privée ; « baisse de prix » = une occasion en vente sous le dernier prix vu (le prix neuf ne change jamais)</td></tr>
+      <tr><td>Téléchargement</td><td>morceaux de 4 Mio vérifiés un par un, puis l'empreinte inscrite dans le contrat ; reprise après pause ou fermeture ; destination au choix (PC par défaut, carte en option, contrôle de place)</td></tr>
+      <tr><td>Session</td><td>24 h ; une signature sur le site, la clé de la machine dans le launcher</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="launcher">
+  <h2>5. Le launcher AURA-64, écran par écran</h2>
+  <p>Style rétro-futuriste « machine de 2035 rêvée en 1999 », coins coupés à 45° comme une cartouche, barre du haut (navigation, avatar, voyants) et barre du bas (fente de carte, horloge, téléchargement en cours) toujours présentes.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Écran</th><th>Ce qu'on y fait</th></tr></thead>
+    <tbody>
+      <tr><td>Démarrage</td><td>séquence de vérification façon console (coffre de la machine, lecteur de cartes, chaîne, service, bibliothèque)</td></tr>
+      <tr><td>Accueil</td><td>sans carte : grande horloge orbitale, « INSERT SD CARD TO PLAY ». Avec une carte : le jeu en grand, l'action du moment (JOUER, APPAIRER, RENOUVELER, TÉLÉCHARGER), un widget de la carte, l'ami qui joue, la rangée de la bibliothèque, l'accès à la Boutique</td></tr>
+      <tr><td>Boutique</td><td>tout le catalogue : prix neuf, « occasion dès … », badges « dans ta bibliothèque » et « souhaité » ; recherche, filtres TOUT · OCCASIONS · SOUHAITS, tri (plus joués, prix, nouveautés). La fiche liste les occasions et leurs vendeurs ; acheter ou prendre une offre ouvre la page web</td></tr>
+      <tr><td>Game Shelf</td><td>mes jeux seulement (possédés, sur carte, prêtés, empruntés, en vente, souhaités) ; filtres TOUS · JOUABLES · SOUHAITS · EN VENTE · PRÊTS ; vues grille, liste avec aperçu, et stockage (dossiers, tailles, place libre, VÉRIFIER, ouvrir le dossier)</td></tr>
+      <tr><td>Fiche d'un jeu</td><td>action principale (JOUER, APPAIRER, RENOUVELER, TÉLÉCHARGER, ÉCRIRE SUR LA CARTE, ACHETER) ; revendre, prêter, souhaiter, meilleure occasion, provenance, vérifier</td></tr>
+      <tr><td>Lecteur de carte</td><td>installer sur une carte, appairer (QR à scanner avec le téléphone du propriétaire, ou ouverture dans le navigateur)</td></tr>
+      <tr><td>Amis</td><td>amis par présence (en jeu, en ligne, hors ligne), prêts en cours, chat en direct avec bouton emoji ; accès au profil public et au prêt</td></tr>
+      <tr><td>Téléchargements</td><td>seulement ce qui reste à faire : en cours (carte des morceaux, vitesses réseau et disque, source), en attente, à installer, à réparer ; limite de vitesse ; choix de la destination ; fenêtre de réparation</td></tr>
+      <tr><td>Profil</td><td>le même que la page publique du site : bannière, avatar, présence, À propos, vitrine, bibliothèque, activité, statistiques, badges, jeux en vente, amis ; « Modifier mon profil » (pseudo, bio, avatar) sans wallet</td></tr>
+      <tr><td>Paramètres</td><td>compte, démarrage, accessibilité, téléchargements, langue, skin, son, notifications, confidentialité, système (redémarrer), « Comment ça marche », cache, mode développeur</td></tr>
+      <tr><td>Veille</td><td>après un temps sans activité, l'horloge plein écran (jamais pendant une partie)</td></tr>
+      <tr><td>Notifications de bureau</td><td>des cartes qui passent par-dessus les autres logiciels (téléchargement fini, message, carte insérée ou retirée, sécurité, baisse de prix) ; dans le launcher, le widget SLOT A anime la carte qui entre dans la fente</td></tr>
+    </tbody>
+  </table></div>
+  <p>Fermer la fenêtre envoie AURA-64 dans la zone de notification (comme Steam) ; « Quitter » est dans son menu. Les explications techniques ne s'affichent pas sur les écrans de jeu : elles sont regroupées dans Paramètres › Comment ça marche.</p>
+</section>
+
+<section id="site">
+  <h2>6. Le site</h2>
+  <p>Le site fait tout ce qui demande le wallet. Le launcher l'ouvre au bon endroit.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Page</th><th>Pour</th><th>Ce qu'on y fait</th></tr></thead>
+    <tbody>
+      <tr><td>Accueil, fiche jeu</td><td>tous</td><td>catalogue, nouveautés, occasions ; acheter neuf, souhaiter, voir la meilleure occasion</td></tr>
+      <tr><td>Occasions</td><td>acheteurs</td><td>annonces valides avec leur vendeur (profil, ventes, autres annonces), tri, achat</td></tr>
+      <tr><td>Échange (<code>/trade</code>)</td><td>vendeurs, acheteurs</td><td>mettre en vente, retirer, acheter</td></tr>
+      <tr><td>Appairage (<code>/pair</code>)</td><td>propriétaires, emprunteurs</td><td>places de machines restantes, signature de l'autorisation</td></tr>
+      <tr><td>Studio</td><td>studios</td><td>créer studio, jeu, édition, publier le build ; page publique</td></tr>
+      <tr><td>Amis, chat</td><td>joueurs</td><td>demandes, prêts (prêter, reprendre, rendre), messages avec emojis</td></tr>
+      <tr><td>Mon profil</td><td>joueurs</td><td>pseudo, avatar, favoris, confidentialité, liste de souhaits, machines, gains en attente</td></tr>
+      <tr><td>Profil public, studios, provenance</td><td>tous</td><td>profil filtré par la confidentialité ; pages studio ; historique d'une licence</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="parcours">
+  <h2>7. Parcours</h2>
+
+  <div class="scenario" id="p1"><h3>P1 · Premier lancement</h3>
+    <div class="meta"><span><b>Acteur</b> joueur</span><span><b>Résultat</b> machine identifiée, launcher prêt</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Ouvre AURA-64 (ou il démarre avec Windows si l'option est active, discrètement dans la zone de notification).</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Crée l'identité de la machine au premier lancement, sans inscription ; démarre les services locaux en mode POC.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Lit les cartes insérées, le catalogue, les licences du compte, les amis ; arrive sur la page de démarrage choisie (Accueil par défaut).</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p2"><h3>P2 · Un studio publie un jeu</h3>
+    <div class="meta"><span><b>Acteur</b> studio</span><span><b>Coût</b> 3 transactions + 1 signature</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-studio">studio</span>Enregistre son studio, crée un jeu.</div></li>
+      <li><div><span class="who w-studio">studio</span>Choisit le fichier du jeu (page web ou .exe) et signe la publication ; la plateforme le chiffre et le stocke.</div></li>
+      <li><div><span class="who w-studio">studio</span>Crée l'édition : prix, stock, revente oui/non, redevance. Ces termes sont définitifs.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p3"><h3>P3 · Découvrir et acheter</h3>
+    <div class="meta"><span><b>Acteur</b> joueur</span><span><b>Coût</b> 1 transaction</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-launcher">launcher</span>Dans la Boutique, le joueur parcourt les jeux, voit le prix neuf et les occasions, ajoute aux souhaits.</div></li>
+      <li><div><span class="who w-player">joueur</span>Clique sur Acheter (neuf) ou Voir l'offre (occasion) : la page du site s'ouvre.</div></li>
+      <li><div><span class="who w-web">site</span>Le joueur confirme la transaction dans son wallet. La licence est à lui : le jeu apparaît dans son Game Shelf et dans Téléchargements › À installer.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p4"><h3>P4 · Télécharger le jeu</h3>
+    <div class="meta"><span><b>Où</b> fiche du jeu ou Téléchargements</span><span><b>Destination</b> PC par défaut, carte en option</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Clique sur Télécharger et choisit où installer ; la place libre est vérifiée. S'il n'existe aucun dossier de jeux, AURA-64 propose d'en créer un.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Télécharge par morceaux vérifiés : carte des morceaux, vitesses réseau et disque, source (serveur GameVault, miroirs IPFS en secours).</div></li>
+      <li><div><span class="who w-player">joueur</span>Peut mettre en pause, reprendre, fermer AURA-64 : le téléchargement repart où il en était. Une limite de vitesse et la pause pendant les parties sont réglables.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>À la fin, vérifie l'empreinte inscrite dans le contrat et prévient par une notification.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p5"><h3>P5 · Appairer une machine</h3>
+    <div class="meta"><span><b>Coût</b> 1 signature, aucune transaction</span><span><b>Résultat</b> un ticket de 30 jours pour cette machine sur la carte</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Insère la carte et clique APPAIRER (ou RENOUVELER).</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Affiche un QR code ; le joueur le scanne avec son téléphone, ou ouvre la page dans le navigateur.</div></li>
+      <li><div><span class="who w-web">site</span>Montre les places de machines (renouvellement, nouvelle place, ou machine qui sera déconnectée), puis fait signer l'autorisation.</div></li>
+      <li><div><span class="who w-ticketd">plateforme</span>Vérifie sur la blockchain que le signataire a le droit de jouer (propriétaire, ou emprunteur pendant un prêt), puis délivre le ticket.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Récupère le ticket et l'écrit sur la carte.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p6"><h3>P6 · Jouer</h3>
+    <div class="meta"><span><b>Prérequis</b> carte insérée, ticket valide pour cette machine, jeu installé</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Clique JOUER : une cinématique de lancement (vérification, déverrouillage, démarrage) précède le jeu.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>En ligne, vérifie que la licence est toujours au joueur et que la machine est toujours autorisée ; hors ligne, s'appuie sur le ticket.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Le jeu web s'ouvre dans la fenêtre ; un jeu natif s'ouvre à côté. Les amis voient « en jeu » (selon la confidentialité) ; le temps de jeu est compté.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Si la licence est revendue pendant la partie, elle est coupée sous 20 secondes.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p7"><h3>P7 · Jouer hors ligne, renouveler</h3>
+    <ol class="steps">
+      <li><div><span class="who w-launcher">launcher</span>Sans réseau, le jeu se lance tant que le ticket n'a pas expiré (30 jours).</div></li>
+      <li><div><span class="who w-player">joueur</span>À l'expiration, la carte affiche « ticket expiré » : RENOUVELER refait l'appairage (P5). Si la licence a été revendue entre-temps, c'est refusé.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p8"><h3>P8 · Revendre sa licence</h3>
+    <div class="meta"><span><b>Partage</b> 85 % vendeur · 10 % studio · 5 % plateforme (édition à 10 %)</span><span><b>Impossible</b> si le studio a interdit la revente</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">vendeur</span>Sur la fiche du jeu : Revendre, saisit un prix ; la page d'échange s'ouvre.</div></li>
+      <li><div><span class="who w-player">vendeur</span>Autorise le marché puis met en vente (deux transactions). L'annonce apparaît dans la Boutique et sur le site, avec son nom.</div></li>
+      <li><div><span class="who w-player">acheteur</span>Achète au prix affiché. Le vendeur, le studio et la plateforme sont payés automatiquement.</div></li>
+      <li><div><span class="who w-launcher">launcher du vendeur</span>Le jeu ne se lance plus (et une partie en cours est coupée).</div></li>
+      <li><div><span class="who w-player">acheteur</span>Reçoit la carte du vendeur ou utilise la sienne, télécharge si besoin, et appaire sa machine.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p9"><h3>P9 · Vérifier, réparer le jeu</h3>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Sur la fiche ou dans la vue Stockage : VÉRIFIER.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Relit chaque morceau, ne retélécharge que les abîmés (depuis le serveur, ou les miroirs IPFS si le serveur ne répond pas), puis vérifie l'empreinte finale. Pour tester, le mode développeur offre un bouton qui abîme 3 morceaux.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p10"><h3>P10 · Souhaits et baisses de prix</h3>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Ajoute un jeu à sa liste de souhaits (cœur dans la Boutique, sur la fiche, ou sur le site). La liste est privée.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Surveille les occasions des jeux souhaités. Quand une occasion passe sous le dernier prix vu, une notification « baisse de prix » s'affiche ; un clic ouvre la fiche avec l'offre.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Une fois le jeu acheté, il sort de la liste tout seul.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p11"><h3>P11 · Amis et chat</h3>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Cherche un ami par pseudo ou adresse sur le site, envoie une demande ; l'autre accepte. Aucun frais.</div></li>
+      <li><div><span class="who w-player">joueur</span>Dans AMIS (launcher) ou sur /chat : écrit, ajoute des emojis avec le bouton ; les messages arrivent en direct, avec un compteur de non-lus.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Après un prêt, une carte « licence prêtée · à dans N jours » apparaît dans la conversation.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p12"><h3>P12 · Prêter un jeu à un ami</h3>
+    <div class="meta"><span><b>Règles</b> amis depuis 3 jours · 14 jours max · 24 h de repos</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">prêteur</span>Sur /friends : choisit la licence, l'ami et la durée ; confirme la transaction.</div></li>
+      <li><div><span class="who w-player">emprunteur</span>Appaire sa machine et joue jusqu'à la fin du prêt ; le prêteur, lui, ne peut plus jouer.</div></li>
+      <li><div><span class="who w-chain">blockchain</span>Le prêt finit seul à l'échéance, ou plus tôt (« Récupérer » / « Rendre »).</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p13"><h3>P13 · Profil et confidentialité</h3>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Dans Profil (launcher) ou Mon profil (site) : pseudo, bio, avatar ; favoris sur le site.</div></li>
+      <li><div><span class="who w-player">joueur</span>Dans Paramètres › Confidentialité (ou sur le site) : pour le profil, la présence, l'activité et la bibliothèque, choisit public, amis ou privé.</div></li>
+      <li><div><span class="who w-web">site</span>Un visiteur voit « visible par les amis de … » ou « … garde cette section privée » à la place des sections masquées. En présence privée, on apparaît hors ligne, même pour ses amis.</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p14"><h3>P14 · Deux machines par compte</h3>
+    <ol class="steps">
+      <li><div><span class="who w-ticketd">plateforme</span>Chaque appairage enregistre la machine ; une 3<sup>e</sup> déconnecte la moins utilisée (annoncé avant la signature).</div></li>
+      <li><div><span class="who w-launcher">launcher déconnecté</span>Reçoit une notification de sécurité ; au lancement suivant en ligne, réappairage nécessaire.</div></li>
+      <li><div><span class="who w-player">joueur</span>Peut libérer une place lui-même depuis Mon profil (une signature).</div></li>
+    </ol>
+  </div>
+
+  <div class="scenario" id="p15"><h3>P15 · Notifications</h3>
+    <p>Cinq familles, chacune désactivable : téléchargement (fini, erreur), message d'un ami, carte (insérée, retirée), sécurité (machine déconnectée du compte), souhaits (baisse de prix). Elles s'affichent par-dessus les autres logiciels ; un clic ramène AURA-64 sur la bonne page. Les sons de notification ont leur propre volume (Paramètres › Son).</p>
+  </div>
+
+  <div class="scenario" id="p16"><h3>P16 · Réglages</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Groupe</th><th>Réglages</th></tr></thead>
+      <tbody>
+        <tr><td>Compte</td><td>mon profil, se déconnecter (les cartes appairées continuent de fonctionner)</td></tr>
+        <tr><td>Démarrage</td><td>page de démarrage, lancer avec Windows, démarrer dans la zone de notification, services locaux</td></tr>
+        <tr><td>Accessibilité</td><td>échelle de l'interface (90 à 150 %), vision des couleurs (standard, rouge-vert, bleu-jaune), réduire les animations, mode photosensibilité (aucun flash ni clignotement)</td></tr>
+        <tr><td>Téléchargements</td><td>limite de vitesse, télécharger pendant une partie, mode faible débit (2 Mo/s, rafraîchissements espacés), dossiers de jeux</td></tr>
+        <tr><td>Son</td><td>son on/off, volume général, volumes interface / notifications / cinématiques, délai de la veille</td></tr>
+        <tr><td>Autres</td><td>langue (FR/EN), skin, notifications, confidentialité, redémarrer AURA-64, vider le cache (jamais les jeux installés), mode développeur, « Comment ça marche »</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="scenario" id="p17"><h3>P17 · Provenance d'une licence</h3>
+    <p>Depuis la fiche d'un jeu, une occasion ou un profil : l'historique complet de la licence (propriétaires successifs, ventes, redevances versées au studio, prêts). Utile pour vérifier une occasion avant d'acheter.</p>
+  </div>
+
+  <div class="scenario" id="p18"><h3>P18 · Gains en attente</h3>
+    <p>Rare : si un paiement de revente n'a pas pu être envoyé (adresse qui refuse les ETH), il reste crédité. La section « Gains en attente » apparaît alors dans Mon profil, avec un bouton Retirer.</p>
+  </div>
+</section>
+
+<section id="limites">
+  <h2>8. Limites et pistes</h2>
+  <h3>Limites assumées</h3>
+  <ul>
+    <li><b>Pas un DRM</b> : un utilisateur technique peut garder une copie déchiffrée après avoir revendu.</li>
+    <li><b>30 jours hors ligne</b> : un vendeur resté déconnecté peut encore jouer jusqu'à la fin de son ticket.</li>
+    <li><b>Chat non chiffré de bout en bout</b> ; stocké par la plateforme.</li>
+    <li><b>Testnet</b> : tout fonctionne sur Base Sepolia (ETH de test) ; la plateforme tourne en local, pas encore en ligne.</li>
+  </ul>
+  <h3>Pistes déjà notées</h3>
+  <ul>
+    <li>Mises à jour de jeux (nouvelle version d'une édition sans invalider les licences).</li>
+    <li>Plusieurs comptes sur une machine ; connexion par e-mail avec un wallet intégré.</li>
+    <li>Classification d'âge et filtre des contenus adultes ; choix de la région de téléchargement.</li>
+    <li>Captures et vidéos en jeu, succès et badges prouvés par la licence, personnalisation poussée du profil.</li>
+    <li>Achat directement dans le launcher (WalletConnect).</li>
+  </ul>
+</section>
+
+<footer>Document établi à partir du produit le 11 octobre 2026. Compagnon : <a href="architecture.html"><b>Architecture technique GameVault</b></a>.</footer>
+</main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: "neutral" });</script>
+</body>
+</html>
