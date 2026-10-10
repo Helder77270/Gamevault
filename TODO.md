@@ -172,8 +172,8 @@ décision de conception, un redéploiement ou une infra en plus).
       la zone de notification).
 
 ### Téléchargements
-- [ ] **A** Limiter la vitesse de téléchargement.
-- [ ] **A** Autoriser ou non les téléchargements pendant une partie (défaut :
+- [x] **A** (2026-10-10) Limiter la vitesse de téléchargement.
+- [x] **A** (2026-10-10) Autoriser ou non les téléchargements pendant une partie (défaut :
       pause automatique pendant le jeu, reprise après).
 - [ ] **B** Mode faible bande passante (téléchargement plafonné, moins de
       requêtes réseau, visuels allégés).

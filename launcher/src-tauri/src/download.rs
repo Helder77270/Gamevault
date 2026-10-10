@@ -42,6 +42,40 @@ const WORKERS: usize = 4;
 const TRIES_PER_CHUNK: usize = 3;
 const DEFAULT_CHUNK: u64 = 4 * 1024 * 1024;
 
+// ── Speed limit: one token bucket shared by every worker (0 = unlimited).
+// Changed live from the settings; a download in flight follows at once.
+static LIMIT_BPS: AtomicU64 = AtomicU64::new(0);
+static BUCKET: Mutex<Option<(Instant, f64)>> = Mutex::new(None);
+
+pub fn set_limit(bps: u64) {
+    LIMIT_BPS.store(bps, Ordering::Relaxed);
+    *BUCKET.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// Wait until `n` bytes may be received under the limit. The bucket holds
+/// one second of budget; a read bigger than the budget borrows ahead.
+fn throttle(n: usize, ctl: &Ctl) {
+    loop {
+        let limit = LIMIT_BPS.load(Ordering::Relaxed) as f64;
+        if limit <= 0.0 || ctl.cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        let wait = {
+            let mut b = BUCKET.lock().unwrap_or_else(|e| e.into_inner());
+            let (last, tokens) = b.get_or_insert((Instant::now(), limit));
+            let now = Instant::now();
+            *tokens = (*tokens + now.duration_since(*last).as_secs_f64() * limit).min(limit);
+            *last = now;
+            if *tokens >= (n as f64).min(limit) {
+                *tokens -= n as f64;
+                return;
+            }
+            ((n as f64).min(limit) - *tokens) / limit
+        };
+        std::thread::sleep(Duration::from_secs_f64(wait.clamp(0.005, 0.25)));
+    }
+}
+
 /// Chunk states, one char each in the progress event (the UI's chunk map).
 const PENDING: u8 = b'p';
 const ACTIVE: u8 = b'a';
@@ -261,6 +295,7 @@ fn fetch_range(url: &str, start: u64, end: u64, net: &AtomicU64, ctl: &Ctl) -> R
         }
         buf.extend_from_slice(&tmp[..n]);
         net.fetch_add(n as u64, Ordering::Relaxed);
+        throttle(n, ctl);
         if buf.len() > want {
             return Err("plage ignorée par la source".into());
         }
@@ -844,6 +879,23 @@ mod tests {
         let found = scan_library(&[dir.to_string_lossy().into_owned()]);
         assert!(found.iter().any(|e| e.cid == CID && e.status == "installed"), "scan");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn throttle_holds_the_rate() {
+        set_limit(200_000); // 200 kB/s
+        let ctl = Ctl::default();
+        let t0 = Instant::now();
+        for _ in 0..10 {
+            throttle(64 * 1024, &ctl); // 640 kB in total
+        }
+        let secs = t0.elapsed().as_secs_f64();
+        set_limit(0);
+        // the first second is pre-filled: ~440 kB must wait ≈ 2.2 s
+        assert!(secs > 1.6 && secs < 3.5, "{secs}");
+        let t1 = Instant::now();
+        throttle(10_000_000, &ctl);
+        assert!(t1.elapsed().as_millis() < 50, "unlimited never waits");
     }
 
     #[test]

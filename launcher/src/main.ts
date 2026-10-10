@@ -77,7 +77,11 @@ interface Settings {
   startPage: StartPage; // where AURA-64 opens after the boot
   startInTray: boolean; // at Windows startup: stay in the notification area
   localServices: boolean; // POC: start ticketd + the site from the repo when they are down
+  dlLimitMBs: number; // download speed limit in MB/s, 0 = unlimited
+  dlDuringPlay: boolean; // false: downloads pause while a game runs, resume after
 }
+
+const DL_LIMITS = [0, 1, 5, 10, 25, 50];
 
 const START_PAGES = ["home", "shelf", "friends", "downloads"] as const;
 type StartPage = (typeof START_PAGES)[number];
@@ -85,7 +89,7 @@ type StartPage = (typeof START_PAGES)[number];
 const VEILLE_CHOICES = [1, 3, 5, 10, 0];
 const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3, libraries: [],
   notif: { download: true, message: true, card: true, security: true },
-  startPage: "home", startInTray: false, localServices: true };
+  startPage: "home", startInTray: false, localServices: true, dlLimitMBs: 0, dlDuringPlay: false };
 
 function loadSettings(): Settings {
   try {
@@ -97,6 +101,8 @@ function loadSettings(): Settings {
     if (!START_PAGES.includes(s.startPage)) s.startPage = "home";
     s.startInTray = Boolean(s.startInTray);
     s.localServices = s.localServices !== false;
+    if (!DL_LIMITS.includes(Number(s.dlLimitMBs))) s.dlLimitMBs = 0;
+    s.dlDuringPlay = Boolean(s.dlDuringPlay);
     s.notif = { ...SETTINGS_DEFAULT.notif, ...(typeof s.notif === "object" && s.notif ? s.notif : {}) };
     s.libraries = Array.isArray(s.libraries) ? s.libraries.filter((x) => typeof x === "string" && x.length > 2).slice(0, 8) : [];
     return s;
@@ -1776,6 +1782,22 @@ function settingsView(): string {
           ${toggle("set-localServices", settings.localServices, t("set.localServices"), t("set.localServicesSub"))}
         </section>
         <section class="set-card">
+          <div class="mono-label">${t("set.dl")}</div>
+          <div class="set-row">
+            <div><div class="set-label">${esc(t("set.libraries"))}</div><div class="set-sub">${esc(t("set.librariesSub"))}</div>
+              ${settings.libraries.map((d, i) => `<div class="set-lib"><code>${esc(d)}</code><button class="pillbtn" data-rmlib="${i}">${esc(t("set.removeLib"))}</button></div>`).join("")}
+            </div>
+            <button class="pillbtn" id="dl-addlib">${esc(t("dl.addDir"))}</button>
+          </div>
+          <div class="set-row">
+            <div><div class="set-label">${esc(t("set.dlLimit"))}</div><div class="set-sub">${esc(t("set.dlLimitSub"))}</div></div>
+            <div class="seg">
+              ${DL_LIMITS.map((n) => `<button class="seg-btn ${settings.dlLimitMBs === n ? "on" : ""}" data-dllimit="${n}">${n ? `${n} MO/S` : esc(t("set.dlUnlimited"))}</button>`).join("")}
+            </div>
+          </div>
+          ${toggle("set-dlDuringPlay", settings.dlDuringPlay, t("set.dlDuringPlay"), t("set.dlDuringPlaySub"))}
+        </section>
+        <section class="set-card">
           <div class="mono-label">${t("set.lang")}</div>
           <div class="seg">
             <button class="seg-btn ${lang === "fr" ? "on" : ""}" data-setlang="fr">Français</button>
@@ -1806,12 +1828,6 @@ function settingsView(): string {
           </div>
           ${toggle("set-motion", settings.reducedMotion, t("set.motion"), t("set.motionSub"))}
           ${toggle("set-dev", settings.dev, t("set.dev"), t("set.devSub"))}
-          <div class="set-row">
-            <div><div class="set-label">${esc(t("set.libraries"))}</div><div class="set-sub">${esc(t("set.librariesSub"))}</div>
-              ${settings.libraries.map((d, i) => `<div class="set-lib"><code>${esc(d)}</code><button class="pillbtn" data-rmlib="${i}">${esc(t("set.removeLib"))}</button></div>`).join("")}
-            </div>
-            <button class="pillbtn" id="dl-addlib">${esc(t("dl.addDir"))}</button>
-          </div>
           <div class="set-row">
             <div><div class="set-label">${esc(t("set.veille"))}</div><div class="set-sub">${esc(t("set.veilleSub"))}</div></div>
             <div class="seg">
@@ -2145,6 +2161,7 @@ function renderChrome(): void {
     "nav-downloads": ["downloads"],
     "nav-settings": ["settings"],
   };
+  syncDownloadsWithGame();
   const aj = activeJob();
   const barDl = document.getElementById("bar-dl");
   if (barDl) barDl.textContent = aj ? `↓ ${aj.title.toUpperCase()} ${dlPercent(aj)} % · ${fmtRate(aj.netBps)}` : "";
@@ -2889,6 +2906,20 @@ function wireStartup(root: HTMLElement): void {
     await refreshAutostart();
     render();
   });
+  root.querySelectorAll<HTMLButtonElement>("[data-dllimit]").forEach((b) =>
+    b.addEventListener("click", () => {
+      settings.dlLimitMBs = Number(b.dataset.dllimit);
+      saveSettings();
+      applyDownloadLimit();
+      render();
+    }),
+  );
+  document.getElementById("set-dlDuringPlay")?.addEventListener("click", () => {
+    settings.dlDuringPlay = !settings.dlDuringPlay;
+    saveSettings();
+    applyGamePolicy(); // mid-game: resume now if allowed, pause now if not
+    render();
+  });
   document.getElementById("set-localServices")?.addEventListener("click", () => {
     settings.localServices = !settings.localServices;
     saveSettings();
@@ -3070,6 +3101,7 @@ interface DlJob {
   log: string[];
   netHist: number[];
   diskHist: number[];
+  autoPaused?: boolean; // paused because a game started; resumes after it
 }
 interface LibraryEntry {
   dir: string;
@@ -3129,7 +3161,7 @@ const jobFor = (e: OnchainEdition | undefined): DlJob | undefined => (e ? dl.job
 
 /** One job at a time: the next queued one starts when the line is free. */
 function pump(): void {
-  if (activeJob()) return;
+  if (activeJob() || holdForGame()) return;
   const next = Object.values(dl.jobs).find((j) => j.phase === "queued");
   if (!next) return;
   next.phase = "prepare";
@@ -3248,6 +3280,7 @@ function pauseJob(id: string): void {
 function resumeJob(id: string): void {
   const j = dl.jobs[id];
   if (!j) return;
+  j.autoPaused = false;
   j.phase = "queued";
   pump();
   render();
@@ -3293,7 +3326,48 @@ function dlPercent(j: DlJob): number {
 }
 
 function phaseLabel(j: DlJob): string {
+  if (j.phase === "paused" && j.autoPaused) return t("dl.ph.pausedGame");
+  if (j.phase === "queued" && holdForGame()) return t("dl.ph.queuedGame");
   return t(`dl.ph.${j.phase}` as "dl.ph.download");
+}
+
+// ── While a game runs (P7 #4): downloads pause, then resume by themselves,
+// unless the player allowed them during play.
+const inGame = (): boolean => Boolean(state.playing || state.nativeRun);
+const holdForGame = (): boolean => inGame() && !settings.dlDuringPlay;
+let wasInGame = false;
+
+/** One rule: while held, what runs pauses (remembered); otherwise what a
+ *  game paused resumes. Applied when a session starts or ends, and when
+ *  the setting changes mid-game. */
+function applyGamePolicy(): void {
+  if (holdForGame()) {
+    for (const j of Object.values(dl.jobs)) {
+      if (ACTIVE_PHASES.includes(j.phase)) {
+        j.autoPaused = true;
+        pauseJob(j.id);
+      }
+    }
+    return;
+  }
+  for (const j of Object.values(dl.jobs)) {
+    if (j.autoPaused) {
+      j.autoPaused = false;
+      if (j.phase === "paused") j.phase = "queued";
+    }
+  }
+  pump();
+}
+
+function syncDownloadsWithGame(): void {
+  const now = inGame();
+  if (now === wasInGame) return;
+  wasInGame = now;
+  applyGamePolicy();
+}
+
+function applyDownloadLimit(): void {
+  void invoke("dl_set_limit", { bps: settings.dlLimitMBs * 1_000_000 }).catch(() => {});
 }
 
 function dlCard(j: DlJob): string {
@@ -3361,6 +3435,7 @@ function downloadsView(): string {
         </div>
         <div class="dl-totals">
           ${a ? `<span>${t("dl.net")} <b class="cy" id="dl-tot-net">${fmtRate(a.netBps)}</b> · ${t("dl.disk")} <b class="vi" id="dl-tot-disk">${fmtRate(a.diskBps)}</b></span>` : ""}
+          <button class="pillbtn" data-go="settings" title="${esc(t("set.dl"))}">${settings.dlLimitMBs ? esc(t("dl.limitOn", { n: settings.dlLimitMBs })) : esc(t("dl.limitOff"))}</button>
           <button class="pillbtn" id="dl-addlib">${t("dl.add")}</button>
         </div>
       </div>
@@ -3719,6 +3794,7 @@ window.addEventListener("DOMContentLoaded", () => {
   applyStaticI18n();
   wireWindowControls();
   void showAtLaunch();
+  applyDownloadLimit();
   void refreshAutostart();
   void refreshLibrary();
   loadSession();

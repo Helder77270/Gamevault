@@ -391,6 +391,12 @@ fn dl_repair(
     download::repair(app, Arc::clone(&dl), id, cid, sha256, target)
 }
 
+/// Download speed limit in bytes per second (0 = unlimited), live.
+#[tauri::command]
+fn dl_set_limit(bps: u64) {
+    download::set_limit(bps);
+}
+
 #[tauri::command]
 fn dl_pause(dl: tauri::State<Arc<download::Downloads>>, id: String) {
     download::pause(&dl, &id);
@@ -724,6 +730,7 @@ pub fn run() {
             dl_start,
             dl_repair,
             dl_pause,
+            dl_set_limit,
             dl_cancel,
             disk_space,
             library_scan,
