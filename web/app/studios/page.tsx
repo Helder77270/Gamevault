@@ -24,7 +24,7 @@ export default function StudiosPage() {
       <h1>Studios</h1>
       <p>Les studios indépendants qui publient sur GameVault. Chaque revente de leurs jeux leur reverse automatiquement leurs royalties.</p>
       {error && <p className="error-box">{error}</p>}
-      {studios === null && !error && <p className="addr">Lecture du subgraph…</p>}
+      {studios === null && !error && <p className="addr">Chargement…</p>}
       <div className="pf-cards" style={{ marginTop: "1rem" }}>
         {(studios ?? []).map((s) => {
           const editions = s.games.flatMap((g) => g.editions);

@@ -18,7 +18,7 @@ const spaceMono = Space_Mono({
 
 export const metadata: Metadata = {
   title: "AURA-64 — GameVault marketplace",
-  description: "Jeux indés en cartouches USB/SD : licences ERC-721, jouables hors ligne, revendables avec royalties.",
+  description: "Jeux indés en cartouches USB/SD : jouables hors ligne, prêtables et revendables.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

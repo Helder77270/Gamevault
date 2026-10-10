@@ -274,12 +274,12 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
       insertion à la position du curseur.
 
 ### 4. Retirer les textes « techniques / très IA » du parcours client
-- [ ] Audit de toutes les phrases affichées (launcher + web) : on retire
+- [x] Audit de toutes les phrases affichées (launcher + web) : on retire
       les explications internes (« déchiffré en mémoire depuis la carte,
       la clé ne touche jamais le disque », « règle cartouche : prêter un
       jeu c'est le donner… », etc.). Elles restent UNIQUEMENT dans les
       Paramètres, où elles servent à comprendre.
-- [ ] Liste des phrases retirées dans le rapport, pour en remettre si besoin.
+- [x] Liste des phrases retirées dans le rapport, pour en remettre si besoin.
 
 ### 5. Style A « Chanfrein » partout
 - [ ] Coins coupés à 45° (cartouche) sur boutons, vignettes, bannières,

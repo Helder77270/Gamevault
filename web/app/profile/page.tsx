@@ -379,7 +379,7 @@ export default function ProfilePage() {
                 })}
               </div>
             ) : (
-              <p className="pe-help">Lecture du catalogue on-chain…</p>
+              <p className="pe-help">Chargement du catalogue…</p>
             )}
           </section>
 

@@ -170,7 +170,7 @@ export default function Marketplace() {
               <h1>{featured.title}</h1>
               <div className="blurb">
                 {BLURBS[featured.editionId] ??
-                  `Par ${featured.studio} — licence ERC-721 sur cartouche : jouable hors ligne, revendable, royalties ${featured.royaltyBps / 100}% au studio.`}
+                  `Par ${featured.studio} — un jeu sur cartouche, jouable hors ligne et revendable.`}
               </div>
             </div>
             <div className="cta-zone">

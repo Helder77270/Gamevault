@@ -88,9 +88,7 @@ export default function ProvenancePage() {
       <div className="pane">
         <h1>Provenance de la licence #{tokenId}</h1>
         <p>
-          Le subgraph n&apos;est pas encore déployé (il attend les adresses des contrats — P1). Une fois en
-          ligne, cette page montrera la chaîne complète des propriétaires, chaque revente et chaque royalty
-          versée au studio — la transparence que le marché de l&apos;occasion classique n&apos;a jamais eue.
+          L&apos;historique de cette licence est momentanément indisponible. Réessayez dans un instant.
         </p>
         <p>
           Configuration : <code>NEXT_PUBLIC_SUBGRAPH_URL</code> dans <code>web/.env.local</code>.
@@ -101,7 +99,7 @@ export default function ProvenancePage() {
   if (status === "loading") return <div className="pane"><p>Chargement…</p></div>;
   if (status === "error") return <div className="pane"><p className="error-box">Subgraph injoignable.</p></div>;
   if (status === "not-found" || !license)
-    return <div className="pane"><p>Licence #{tokenId} inconnue du subgraph.</p></div>;
+    return <div className="pane"><p>Licence #{tokenId} introuvable.</p></div>;
 
   return (
     <div className="pane" style={{ maxWidth: "52rem" }}>

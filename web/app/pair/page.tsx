@@ -168,8 +168,8 @@ function PairInner() {
         <>
           <p className="ok-box">✔ Message signé — la liaison wallet ↔ appareil est prouvée.</p>
           <p className="error-box">
-            ticketd ({TICKETD_URL}) est injoignable (service P2 en cours de construction). Signature à
-            transmettre :
+            Le service GameVault est injoignable pour l&apos;instant. Réessayez dans un instant, ou transmettez
+            cette signature :
           </p>
           <pre className="msg">{signature}</pre>
         </>

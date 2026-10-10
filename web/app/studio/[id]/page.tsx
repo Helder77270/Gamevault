@@ -144,7 +144,7 @@ export default function StudioPublicPage() {
 
       {editing ? (
         <div className="pf-box" style={{ marginTop: "1.6rem" }}>
-          <div className="pf-label">Modifier la page publique <span>propriétaire du studio · session ticketd</span></div>
+          <div className="pf-label">Modifier la page publique</div>
           <label className="addr" htmlFor="st-desc">Description ({draft.description.length}/1500)</label>
           <textarea id="st-desc" rows={5} maxLength={1500} value={draft.description}
             onChange={(e) => setDraft({ ...draft, description: e.target.value })}
@@ -194,7 +194,7 @@ export default function StudioPublicPage() {
             </div>
 
             <div>
-              <div className="pf-label">Jeux · {editions.length} <span>catalogue lu on-chain</span></div>
+              <div className="pf-label">Jeux · {editions.length}</div>
               <div className="pf-cards">
                 {editions.map((e) => (
                   <Link key={e.id} className="pf-card" href={`/game/${e.id}`}>

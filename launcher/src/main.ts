@@ -1034,8 +1034,8 @@ function launchShow(g: Game): void {
     <div class="lv-title">${esc(g.meta.title ?? ed?.title ?? "GAME")}</div>
     <div class="lv-sub">LICENCE #${esc(g.ticket?.tokenId ?? "?")} · SLOT A</div>
     <div class="steps lv-steps">
-      <div class="step run" id="lstep-0"><div class="sdot"></div><div class="slabel">VERIFY LICENCE · ON-CHAIN</div><div class="sstate">…</div></div>
-      <div class="step" id="lstep-1"><div class="sdot"></div><div class="slabel">UNSEAL KEY · DECRYPT IN MEMORY</div><div class="sstate">—</div></div>
+      <div class="step run" id="lstep-0"><div class="sdot"></div><div class="slabel">VERIFY LICENCE</div><div class="sstate">…</div></div>
+      <div class="step" id="lstep-1"><div class="sdot"></div><div class="slabel">UNSEAL KEY</div><div class="sstate">—</div></div>
       <div class="step" id="lstep-2"><div class="sdot"></div><div class="slabel">BOOT TITLE</div><div class="sstate">—</div></div>
     </div>`;
   layer.appendChild(el);
@@ -1072,7 +1072,7 @@ async function play(g: Game): Promise<void> {
         state.ownerCheck = "REVOKED";
         launchHide();
         chimeCash(); // la vente a payé — c'est le son du cash
-        fail(t("err.movedT"), t("err.movedM"), "ERR 0x51 · OWNERSHIP MOVED ON-CHAIN", "detail");
+        fail(t("err.movedT"), t("err.movedM"), "ERR 0x51 · LICENCE MOVED", "detail");
         return;
       }
       if (check === "evicted") {
@@ -1367,7 +1367,7 @@ function bootView(): string {
             )
             .join("")}
         </div>
-        <div class="boot-note">${esc(t("boot.note"))}</div>
+
         <button class="pillbtn" id="skip-boot" style="margin-top:8px">SKIP &#8250;</button>
       </div>
     </div>`;
@@ -1537,7 +1537,7 @@ function homeView(): string {
       : action === "renew"
         ? { label: t("home.ticketExpired"), cls: "warn" }
         : action === "fetch"
-          ? { label: "NO BUILD — FETCH IPFS", cls: "warn" }
+          ? { label: t("dl.toDownload"), cls: "warn" }
           : { label: seated.verdict.toUpperCase(), cls: "warn" };
   const tokenId = seated.ticket?.tokenId;
   const kicker = [
@@ -1954,7 +1954,7 @@ function friendsView(): string {
         <div class="lc-col">
           ${friendRows}
           ${loanRows ? `<div class="mono-label lc-group">${t("fr.loans")}</div>${loanRows}` : ""}
-          <div class="pv-hint lc-rule">${esc(t("fr.rule"))}</div>
+
         </div>
         <div class="lc-panel">${panel}</div>
       </div>
@@ -2449,6 +2449,12 @@ function settingsView(): string {
           ${toggle("set-nt-wishlist", settings.notif.wishlist, t("set.nt.wishlist"), t("set.nt.wishlistSub"))}
           <div class="set-row"><div><div class="set-label">${esc(t("set.nt.test"))}</div></div><button class="pillbtn" id="set-nt-test">${esc(t("set.nt.testBtn"))}</button></div>
         </section>
+        <section class="set-card">
+          <div class="mono-label">${t("how.title")}</div>
+          ${(["card", "offline", "lend", "resale", "safe"] as const)
+            .map((k) => `<div class="set-row"><div><div class="set-label">${esc(t(`how.${k}`))}</div><div class="set-sub">${esc(t(`how.${k}Sub`))}</div></div></div>`)
+            .join("")}
+        </section>
         <div class="set-sub" style="text-align:center;margin-top:4px">${esc(t("set.about"))}</div>
       </div>
     </div>`;
@@ -2553,8 +2559,8 @@ function detailView(): string {
             g?.ticket ? `#${esc(g.ticket.tokenId)} · ${esc(short(g.ticket.ownerAddress, 6))}` : ownedTok.length ? ownedTok.map((o) => `#${esc(o.tokenId)}`).join(" · ") : "—"
           }</div></div>
           <div class="stat"><div class="k">CARTRIDGE</div><div class="v">${g ? `${esc(g.cartridge.mount_point)} · ${g.verdict.toUpperCase()}` : t("det.notInserted")}</div></div>
-          <div class="stat"><div class="k">${g?.ticket && g.verdict === "authentic" ? "EXPIRES" : "BUILD CID"}</div><div class="v">${
-            g?.ticket && g.verdict === "authentic" ? new Date(g.ticket.expiresAt * 1000).toLocaleDateString(locale()) : short(e.buildCid, 8)
+          <div class="stat"><div class="k">${g?.ticket && g.verdict === "authentic" ? "EXPIRES" : t("store.price")}</div><div class="v">${
+            g?.ticket && g.verdict === "authentic" ? new Date(g.ticket.expiresAt * 1000).toLocaleDateString(locale()) : `${formatEth(e.priceWei)} ETH`
           }</div></div>
         </div>
         ${resold && m ? `<div class="errbox">${t("det.resold", { a: short(m.owner) })}</div>` : ""}
@@ -2680,7 +2686,7 @@ function playerView(g: Game): string {
   return `
     <div class="player">
       <header>
-        <span class="title">🎮 ${esc(g.meta.title ?? "GAME")} · LICENCE #${esc(g.ticket?.tokenId ?? "?")} · DECRYPTED IN MEMORY${state.ownerCheck ? ` · ${esc(state.ownerCheck)}` : ""}</span>
+        <span class="title">🎮 ${esc(g.meta.title ?? "GAME")} · LICENCE #${esc(g.ticket?.tokenId ?? "?")}${state.ownerCheck ? ` · ${esc(state.ownerCheck)}` : ""}</span>
         <button class="pillbtn" id="quit-btn">✕ EJECT</button>
       </header>
       <iframe src="${GAME_URL}" title="game"></iframe>

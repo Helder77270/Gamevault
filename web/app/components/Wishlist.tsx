@@ -105,7 +105,7 @@ export function WishlistCard({ catalog, occasions }: { catalog: OnchainEdition[]
         <span className="pe-eyebrow">PRIVÉE{wishes ? ` · ${wishes.length}` : ""}</span>
       </div>
       <p className="pe-help">
-        Visible par vous seul. Le prix neuf est fixé on-chain : le launcher vous prévient quand une occasion passe sous le dernier prix que vous avez vu.
+        Visible par vous seul. Le launcher vous prévient quand une occasion passe sous le dernier prix que vous avez vu.
       </p>
       {wishes === null ? (
         <button className="btn ghost" style={{ marginTop: "1rem" }} onClick={() => void load()}>

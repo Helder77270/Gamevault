@@ -1070,3 +1070,4 @@ button { font-family: inherit; }
 .lc-emoji-pop { position: absolute; left: 16px; bottom: calc(100% + 6px); z-index: 5; display: grid; grid-template-columns: repeat(12, 34px); gap: 2px; padding: 8px; border: 1px solid var(--line-hi, rgba(200,225,255,0.5)); background: rgba(10,14,30,0.97); }
 .lc-emoji { cursor: pointer; width: 34px; height: 34px; border: none; background: transparent; font-size: 20px; line-height: 1; }
 .lc-emoji:hover, .lc-emoji:focus-visible { background: rgba(226,240,255,0.12); outline: none; }
+.pv-hint:empty, .detail-hint:empty { display: none; }

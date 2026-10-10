@@ -187,13 +187,6 @@ export default function FriendsPage() {
   return (
     <div className="pane" style={{ maxWidth: "52rem" }}>
       <h1>Amis &amp; Prêts</h1>
-      <p>
-        L&apos;amitié est <b>gratuite</b> : une signature ouvre votre session pour 24 h, ensuite tout est
-        instantané, sans transaction. Prêter un jeu, c&apos;est
-        tendre la cartouche — <em>vous perdez l&apos;accès pendant le prêt</em>. Les garde-fous restent on-chain :
-        amis depuis <b>3 jours</b> (attesté par la plateforme), <b>14 jours</b> max, <b>24 h</b> de repos entre
-        deux prêts.
-      </p>
       {!isConnected && <ConnectButton />}
 
       {isConnected && address && (
@@ -361,7 +354,7 @@ export default function FriendsPage() {
                     Rendre plus tôt
                   </button>
                   <br />
-                  <span className="addr">Appairez votre machine depuis le launcher — ticketd vous sert le ticket tant que le prêt court.</span>
+                  <span className="addr">Appairez votre machine depuis le launcher pour jouer pendant le prêt.</span>
                 </p>
               ))}
             </>

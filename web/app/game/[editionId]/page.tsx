@@ -11,12 +11,11 @@ import { decodeEventLog, formatEther } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 import { fetchOnchainCatalog, BLURBS, GENRES, hueOf, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { LICENSE_ABI } from "@gamevault/shared/abi";
-import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
+import { DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { fetchOccasions, type Occasion } from "../../lib/occasions";
 import { WishButton, bestDeal } from "../../components/Wishlist";
 
 const LICENSE = DEPLOYMENTS.gameLicense as `0x${string}`;
-const BASESCAN = "https://sepolia.basescan.org";
 
 export default function GamePage() {
   const { editionId } = useParams<{ editionId: string }>();
@@ -108,23 +107,16 @@ export default function GamePage() {
             {e.studio.toUpperCase()} · {GENRES[e.editionId] ?? "INDIE"} · {e.resellable ? `ROYALTIES ${e.royaltyBps / 100}%` : "SANS REVENTE"}
           </div>
           <h1>{e.title}</h1>
-          <div style={{ display: "flex", gap: "0.5rem", margin: "0.4rem 0 0.8rem" }}>
-            <span className="tag">ÉD. #{e.editionId}</span>
-            <span className="tag">JEU #{e.gameId}</span>
-            <span className="tag">STUDIO #{e.studioId}</span>
-            <span className="tag">CHAIN {CHAIN.id}</span>
-          </div>
           <p className="blurb">
             {BLURBS[e.editionId] ??
-              "Une licence ERC-721 sur cartouche physique : jouable hors ligne après appairage, prêtable, revendable — royalties automatiques au studio à chaque revente (EIP-2981)."}
+              "Un jeu indépendant sur cartouche : jouable hors ligne, prêtable à un ami, revendable."}
           </p>
           <div className="howto">
-            <div className="k">DU MINT À LA CARTOUCHE</div>
+            <div className="k">APRÈS L&apos;ACHAT</div>
             <ol>
-              <li>Achetez la licence — un NFT est minté vers votre wallet (notez son n° de token).</li>
-              <li>Ouvrez le launcher AURA-64 → Game Shelf → ce titre → WRITE TO CARD.</li>
-              <li>Le build chiffré arrive d&apos;IPFS, vérifié contre le hash gravé on-chain.</li>
-              <li>Appairez la machine (signature du wallet) — puis jouez, même hors ligne.</li>
+              <li>Ouvrez AURA-64 : le jeu apparaît dans votre Game Shelf.</li>
+              <li>Téléchargez-le, puis insérez une carte : elle devient votre clé.</li>
+              <li>Jouez, même hors ligne.</li>
             </ol>
           </div>
         </div>
@@ -149,9 +141,8 @@ export default function GamePage() {
             </div>
             {mintedToken && (
               <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--sub)" }}>
-                Licence mintée ! Ouvrez le launcher → Game Shelf → « {e.title} » → WRITE TO CARD avec le token #
-                {mintedToken}. Son historique on-chain :{" "}
-                <Link href={`/provenance/${mintedToken}`}>provenance de la licence #{mintedToken}</Link>.
+                C&apos;est à vous ! « {e.title} » vous attend dans le Game Shelf d&apos;AURA-64 (licence #{mintedToken},{" "}
+                <Link href={`/provenance/${mintedToken}`}>historique</Link>).
               </p>
             )}
             {deal && (
@@ -173,16 +164,8 @@ export default function GamePage() {
           <div className="statgrid">
             <div className="stat"><div className="k">PRIX PRIMAIRE</div><div className="v">{formatEther(e.priceWei)} ETH → 92 % studio · 8 % plateforme</div></div>
             <div className="stat"><div className="k">REVENTE</div><div className="v">{e.resellable ? `autorisée · ${e.royaltyBps / 100} % studio · 5 % plateforme` : "désactivée par le studio"}</div></div>
-            <div className="stat"><div className="k">BUILD CID (IPFS)</div><div className="v">{e.buildCid.slice(0, 14)}…{e.buildCid.slice(-6)}</div></div>
-            <div className="stat"><div className="k">BUILD HASH</div><div className="v">{e.buildSha256.slice(0, 14)}…{e.buildSha256.slice(-6)}</div></div>
-            <div className="stat">
-              <div className="k">CONTRAT LICENCE</div>
-              <div className="v"><a href={`${BASESCAN}/address/${DEPLOYMENTS.gameLicense}`} target="_blank" rel="noreferrer" style={{ color: "var(--cyan)" }}>{DEPLOYMENTS.gameLicense?.slice(0, 14)}… ↗</a></div>
-            </div>
-            <div className="stat">
-              <div className="k">REGISTRE</div>
-              <div className="v"><a href={`${BASESCAN}/address/${DEPLOYMENTS.gameRegistry}`} target="_blank" rel="noreferrer" style={{ color: "var(--cyan)" }}>{DEPLOYMENTS.gameRegistry?.slice(0, 14)}… ↗</a></div>
-            </div>
+            <div className="stat"><div className="k">EXEMPLAIRES</div><div className="v">{e.minted} vendus sur {e.supply}</div></div>
+            <div className="stat"><div className="k">STUDIO</div><div className="v">{e.studio}</div></div>
           </div>
         </div>
       </div>

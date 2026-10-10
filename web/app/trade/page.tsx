@@ -140,7 +140,7 @@ function TradeInner() {
       <h1>{LABELS[action]}</h1>
       {action === "list" && (
         <p>
-          À la revente : 5 % pour la plateforme, la redevance choisie par le studio (EIP-2981, 0 à 20 %),
+          À la revente : 5 % pour la plateforme, la part choisie par le studio (0 à 20 %),
           le reste pour vous. Deux signatures la première fois (autorisation puis mise en vente).
         </p>
       )}

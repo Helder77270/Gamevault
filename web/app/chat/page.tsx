@@ -170,7 +170,7 @@ function ChatInner() {
     return (
       <div className="pane">
         <h1>Messages</h1>
-        <p>Le chat utilise votre session GameVault : une signature, valable 24 h, sans transaction.</p>
+        <p>Une signature ouvre le chat pour 24 h, sans transaction.</p>
         <button className="btn" disabled={opening} onClick={() => void open()}>{opening ? "Signature…" : "Ouvrir le chat"}</button>
         {error && <p className="error-box">{error}</p>}
       </div>
