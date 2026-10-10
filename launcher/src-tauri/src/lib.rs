@@ -434,18 +434,31 @@ fn place_toast_window(w: &tauri::WebviewWindow, height: f64) {
     let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
+// ASYNC on purpose: creating (or closing) a window from a synchronous
+// command deadlocks the event loop on Windows — the launcher's own window
+// buttons stopped answering. The queue lock is never held across a window
+// operation either.
 #[tauri::command]
-fn desktop_toast(app: AppHandle, toasts: tauri::State<Toasts>, payload: Value) -> Result<(), String> {
-    let mut st = toasts.0.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(w) = app.get_webview_window("toast") {
-        if st.0 {
-            return w.emit("desktop-toast", payload).map_err(|e| e.to_string());
+async fn desktop_toast(app: AppHandle, toasts: tauri::State<'_, Toasts>, payload: Value) -> Result<(), String> {
+    let existing = app.get_webview_window("toast");
+    let ready = {
+        let mut st = toasts.0.lock().unwrap_or_else(|e| e.into_inner());
+        if existing.is_none() || !st.0 {
+            if existing.is_none() {
+                st.0 = false;
+            }
+            st.1.push(payload.clone()); // picked up by toast_ready once the page loads
+            false
+        } else {
+            true
         }
-        st.1.push(payload); // still loading: picked up by toast_ready
+    };
+    if let Some(w) = existing {
+        if ready {
+            w.emit("desktop-toast", payload).map_err(|e| e.to_string())?;
+        }
         return Ok(());
     }
-    st.0 = false;
-    st.1.push(payload);
     let w = tauri::WebviewWindowBuilder::new(&app, "toast", tauri::WebviewUrl::App("toast.html".into()))
         .title("AURA-64")
         .decorations(false)
@@ -481,11 +494,12 @@ fn toast_fit(window: tauri::WebviewWindow, height: f64) {
 }
 
 #[tauri::command]
-fn toast_close(window: tauri::WebviewWindow, toasts: tauri::State<Toasts>) {
+async fn toast_close(window: tauri::WebviewWindow, toasts: tauri::State<'_, Toasts>) -> Result<(), String> {
     if window.label() == "toast" {
         *toasts.0.lock().unwrap_or_else(|e| e.into_inner()) = (false, Vec::new());
-        let _ = window.close();
+        let _ = window.destroy();
     }
+    Ok(())
 }
 
 #[tauri::command]
