@@ -502,6 +502,12 @@ async fn toast_close(window: tauri::WebviewWindow, toasts: tauri::State<'_, Toas
     Ok(())
 }
 
+/// Started by Windows at login (the autostart entry passes --autostart).
+#[tauri::command]
+fn launched_at_startup() -> bool {
+    std::env::args().any(|a| a == "--autostart")
+}
+
 #[tauri::command]
 fn focus_main(app: AppHandle) {
     show_main(&app);
@@ -521,6 +527,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // Windows startup: the Run entry adds --autostart, so the launcher
+        // can stay in the notification area when the user asked for it.
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--autostart"]),
+        ))
         .manage(Toasts::default())
         .manage(Arc::new(download::Downloads::default()))
         .manage(GameSession(Mutex::new(None)))
@@ -559,6 +571,14 @@ pub fn run() {
                 tray = tray.icon(icon.clone());
             }
             tray.build(app)?;
+            // The window starts hidden (tauri.conf.json): a normal launch
+            // shows it at once; a Windows-startup launch lets the webview
+            // decide (settings: "start in the notification area").
+            if !launched_at_startup() {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                }
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -608,7 +628,8 @@ pub fn run() {
             toast_ready,
             toast_fit,
             toast_close,
-            focus_main
+            focus_main,
+            launched_at_startup
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

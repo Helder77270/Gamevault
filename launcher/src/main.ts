@@ -73,11 +73,17 @@ interface Settings {
   veilleMin: number; // idle minutes before the screensaver, 0 = never
   libraries: string[]; // download folders on this PC (the card stays the key)
   notif: { download: boolean; message: boolean; card: boolean; security: boolean };
+  startPage: StartPage; // where AURA-64 opens after the boot
+  startInTray: boolean; // at Windows startup: stay in the notification area
 }
+
+const START_PAGES = ["home", "shelf", "friends", "downloads"] as const;
+type StartPage = (typeof START_PAGES)[number];
 
 const VEILLE_CHOICES = [1, 3, 5, 10, 0];
 const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3, libraries: [],
-  notif: { download: true, message: true, card: true, security: true } };
+  notif: { download: true, message: true, card: true, security: true },
+  startPage: "home", startInTray: false };
 
 function loadSettings(): Settings {
   try {
@@ -86,6 +92,8 @@ function loadSettings(): Settings {
     if (!["midnight", "sunset", "crt"].includes(s.skin)) s.skin = "midnight";
     s.volume = Math.min(1, Math.max(0, Number(s.volume) || 0));
     if (!VEILLE_CHOICES.includes(Number(s.veilleMin))) s.veilleMin = SETTINGS_DEFAULT.veilleMin;
+    if (!START_PAGES.includes(s.startPage)) s.startPage = "home";
+    s.startInTray = Boolean(s.startInTray);
     s.notif = { ...SETTINGS_DEFAULT.notif, ...(typeof s.notif === "object" && s.notif ? s.notif : {}) };
     s.libraries = Array.isArray(s.libraries) ? s.libraries.filter((x) => typeof x === "string" && x.length > 2).slice(0, 8) : [];
     return s;
@@ -1749,6 +1757,18 @@ function settingsView(): string {
         </div>
       </div>
       <div class="settings-wrap">
+        ${accountCard()}
+        <section class="set-card">
+          <div class="mono-label">${t("set.start")}</div>
+          <div class="set-row">
+            <div><div class="set-label">${esc(t("set.startPage"))}</div><div class="set-sub">${esc(t("set.startPageSub"))}</div></div>
+            <div class="seg">
+              ${START_PAGES.map((p) => `<button class="seg-btn ${settings.startPage === p ? "on" : ""}" data-startpage="${p}">${esc(t(`set.page.${p}` as "set.page.home"))}</button>`).join("")}
+            </div>
+          </div>
+          ${toggle("set-autostart", autostartOn, t("set.autostart"), t("set.autostartSub"))}
+          <div class="${autostartOn ? "" : "dim"}">${toggle("set-trayStart", settings.startInTray, t("set.trayStart"), t("set.trayStartSub"))}</div>
+        </section>
         <section class="set-card">
           <div class="mono-label">${t("set.lang")}</div>
           <div class="seg">
@@ -2224,6 +2244,9 @@ function sigOf(): string {
     dli: dl.library.map((l) => l.cid + l.status + l.dir),
     dp: dl.picker ? [dl.picker.editionId, dl.picker.choice, dl.picker.options.length] : null,
     dr: dl.repair,
+    ses: state.session?.address ?? null,
+    lo: logoutAsk,
+    au: autostartOn,
     p: state.pairing?.status ?? null,
     i: state.installing ? [state.installing.stage, state.installing.status, state.installing.volumes.length] : null,
     a: libraryAddress(),
@@ -2275,7 +2298,7 @@ function wire(root: HTMLElement): void {
       go("detail");
     }),
   );
-  document.getElementById("skip-boot")?.addEventListener("click", () => go("home"));
+  document.getElementById("skip-boot")?.addEventListener("click", () => go(settings.startPage));
   document.getElementById("filt-all")?.addEventListener("click", () => {
     state.filter = "all";
     render();
@@ -2363,6 +2386,7 @@ function wire(root: HTMLElement): void {
   flip("set-sound", "sound");
   flip("set-motion", "reducedMotion");
   flip("set-dev", "dev");
+  wireStartup(root);
   (["download", "message", "card", "security"] as const).forEach((k) =>
     document.getElementById(`set-nt-${k}`)?.addEventListener("click", () => {
       settings.notif[k] = !settings.notif[k];
@@ -2557,7 +2581,7 @@ async function runBoot(): Promise<void> {
   }
 
   setTimeout(() => {
-    if (state.screen === "boot") go("home");
+    if (state.screen === "boot") go(settings.startPage);
   }, 900);
 }
 
@@ -2625,6 +2649,124 @@ async function refresh(): Promise<void> {
   const typing = document.activeElement?.tagName === "INPUT";
   if (!typing && sigOf() !== lastSig) render();
   else renderChrome();
+}
+
+// ── Account & startup (P7 #2, 2026-10-10) ─────────────────────────────────
+// The launcher's account is the wallet that owns the cards paired here
+// (or an address only watched, read-only). Signing out forgets it on this
+// machine — sessions, friends, chat, presence — but keeps the machine key
+// and the cards: a paired card still plays, and pairing (or watching an
+// address) brings an account back.
+let logoutAsk = false;
+let autostartOn = false;
+
+function accountCard(): string {
+  const watched = !state.session && localStorage.getItem("gv-watch");
+  const addr = state.session?.address ?? (watched || "");
+  if (!addr) {
+    return `<section class="set-card">
+      <div class="mono-label">${t("acc.title")}</div>
+      <div class="set-row"><div><div class="set-label">${esc(t("acc.none"))}</div><div class="set-sub">${esc(t("acc.noneSub"))}</div></div></div>
+    </section>`;
+  }
+  const confirm = logoutAsk
+    ? `<div class="acc-confirm" role="alertdialog" aria-labelledby="acc-q">
+        <div id="acc-q" class="set-label">${esc(t("acc.confirmQ"))}</div>
+        <div class="set-sub">${esc(t("acc.confirmSub"))}</div>
+        <div class="acc-btns">
+          <button class="pillbtn" id="acc-cancel">${esc(t("acc.cancel"))}</button>
+          <button class="pillbtn danger" id="acc-logout-yes">${esc(t("acc.logoutYes"))}</button>
+        </div>
+      </div>`
+    : "";
+  return `<section class="set-card">
+    <div class="mono-label">${t("acc.title")}</div>
+    <div class="set-row">
+      <div style="min-width:0">
+        <div class="set-label">${esc(short(addr, 6))}</div>
+        <div class="set-sub">${esc(watched ? t("acc.watched") : t("acc.paired"))}</div>
+      </div>
+      ${logoutAsk ? "" : `<button class="pillbtn" id="acc-logout">${esc(t(watched ? "acc.forget" : "acc.logout"))}</button>`}
+    </div>
+    ${confirm}
+  </section>`;
+}
+
+async function logout(): Promise<void> {
+  const token = social?.token;
+  if (token) {
+    void fetch(`${TICKETD_URL}/session`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+  }
+  social = null;
+  events?.close();
+  events = null;
+  state.session = null;
+  try {
+    localStorage.removeItem("gv-session");
+    localStorage.removeItem("gv-watch");
+  } catch {
+    /* storage blocked */
+  }
+  state.friends = [];
+  state.incoming = 0;
+  state.loans = [];
+  state.owned = [];
+  state.chat = { active: null, thread: [], unread: {}, ready: true };
+  deviceWasActive = null;
+  logoutAsk = false;
+  toast(t("acc.loggedOut"));
+  render();
+}
+
+async function refreshAutostart(): Promise<void> {
+  try {
+    autostartOn = await invoke<boolean>("plugin:autostart|is_enabled");
+  } catch {
+    autostartOn = false;
+  }
+}
+
+/** At a Windows-startup launch, stay in the tray if asked; else show the window. */
+async function showAtLaunch(): Promise<void> {
+  try {
+    const atStartup = await invoke<boolean>("launched_at_startup");
+    if (atStartup && !settings.startInTray) await getCurrentWindow().show();
+  } catch {
+    /* not inside Tauri */
+  }
+}
+
+function wireStartup(root: HTMLElement): void {
+  root.querySelectorAll<HTMLButtonElement>("[data-startpage]").forEach((b) =>
+    b.addEventListener("click", () => {
+      settings.startPage = b.dataset.startpage as StartPage;
+      saveSettings();
+      render();
+    }),
+  );
+  document.getElementById("set-autostart")?.addEventListener("click", async () => {
+    try {
+      await invoke(autostartOn ? "plugin:autostart|disable" : "plugin:autostart|enable");
+    } catch (err) {
+      toast(String(err));
+    }
+    await refreshAutostart();
+    render();
+  });
+  document.getElementById("set-trayStart")?.addEventListener("click", () => {
+    settings.startInTray = !settings.startInTray;
+    saveSettings();
+    render();
+  });
+  document.getElementById("acc-logout")?.addEventListener("click", () => {
+    logoutAsk = true;
+    render();
+  });
+  document.getElementById("acc-cancel")?.addEventListener("click", () => {
+    logoutAsk = false;
+    render();
+  });
+  document.getElementById("acc-logout-yes")?.addEventListener("click", () => void logout());
 }
 
 // ── Notifications (P7 #1, 2026-10-10) ─────────────────────────────────────
@@ -3435,6 +3577,8 @@ window.addEventListener("DOMContentLoaded", () => {
   applySettings();
   applyStaticI18n();
   wireWindowControls();
+  void showAtLaunch();
+  void refreshAutostart();
   void refreshLibrary();
   loadSession();
   document.getElementById("restart-btn")?.addEventListener("click", () => void runBoot());

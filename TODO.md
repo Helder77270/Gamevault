@@ -164,11 +164,11 @@ décision de conception, un redéploiement ou une infra en plus).
 - [x] **A** (2026-10-10) Notifications SUR LE BUREAU façon Steam (fenêtre AURA-64
       en bas à droite, au-dessus des autres logiciels) ; dans le launcher, le
       widget SLOT A entre en scène pour la carte.
-- [ ] **A** Se déconnecter (Réglages) : oublie la session du compte sur cette
+- [x] **A** (2026-10-10) Se déconnecter (Réglages) : oublie la session du compte sur cette
       machine ; la clé de la machine reste, la carte aussi.
-- [ ] **A** Choisir sa page de démarrage (Accueil, Game Shelf, Amis,
+- [x] **A** (2026-10-10) Choisir sa page de démarrage (Accueil, Game Shelf, Amis,
       Téléchargements).
-- [ ] **A** Lancer AURA-64 au démarrage de Windows (option : directement dans
+- [x] **A** (2026-10-10) Lancer AURA-64 au démarrage de Windows (option : directement dans
       la zone de notification).
 
 ### Téléchargements
