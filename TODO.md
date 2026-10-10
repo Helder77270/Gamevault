@@ -285,7 +285,7 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
 - [x] Coins coupés à 45° (cartouche) sur boutons, vignettes, bannières,
       panneaux, puces, segments, toasts — launcher, fenêtre des toasts,
       et web (même DA). LED carrées. Le sunset reste réservé à l'achat.
-- [ ] Skill art-direction mis à jour (formes : chanfrein, plus de pilules).
+- [x] Skill art-direction mis à jour (formes : chanfrein, plus de pilules).
 
 ### 6. Téléchargements
 - [ ] La vue n'affiche plus les jeux installés : seulement à installer,

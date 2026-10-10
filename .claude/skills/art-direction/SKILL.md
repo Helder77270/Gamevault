@@ -78,9 +78,20 @@ d'art, n° de licence) ; focus « respirant » sur la liste du shelf.
 
 - **Chakra Petch** (display/UI) + **Space Mono** (chrome machine,
   letter-spacing 0.14–0.3em) — conservés, ça marche.
-- Pills 999px, cartes 12–18px, slots en creux ombrés, bordures
-  `rgba(200,225,255,…)`, glows oklch doux. Matière : verre poli, reflets
-  (auraSheen), jamais de flat mat.
+- **Formes = Style A « Chanfrein » (validé par Helder le 2026-10-10)** :
+  plus de pilules ni de grands rayons (ça faisait « très IA »). Coins
+  coupés à 45° via `clip-path: polygon(...)` et la variable `--k` :
+  `--cut-l` 14px (panneaux, cartes, toasts), `--cut` 9px (défaut),
+  `--cut-s` 6px (boutons, champs, lignes), `--cut-xs` 4px (puces,
+  avatars, jauges). CTA principal : 11px. Bulles de chat : le coin de
+  l'orateur reste carré. LED, interrupteurs et pastilles : carrés.
+  Restent ronds : l'horloge orbitale PS2, les blobs du boot, la touche
+  manette de la home. Un élément coupé ne montre pas d'anneau de focus
+  extérieur : le dessiner à l'intérieur (`outline-offset: -3px`).
+  Couche dans `launcher/src/styles.css` et `web/app/globals.css`
+  (bloc « Style A · Chanfrein »), à étendre à tout nouveau composant.
+- Slots en creux ombrés, bordures `rgba(200,225,255,…)`, glows oklch
+  doux. Matière : verre poli, reflets (auraSheen), jamais de flat mat.
 - Art des jeux : gradients `hueOf(id)=id*137%360` + hachures (placeholder
   en attendant les vrais visuels studio).
 
