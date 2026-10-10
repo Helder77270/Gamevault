@@ -158,10 +158,10 @@ décision de conception, un redéploiement ou une infra en plus).
 « Déjà là » = ce qui existe en partie.
 
 ### Notifications
-- [ ] **A** Toasts en bas à droite : jeu téléchargé, message d'un ami, carte
+- [x] **A** (2026-10-10) Toasts en bas à droite : jeu téléchargé, message d'un ami, carte
       insérée / retirée, appareil déconnecté du compte depuis une autre
       machine. Déjà là : toasts carte et chat, à unifier.
-- [ ] **A** Notifications Windows quand AURA-64 est dans la zone de
+- [x] **A** (2026-10-10) Notifications Windows quand AURA-64 est dans la zone de
       notification (fenêtre cachée).
 
 ### Démarrage & session

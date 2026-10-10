@@ -948,3 +948,29 @@ button { font-family: inherit; }
 .set-lib code { font-family: var(--mono); font-size: 11px; color: var(--ink); overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { .dl-sheen, .c-a { animation: none; } }
 .dp-path { margin-top: 5px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; color: rgba(214,230,255,0.75); overflow-wrap: anywhere; }
+
+/* ── Notifications (P7 #1): one stack, bottom-right, above the bottom bar ── */
+#notif-stack { position: fixed; right: 18px; bottom: 74px; z-index: 8000; display: flex; flex-direction: column; gap: 10px; width: 340px; pointer-events: none; }
+.nt {
+  pointer-events: auto; display: flex; gap: 12px; align-items: flex-start; padding: 12px 12px 12px 14px; border-radius: 16px;
+  border: 1px solid rgba(200,225,255,0.22); background: rgba(10,14,30,0.92); backdrop-filter: blur(14px);
+  box-shadow: 0 18px 40px -16px rgba(0,0,0,0.85); color: var(--ink); animation: ntIn 0.28s ease both;
+}
+.nt.out { animation: ntOut 0.26s ease both; }
+@keyframes ntIn { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+@keyframes ntOut { to { opacity: 0; transform: translateX(24px); } }
+.nt-ico { width: 34px; height: 34px; flex: none; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center; }
+.nt-download .nt-ico { color: #0a1020; background: linear-gradient(180deg, #f2f8ff, oklch(0.84 0.07 205)); }
+.nt-message .nt-ico { color: #f6efff; background: oklch(0.6 0.12 310 / 0.55); border: 1px solid oklch(0.8 0.11 310 / 0.6); }
+.nt-card .nt-ico { color: #06130c; background: oklch(0.82 0.13 160); }
+.nt-security .nt-ico { color: #1d1404; background: oklch(0.86 0.12 85); }
+.nt-security { border-color: oklch(0.82 0.12 85 / 0.45); }
+.nt-body { flex: 1; min-width: 0; }
+.nt-k { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.2em; color: var(--dim); }
+.nt-t { font-size: 14px; font-weight: 700; margin-top: 2px; overflow-wrap: anywhere; }
+.nt-s { font-size: 12.5px; line-height: 1.45; color: rgba(222,236,255,0.72); margin-top: 2px; overflow-wrap: anywhere; }
+.nt-act { cursor: pointer; margin-top: 8px; padding: 6px 12px; border-radius: 999px; font: 600 12px var(--sans); color: var(--ink); border: 1px solid rgba(200,225,255,0.3); background: rgba(226,240,255,0.06); }
+.nt-act:hover { background: rgba(226,240,255,0.14); }
+.nt-x { cursor: pointer; flex: none; width: 24px; height: 24px; border-radius: 999px; border: none; background: transparent; color: var(--dim); }
+.nt-x:hover, .nt-x:focus-visible { color: var(--ink); background: rgba(226,240,255,0.1); outline: none; }
+@media (prefers-reduced-motion: reduce) { .nt, .nt.out { animation: none; } }

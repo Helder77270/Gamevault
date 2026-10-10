@@ -72,10 +72,12 @@ interface Settings {
   dev: boolean;
   veilleMin: number; // idle minutes before the screensaver, 0 = never
   libraries: string[]; // download folders on this PC (the card stays the key)
+  notif: { download: boolean; message: boolean; card: boolean; security: boolean; windows: boolean };
 }
 
 const VEILLE_CHOICES = [1, 3, 5, 10, 0];
-const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3, libraries: [] };
+const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3, libraries: [],
+  notif: { download: true, message: true, card: true, security: true, windows: true } };
 
 function loadSettings(): Settings {
   try {
@@ -84,6 +86,7 @@ function loadSettings(): Settings {
     if (!["midnight", "sunset", "crt"].includes(s.skin)) s.skin = "midnight";
     s.volume = Math.min(1, Math.max(0, Number(s.volume) || 0));
     if (!VEILLE_CHOICES.includes(Number(s.veilleMin))) s.veilleMin = SETTINGS_DEFAULT.veilleMin;
+    s.notif = { ...SETTINGS_DEFAULT.notif, ...(typeof s.notif === "object" && s.notif ? s.notif : {}) };
     s.libraries = Array.isArray(s.libraries) ? s.libraries.filter((x) => typeof x === "string" && x.length > 2).slice(0, 8) : [];
     return s;
   } catch {
@@ -281,6 +284,19 @@ function onChatMessage(m: ChatMsg): void {
   if (m.from !== myAddr()) {
     state.chat.unread[other] = (state.chat.unread[other] ?? 0) + 1;
     beep([988, 1319], 0.07, 0.07); // soft two-note chime
+    const f = state.friends.find((x) => x.addr === other);
+    void notify({
+      kind: "message",
+      title: f?.name ?? short(other, 6),
+      body: m.kind === "loan" ? t("nt.msgLoan") : m.body.length > 120 ? `${m.body.slice(0, 120)}…` : m.body,
+      action: {
+        label: t("nt.reply"),
+        run: () => {
+          go("friends");
+          void openChat(other);
+        },
+      },
+    });
     rerender();
   }
 }
@@ -1797,6 +1813,15 @@ function settingsView(): string {
             </div>
           </div>
         </section>
+        <section class="set-card">
+          <div class="mono-label">${t("set.notif")}</div>
+          ${toggle("set-nt-download", settings.notif.download, t("set.nt.download"), t("set.nt.downloadSub"))}
+          ${toggle("set-nt-message", settings.notif.message, t("set.nt.message"), t("set.nt.messageSub"))}
+          ${toggle("set-nt-card", settings.notif.card, t("set.nt.card"), t("set.nt.cardSub"))}
+          ${toggle("set-nt-security", settings.notif.security, t("set.nt.security"), t("set.nt.securitySub"))}
+          ${toggle("set-nt-windows", settings.notif.windows, t("set.nt.windows"), t("set.nt.windowsSub"))}
+          <div class="set-row"><div><div class="set-label">${esc(t("set.nt.test"))}</div></div><button class="pillbtn" id="set-nt-test">${esc(t("set.nt.testBtn"))}</button></div>
+        </section>
         <div class="set-sub" style="text-align:center;margin-top:4px">${esc(t("set.about"))}</div>
       </div>
     </div>`;
@@ -2357,6 +2382,16 @@ function wire(root: HTMLElement): void {
   flip("set-sound", "sound");
   flip("set-motion", "reducedMotion");
   flip("set-dev", "dev");
+  (["download", "message", "card", "security", "windows"] as const).forEach((k) =>
+    document.getElementById(`set-nt-${k}`)?.addEventListener("click", () => {
+      settings.notif[k] = !settings.notif[k];
+      saveSettings();
+      render();
+    }),
+  );
+  document.getElementById("set-nt-test")?.addEventListener("click", () =>
+    showNotif({ kind: "download", title: t("nt.dlDone", { t: "GameVault Runner" }), body: t("nt.dlDoneBody"), action: { label: t("nt.open"), run: () => go("downloads") } }),
+  );
   root.querySelectorAll<HTMLButtonElement>("[data-rmlib]").forEach((b) =>
     b.addEventListener("click", () => {
       settings.libraries.splice(Number(b.dataset.rmlib), 1);
@@ -2580,11 +2615,11 @@ async function refresh(): Promise<void> {
             hideVeille();
             sfxInsert();
           }
-          cardToast("in", g.meta.title ?? g.cartridge.volume_label ?? "CARD");
+          void cardEvent("in", g.meta.title ?? g.cartridge.volume_label ?? "CARD");
         });
       state.games
         .filter((g) => !cur.has(g.cartridge.mount_point))
-        .forEach((g) => cardToast("out", g.meta.title ?? g.cartridge.volume_label ?? "CARD"));
+        .forEach((g) => void cardEvent("out", g.meta.title ?? g.cartridge.volume_label ?? "CARD"));
     }
     state.games = newGames;
     state.lastScan = new Date().toLocaleTimeString();
@@ -2609,6 +2644,118 @@ async function refresh(): Promise<void> {
   const typing = document.activeElement?.tagName === "INPUT";
   if (!typing && sigOf() !== lastSig) render();
   else renderChrome();
+}
+
+// ── Notifications (P7 #1, 2026-10-10) ─────────────────────────────────────
+// One stack, bottom-right, for what happens while you look elsewhere: a
+// game finished downloading, a friend wrote, a card went in or out, this
+// machine lost its place on the account. When AURA-64 is hidden in the
+// notification area or in the background, Windows shows it too. The card
+// keeps its own signature animation when the window is in front.
+type NotifKind = "download" | "message" | "card" | "security";
+interface Notif {
+  kind: NotifKind;
+  title: string;
+  body: string;
+  action?: { label: string; run: () => void };
+}
+
+const NOTIF_ICON: Record<NotifKind, string> = {
+  download: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"></path></svg>`,
+  message: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"></path></svg>`,
+  card: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"></path><path d="M10 3v4M13 3v4"></path></svg>`,
+  security: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"></path><path d="M12 8v5M12 16v.01"></path></svg>`,
+};
+
+/** "front" = visible and focused; "back" = visible, not focused; "tray" = hidden. */
+async function windowState(): Promise<"front" | "back" | "tray"> {
+  try {
+    const w = getCurrentWindow();
+    if (!(await w.isVisible())) return "tray";
+    return (await w.isFocused()) ? "front" : "back";
+  } catch {
+    return "front"; // not inside Tauri (dev in a browser)
+  }
+}
+
+async function notify(n: Notif): Promise<void> {
+  if (!settings.notif[n.kind]) return;
+  const where = await windowState();
+  if (where !== "front" && settings.notif.windows) {
+    void invoke("plugin:notification|notify", { options: { title: n.title, body: n.body } }).catch(() => {});
+  }
+  if (where !== "tray") showNotif(n);
+}
+
+function showNotif(n: Notif): void {
+  let stack = document.getElementById("notif-stack");
+  if (!stack) {
+    stack = document.createElement("div");
+    stack.id = "notif-stack";
+    stack.setAttribute("aria-live", "polite");
+    document.body.appendChild(stack);
+  }
+  while (stack.children.length >= 4) stack.firstElementChild?.remove();
+  const el = document.createElement("div");
+  el.className = `nt nt-${n.kind}`;
+  el.setAttribute("role", "status");
+  el.innerHTML = `
+    <span class="nt-ico">${NOTIF_ICON[n.kind]}</span>
+    <div class="nt-body">
+      <div class="nt-k">${esc(t(`nt.${n.kind}` as "nt.download"))}</div>
+      <div class="nt-t">${esc(n.title)}</div>
+      <div class="nt-s">${esc(n.body)}</div>
+      ${n.action ? `<button class="nt-act">${esc(n.action.label)}</button>` : ""}
+    </div>
+    <button class="nt-x" aria-label="${esc(t("nt.close"))}">✕</button>`;
+  const bye = () => {
+    el.classList.add("out");
+    window.setTimeout(() => el.remove(), 260);
+  };
+  el.querySelector(".nt-x")?.addEventListener("click", bye);
+  el.querySelector(".nt-act")?.addEventListener("click", () => {
+    n.action?.run();
+    bye();
+  });
+  let timer = window.setTimeout(bye, 6500);
+  el.addEventListener("mouseenter", () => window.clearTimeout(timer));
+  el.addEventListener("mouseleave", () => (timer = window.setTimeout(bye, 2500)));
+  stack.appendChild(el);
+}
+
+/** A card went in or out: the signature animation in front, a notification otherwise. */
+async function cardEvent(kind: "in" | "out", title: string): Promise<void> {
+  if ((await windowState()) === "front") {
+    if (settings.notif.card) cardToast(kind, title);
+    return;
+  }
+  void notify({ kind: "card", title: t(kind === "in" ? "nt.cardIn" : "nt.cardOut"), body: title });
+}
+
+// This machine's place on the account (2 machines max): pairing another
+// machine elsewhere can release it — say so instead of failing silently
+// at the next launch.
+let deviceWasActive: boolean | null = null;
+async function checkDeviceSlot(): Promise<void> {
+  const wallet = libraryAddress();
+  if (!wallet || !state.devicePubKey) return;
+  try {
+    const res = await fetch(`${TICKETD_URL}/devices/${wallet}/${state.devicePubKey}/status`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) return;
+    const active = ((await res.json()) as { active: boolean }).active;
+    if (deviceWasActive === true && !active) {
+      chimeOut();
+      void notify({
+        kind: "security",
+        title: t("nt.secTitle"),
+        body: t("nt.secBody"),
+        action: { label: t("nt.secAction"), run: () => go("home") },
+      });
+    }
+    deviceWasActive = active;
+  } catch {
+    /* offline: nothing to say */
+  }
 }
 
 // ── Download manager (UI side of src-tauri/src/download.rs) ───────────────
@@ -3099,7 +3246,18 @@ void listen<{ id: string; phase: string; done?: number; total?: number; net_bps?
     if (["done", "error", "paused", "cancelled"].includes(p.phase)) {
       j.netBps = 0;
       j.diskBps = 0;
-      if (p.phase === "done") beep([660, 880, 1320], 0.12);
+      if (p.phase === "done") {
+        beep([660, 880, 1320], 0.12);
+        void notify({
+          kind: "download",
+          title: t(j.kind === "repair" ? "nt.repaired" : "nt.dlDone", { t: j.title }),
+          body: t("nt.dlDoneBody"),
+          action: { label: t("nt.open"), run: () => go("downloads") },
+        });
+      }
+      if (p.phase === "error") {
+        void notify({ kind: "download", title: t("nt.dlError", { t: j.title }), body: p.error ?? "", action: { label: t("nt.open"), run: () => go("downloads") } });
+      }
       if (p.phase === "cancelled") delete dl.jobs[p.id];
       void refreshLibrary().then(() => {
         render();
@@ -3290,5 +3448,7 @@ window.addEventListener("DOMContentLoaded", () => {
   setInterval(() => void refresh(), 2000);
   setInterval(renderChrome, 1000); // bottom-bar clock ticks every second
   setInterval(pushPresence, 60_000); // friends see "online" / "playing X"
+  setInterval(() => void checkDeviceSlot(), 60_000);
+  window.setTimeout(() => void checkDeviceSlot(), 8000);
   pushPresence();
 });
