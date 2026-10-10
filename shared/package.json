@@ -12,7 +12,8 @@
     "./deployments": "./src/deployments.ts",
     "./storage": "./src/storage.ts",
     "./abi": "./src/abi.ts",
-    "./registryCatalog": "./src/registryCatalog.ts"
+    "./registryCatalog": "./src/registryCatalog.ts",
+    "./emoji": "./src/emoji.ts"
   },
   "scripts": {
     "selftest": "node --experimental-strip-types src/selftest.ts"

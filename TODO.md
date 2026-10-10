@@ -270,7 +270,7 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
       ou sur une occasion ouvre la page web d'achat / de mise en vente.
 
 ### 3. Chat : sélecteur d'emojis
-- [ ] Bouton emoji dans la discussion (launcher ET web) : une grille,
+- [x] Bouton emoji dans la discussion (launcher ET web) : une grille,
       insertion à la position du curseur.
 
 ### 4. Retirer les textes « techniques / très IA » du parcours client

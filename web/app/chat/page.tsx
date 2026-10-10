@@ -9,6 +9,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAccount } from "wagmi";
 import { fetchOnchainCatalog, hueOf, type OnchainEdition } from "@gamevault/shared/registryCatalog";
+import { CHAT_EMOJIS } from "@gamevault/shared/emoji";
 import { ConnectButton } from "../components/ConnectButton";
 import { Avatar, shortAddr } from "../components/Avatar";
 import { TICKETD_URL, ticketdGet, useTicketd } from "../lib/ticketd";
@@ -33,6 +34,20 @@ function ChatInner() {
   const [active, setActive] = useState<string | null>(params.get("with")?.toLowerCase() ?? null);
   const [thread, setThread] = useState<Msg[]>([]);
   const [text, setText] = useState("");
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  /** Emoji at the caret (or over the selection), then back to typing. */
+  const addEmoji = (emoji: string) => {
+    const el = inputRef.current;
+    const start = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? start;
+    setText((cur) => (cur.slice(0, start) + emoji + cur.slice(end)).slice(0, 1000));
+    setEmojiOpen(false);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(start + emoji.length, start + emoji.length);
+    });
+  };
   const [catalog, setCatalog] = useState<OnchainEdition[]>([]);
   const [error, setError] = useState("");
   const [opening, setOpening] = useState(false);
@@ -242,7 +257,39 @@ function ChatInner() {
               }}
             >
               <label htmlFor="chat-input" className="sr-only">Message à {label(current)}</label>
-              <input id="chat-input" value={text} maxLength={1000} placeholder={`Écrire à ${label(current)}…`} onChange={(e) => setText(e.target.value)} autoComplete="off" />
+              {emojiOpen && (
+                <div className="chat-emoji-pop" role="dialog" aria-label="Emojis">
+                  {CHAT_EMOJIS.map((e) => (
+                    <button key={e} type="button" className="chat-emoji" aria-label={e} onClick={() => addEmoji(e)}>
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                className={`chat-emoji-btn ${emojiOpen ? "on" : ""}`}
+                aria-label="Emojis"
+                aria-expanded={emojiOpen}
+                title="Emojis"
+                onClick={() => setEmojiOpen((o) => !o)}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M8.5 14.5c.9 1.3 2.1 2 3.5 2s2.6-.7 3.5-2" />
+                  <path d="M9 9.5h.01M15 9.5h.01" />
+                </svg>
+              </button>
+              <input
+                id="chat-input"
+                ref={inputRef}
+                value={text}
+                maxLength={1000}
+                placeholder={`Écrire à ${label(current)}…`}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && setEmojiOpen(false)}
+                autoComplete="off"
+              />
               <button className="btn" type="submit" disabled={!text.trim()}>Envoyer</button>
             </form>
           </>

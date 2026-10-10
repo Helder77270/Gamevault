@@ -779,7 +779,7 @@ button { font-family: inherit; }
 .lc-loan { align-self: center; display: flex; align-items: center; gap: 12px; width: min(420px, 90%); border-radius: 14px; border: 1px solid oklch(0.8 0.11 310 / 0.4); background: linear-gradient(180deg, oklch(0.4 0.1 310 / 0.22), rgba(226,240,255,0.03)); padding: 12px 14px; font-size: 13px; }
 .lc-loan-art { width: 52px; height: 34px; flex: none; border-radius: 6px; box-shadow: 0 0 16px oklch(0.7 0.12 300 / 0.5); }
 .lc-loan-sub { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; color: oklch(0.87 0.08 310); margin-top: 2px; }
-.lc-compose { flex: none; display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid rgba(200,225,255,0.1); background: rgba(5,6,13,0.35); }
+.lc-compose { position: relative; flex: none; display: flex; gap: 10px; padding: 12px 16px; border-top: 1px solid rgba(200,225,255,0.1); background: rgba(5,6,13,0.35); }
 .lc-compose input { flex: 1; min-width: 0; }
 .lc-toast { position: fixed; left: 50%; bottom: 56px; transform: translateX(-50%); padding: 10px 18px; border-radius: 999px; background: rgba(5,6,13,0.9); border: 1px solid oklch(0.75 0.14 var(--bad-h) / 0.6); color: var(--ink); font-size: 13px; z-index: 50; }
 @keyframes lcIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
@@ -1063,3 +1063,10 @@ button { font-family: inherit; }
 .st-offer-p { font-weight: 700; }
 .st-off { color: oklch(0.85 0.09 310); font-size: 12px; margin-left: 4px; }
 .shelf-empty { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; padding: 20px 0; }
+
+/* chat emoji picker (P8 #3) */
+.lc-emoji-btn { cursor: pointer; flex: none; width: 40px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); background: rgba(226,240,255,0.05); color: var(--sub); }
+.lc-emoji-btn:hover, .lc-emoji-btn.on { color: var(--ink); border-color: var(--cyan); }
+.lc-emoji-pop { position: absolute; left: 16px; bottom: calc(100% + 6px); z-index: 5; display: grid; grid-template-columns: repeat(12, 34px); gap: 2px; padding: 8px; border: 1px solid var(--line-hi, rgba(200,225,255,0.5)); background: rgba(10,14,30,0.97); }
+.lc-emoji { cursor: pointer; width: 34px; height: 34px; border: none; background: transparent; font-size: 20px; line-height: 1; }
+.lc-emoji:hover, .lc-emoji:focus-visible { background: rgba(226,240,255,0.12); outline: none; }

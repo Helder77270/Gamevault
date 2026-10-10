@@ -8,7 +8,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import QRCode from "qrcode";
 import { createPublicClient, http } from "viem";
-import { verifyTicket, isExpired, unhex, type SignedTicket } from "@gamevault/shared";
+import { verifyTicket, isExpired, unhex, CHAT_EMOJIS, type SignedTicket } from "@gamevault/shared";
 import { fetchOnchainCatalog, BLURBS, GENRES, type OnchainEdition } from "@gamevault/shared/registryCatalog";
 import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
 import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
@@ -376,6 +376,19 @@ async function openChat(addr: string): Promise<void> {
   render();
   document.getElementById("lc-thread")?.scrollTo({ top: 1e9 });
   document.getElementById("lc-input")?.focus();
+}
+
+let emojiOpen = false;
+let chatDraft = { pos: 0, text: "" };
+
+/** Emoji at the caret (or over the selection); the picker closes after a pick. */
+function insertEmoji(emoji: string): void {
+  const input = document.getElementById("lc-input") as HTMLInputElement | null;
+  if (!input) return;
+  const start = input.selectionStart ?? chatDraft.pos;
+  const end = input.selectionEnd ?? start;
+  input.setRangeText(emoji, start, end, "end");
+  input.focus();
 }
 
 async function sendChat(): Promise<void> {
@@ -1916,6 +1929,8 @@ function friendsView(): string {
         ${state.chat.thread.length ? state.chat.thread.map(bubbleHtml).join("") : `<div class="lc-empty">${t(state.chat.ready ? "chat.empty" : "chat.noSession")}</div>`}
       </div>
       <div class="lc-compose">
+        ${emojiOpen ? `<div class="lc-emoji-pop" role="dialog" aria-label="${esc(t("chat.emoji"))}">${CHAT_EMOJIS.map((e) => `<button class="lc-emoji" data-emoji="${e}" aria-label="${e}">${e}</button>`).join("")}</div>` : ""}
+        <button class="lc-emoji-btn ${emojiOpen ? "on" : ""}" id="lc-emoji-btn" aria-label="${esc(t("chat.emoji"))}" aria-expanded="${emojiOpen}" title="${esc(t("chat.emoji"))}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M8.5 14.5c.9 1.3 2.1 2 3.5 2s2.6-.7 3.5-2"></path><path d="M9 9.5h.01M15 9.5h.01"></path></svg></button>
         <input id="lc-input" class="aura-input" maxlength="1000" placeholder="${esc(t("chat.write", { n: friend.name ?? short(friend.addr, 6) }))}" aria-label="${esc(t("chat.write", { n: friend.name ?? short(friend.addr, 6) }))}" />
         <button class="cta" id="lc-send">${t("chat.send")}</button>
       </div>`;
@@ -2982,7 +2997,32 @@ function wire(root: HTMLElement): void {
     }),
   );
   document.getElementById("lc-send")?.addEventListener("click", () => void sendChat());
+  document.getElementById("lc-emoji-btn")?.addEventListener("click", () => {
+    const input = document.getElementById("lc-input") as HTMLInputElement | null;
+    chatDraft = { pos: input?.selectionStart ?? input?.value.length ?? 0, text: input?.value ?? "" };
+    emojiOpen = !emojiOpen;
+    render();
+    const again = document.getElementById("lc-input") as HTMLInputElement | null;
+    if (again) {
+      again.value = chatDraft.text; // the draft survives the re-render
+      again.setSelectionRange(chatDraft.pos, chatDraft.pos);
+      if (!emojiOpen) again.focus();
+    }
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-emoji]").forEach((b) =>
+    b.addEventListener("click", () => {
+      insertEmoji(b.dataset.emoji!);
+      emojiOpen = false;
+      document.querySelector(".lc-emoji-pop")?.remove();
+      document.getElementById("lc-emoji-btn")?.classList.remove("on");
+    }),
+  );
   document.getElementById("lc-input")?.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && emojiOpen) {
+      emojiOpen = false;
+      document.querySelector(".lc-emoji-pop")?.remove();
+      document.getElementById("lc-emoji-btn")?.classList.remove("on");
+    }
     if (e.key === "Enter") void sendChat();
   });
   document.getElementById("home-hero")?.addEventListener("click", () => {
