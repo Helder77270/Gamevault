@@ -201,8 +201,8 @@ décision de conception, un redéploiement ou une infra en plus).
       reposent jamais sur la couleur seule (icône ou texte en plus).
 
 ### Son
-- [ ] **B** Volumes séparés : interface, notifications, cinématiques.
-      Déjà là : son on/off + volume global.
+- [x] **B** (2026-10-10) Volumes séparés : interface, notifications, cinématiques,
+      chacun multiplié par le volume global.
 
 ### Magasin
 - [ ] **B** Liste de souhaits (+ alerte de baisse de prix, déjà dans les idées).

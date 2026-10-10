@@ -83,7 +83,12 @@ interface Settings {
   calmFx: boolean; // photosensitivity: no animation, no flicker, no decorative effects
   lowBandwidth: boolean; // downloads capped at 2 MB/s, network refreshes 4-6x rarer
   cvd: "std" | "rg" | "by"; // colour vision: standard, red-green, blue-yellow
+  vol: Record<SoundCat, number>; // per-category volume, × the master volume
 }
+
+/** Sound families: ui (clicks, eject), notif (message, download, card), cine (launch, purchase, resale). */
+type SoundCat = "ui" | "notif" | "cine";
+const SOUND_CATS: SoundCat[] = ["ui", "notif", "cine"];
 
 const CVD_MODES = ["std", "rg", "by"] as const;
 
@@ -100,7 +105,8 @@ const VEILLE_CHOICES = [1, 3, 5, 10, 0];
 const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3, libraries: [],
   notif: { download: true, message: true, card: true, security: true },
   startPage: "home", startInTray: false, localServices: true, dlLimitMBs: 0, dlDuringPlay: false,
-  uiScale: 1, calmFx: false, lowBandwidth: false, cvd: "std" };
+  uiScale: 1, calmFx: false, lowBandwidth: false, cvd: "std",
+  vol: { ui: 1, notif: 1, cine: 1 } };
 
 function loadSettings(): Settings {
   try {
@@ -118,6 +124,9 @@ function loadSettings(): Settings {
     s.calmFx = Boolean(s.calmFx);
     s.lowBandwidth = Boolean(s.lowBandwidth);
     if (!CVD_MODES.includes(s.cvd)) s.cvd = "std";
+    const v = (typeof s.vol === "object" && s.vol ? s.vol : {}) as Partial<Record<SoundCat, number>>;
+    s.vol = { ui: 1, notif: 1, cine: 1 };
+    for (const c of SOUND_CATS) if (typeof v[c] === "number") s.vol[c] = Math.min(1, Math.max(0, v[c] as number));
     s.notif = { ...SETTINGS_DEFAULT.notif, ...(typeof s.notif === "object" && s.notif ? s.notif : {}) };
     s.libraries = Array.isArray(s.libraries) ? s.libraries.filter((x) => typeof x === "string" && x.length > 2).slice(0, 8) : [];
     return s;
@@ -319,7 +328,7 @@ function onChatMessage(m: ChatMsg): void {
   }
   if (m.from !== myAddr()) {
     state.chat.unread[other] = (state.chat.unread[other] ?? 0) + 1;
-    beep([988, 1319], 0.07, 0.07); // soft two-note chime
+    beep([988, 1319], 0.07, 0.07, "sine", "notif"); // soft two-note chime
     const f = state.friends.find((x) => x.addr === other);
     void notify({
       kind: "message",
@@ -1044,9 +1053,10 @@ async function quit(): Promise<void> {
 
 let audio: AudioContext | null = null;
 
-function beep(freqs: number[], dur = 0.09, vol = 0.16, wave: OscillatorType = "sine"): void {
-  if (!settings.sound || settings.volume <= 0) return;
-  vol *= settings.volume;
+function beep(freqs: number[], dur = 0.09, vol = 0.16, wave: OscillatorType = "sine", cat: SoundCat = "ui"): void {
+  if (!settings.sound) return;
+  vol *= settings.volume * settings.vol[cat];
+  if (vol <= 0) return;
   try {
     audio ??= new AudioContext();
     void audio.resume();
@@ -1069,18 +1079,18 @@ function beep(freqs: number[], dur = 0.09, vol = 0.16, wave: OscillatorType = "s
 }
 
 const chimeOut = (): void => beep([660, 440]);
-const chimeLaunch = (): void => beep([523, 659, 880], 0.12);
+const chimeLaunch = (): void => beep([523, 659, 880], 0.12, 0.16, "sine", "cine");
 
 // ── Les moments signatures (DA v1) — WebAudio, zéro asset ─────
 
 /** Carte SD qui s'insère : clic mécanique + petite montée en rotation. */
-function sfxInsert(): void {
-  if (!settings.sound || settings.volume <= 0) return;
+function sfxInsert(cat: SoundCat = "cine"): void {
+  if (!settings.sound || settings.volume * settings.vol[cat] <= 0) return;
   try {
     audio ??= new AudioContext();
     void audio.resume();
     const t0 = audio.currentTime;
-    const v = settings.volume;
+    const v = settings.volume * settings.vol[cat];
     // clic : bouffée de bruit filtrée
     const buf = audio.createBuffer(1, 2205, 44100);
     const d = buf.getChannelData(0);
@@ -1113,14 +1123,14 @@ function sfxInsert(): void {
 
 /** Achat : fanfare courte, glorifiante (arpège majeur + éclat). */
 function chimeBuy(): void {
-  beep([523, 659, 784, 1047], 0.1, 0.18);
-  setTimeout(() => beep([1568, 2093], 0.22, 0.09), 430);
+  beep([523, 659, 784, 1047], 0.1, 0.18, "sine", "cine");
+  setTimeout(() => beep([1568, 2093], 0.22, 0.09, "sine", "cine"), 430);
 }
 
 /** Revente/révocation : le ka-ching du tiroir-caisse. */
 function chimeCash(): void {
-  beep([2637, 2093], 0.055, 0.16, "square");
-  setTimeout(() => beep([1047, 1319], 0.12, 0.12), 120);
+  beep([2637, 2093], 0.055, 0.16, "square", "cine");
+  setTimeout(() => beep([1047, 1319], 0.12, 0.12, "sine", "cine"), 120);
 }
 
 // ── Card insert/eject events (overlay layer, outside diff-render) ──
@@ -1872,6 +1882,12 @@ function settingsView(): string {
             <div><div class="set-label">${esc(t("set.volume"))}</div></div>
             <input type="range" id="set-volume" min="0" max="100" step="5" value="${Math.round(settings.volume * 100)}" ${settings.sound ? "" : "disabled"} aria-label="${esc(t("set.volume"))}" />
           </div>
+          ${SOUND_CATS.map(
+            (c) => `<div class="set-row sub ${settings.sound ? "" : "dim"}">
+            <div><div class="set-label">${esc(t(`set.vol.${c}` as "set.vol.ui"))}</div><div class="set-sub">${esc(t(`set.vol.${c}Sub` as "set.vol.uiSub"))}</div></div>
+            <input type="range" min="0" max="100" step="5" data-volcat="${c}" value="${Math.round(settings.vol[c] * 100)}" ${settings.sound ? "" : "disabled"} aria-label="${esc(t(`set.vol.${c}` as "set.vol.ui"))}" />
+          </div>`,
+          ).join("")}
           ${toggle("set-dev", settings.dev, t("set.dev"), t("set.devSub"))}
           <div class="set-row">
             <div><div class="set-label">${esc(t("set.veille"))}</div><div class="set-sub">${esc(t("set.veilleSub"))}</div></div>
@@ -2489,6 +2505,15 @@ function wire(root: HTMLElement): void {
       render();
     }),
   );
+  root.querySelectorAll<HTMLInputElement>("[data-volcat]").forEach((r) =>
+    r.addEventListener("change", () => {
+      const cat = r.dataset.volcat as SoundCat;
+      settings.vol[cat] = Number(r.value) / 100;
+      saveSettings();
+      if (cat === "cine") chimeLaunch();
+      else beep([880, 1175], 0.08, 0.16, "sine", cat); // preview at the new level
+    }),
+  );
   document.getElementById("set-volume")?.addEventListener("change", (ev) => {
     settings.volume = Number((ev.target as HTMLInputElement).value) / 100;
     saveSettings();
@@ -2705,7 +2730,7 @@ async function refresh(): Promise<void> {
         .forEach((g) => {
           if (veilleOn) {
             hideVeille();
-            sfxInsert();
+            if (!settings.notif.card) sfxInsert("notif"); // otherwise the slot toast plays it
           }
           void cardEvent("in", g.meta.title ?? g.cartridge.volume_label ?? "CARD", g);
         });
@@ -3112,7 +3137,8 @@ function slotToast(kind: "in" | "out", g: Game | undefined, title: string): void
       </div>
     </div>`;
   layer.appendChild(el);
-  (kind === "in" ? sfxInsert : chimeOut)();
+  if (kind === "in") sfxInsert("notif");
+  else beep([660, 440], 0.09, 0.16, "sine", "notif");
   slotEvent = { kind, until: Date.now() + 3000 };
   window.setTimeout(() => el.classList.add("bye"), 3400);
   window.setTimeout(() => el.remove(), 3900);
@@ -3723,7 +3749,7 @@ void listen<{ id: string; phase: string; done?: number; total?: number; net_bps?
       j.netBps = 0;
       j.diskBps = 0;
       if (p.phase === "done") {
-        beep([660, 880, 1320], 0.12);
+        beep([660, 880, 1320], 0.12, 0.16, "sine", "notif");
         void notify({
           kind: "download",
           title: t(j.kind === "repair" ? "nt.repaired" : "nt.dlDone", { t: j.title }),

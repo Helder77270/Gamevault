@@ -1004,3 +1004,6 @@ button { font-family: inherit; }
 .led.err, .cw-state.warn .cw-led { border-radius: 2px; }
 .c-m { background-image: repeating-linear-gradient(45deg, rgba(5,6,13,0.55) 0 2px, transparent 2px 4px) !important; }
 .c-x { background-image: linear-gradient(45deg, transparent 42%, rgba(5,6,13,0.85) 42% 58%, transparent 58%), linear-gradient(-45deg, transparent 42%, rgba(5,6,13,0.85) 42% 58%, transparent 58%) !important; }
+
+/* per-category volume rows (P7 B) sit under the master volume */
+.set-row.sub { padding-left: 18px; }
