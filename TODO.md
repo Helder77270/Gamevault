@@ -150,6 +150,97 @@ HANDOFF.md). Restent des DÉCISIONS de conception :
       (actuel : fonctionnel mais spartiate)
 - [ ] Masquer l'édition #3 cassée du catalogue en attendant le full reset
 
+## P7 — Backlog launcher & plateforme (listé avec Helder le 2026-10-10)
+
+Priorités pour le POC : **A** = à faire pour le POC (court, visible, sans
+contrat), **B** = si le temps le permet, **C** = après le POC (demande une
+décision de conception, un redéploiement ou une infra en plus).
+« Déjà là » = ce qui existe en partie.
+
+### Notifications
+- [ ] **A** Toasts en bas à droite : jeu téléchargé, message d'un ami, carte
+      insérée / retirée, appareil déconnecté du compte depuis une autre
+      machine. Déjà là : toasts carte et chat, à unifier.
+- [ ] **A** Notifications Windows quand AURA-64 est dans la zone de
+      notification (fenêtre cachée).
+
+### Démarrage & session
+- [ ] **A** Se déconnecter (Réglages) : oublie la session du compte sur cette
+      machine ; la clé de la machine reste, la carte aussi.
+- [ ] **A** Choisir sa page de démarrage (Accueil, Game Shelf, Amis,
+      Téléchargements).
+- [ ] **A** Lancer AURA-64 au démarrage de Windows (option : directement dans
+      la zone de notification).
+
+### Téléchargements
+- [ ] **A** Limiter la vitesse de téléchargement.
+- [ ] **A** Autoriser ou non les téléchargements pendant une partie (défaut :
+      pause automatique pendant le jeu, reprise après).
+- [ ] **B** Mode faible bande passante (téléchargement plafonné, moins de
+      requêtes réseau, visuels allégés).
+- [ ] **B** Vider le cache : téléchargements interrompus, listes de morceaux,
+      données du webview. Les jeux installés ne sont pas touchés.
+- [ ] **C** Choisir sa région de téléchargement : utile seulement avec
+      plusieurs serveurs (aujourd'hui un serveur + IPFS).
+- [ ] **C** Mises à jour des jeux : planifiées, automatiques, visibles dans
+      Téléchargements. Demande d'abord un modèle de versions : une édition
+      porte aujourd'hui un seul build, figé on-chain → il faut que le studio
+      puisse publier une nouvelle version d'une édition (contrat v1.2), les
+      licences restant valides. La réparation par morceaux sert aussi aux
+      mises à jour (seuls les morceaux changés se téléchargent).
+
+### Game Shelf
+- [ ] **A** Vue Stockage : dossiers de jeux, taille de chaque jeu, où il est
+      (PC ou carte), espace libre.
+
+### Accessibilité
+- [ ] **A** Échelle de l'interface (90 % à 150 %).
+- [ ] **A** Réduction des mouvements et des effets étendue : plus de
+      flash, de glitch ni d'animation clignotante (photosensibilité).
+      Déjà là : le réglage « réduire les animations ».
+- [ ] **B** Modes daltonisme : palettes adaptées, et des états qui ne
+      reposent jamais sur la couleur seule (icône ou texte en plus).
+
+### Son
+- [ ] **B** Volumes séparés : interface, notifications, cinématiques.
+      Déjà là : son on/off + volume global.
+
+### Magasin
+- [ ] **B** Liste de souhaits (+ alerte de baisse de prix, déjà dans les idées).
+- [ ] **C** Filtrage des contenus adultes : il faut d'abord une classification
+      déclarée par le studio à la publication (PEGI / âge minimum), stockée
+      avec l'édition ; filtre activé par défaut.
+
+### Comptes & connexion
+- [ ] **B** Confidentialité du profil : public, amis seulement, privé (profil,
+      présence, activité, bibliothèque). À dire clairement : la propriété des
+      licences reste publique on-chain, seule la couche sociale se masque.
+- [ ] **C** Plusieurs comptes sur une machine : sélecteur de compte. La clé de
+      la machine peut servir à plusieurs comptes ; chaque compte garde sa
+      limite de 2 machines.
+- [ ] **C** Mode de connexion : signature du wallet (aujourd'hui) ou compte
+      (e-mail, social) avec un wallet qui ne sert qu'à signer achats et
+      transactions — piste « wallet intégré ». Grosse décision, à préparer.
+- [x] Écarté : wallet de paiement pour payer pour quelqu'un d'autre (pas
+      utile pour l'instant).
+- [x] Écarté : authentification Google Authenticator — la signature du
+      wallet est déjà un facteur plus fort.
+
+### Social
+- [ ] **C** Captures d'écran en jeu, visibles sur le profil.
+- [ ] **C** Enregistrement vidéo des parties.
+- [ ] **C** Personnalisation poussée de la page de profil (thème, vitrine,
+      badges). Déjà là : profils, contacts, derniers jeux joués, emplacements
+      de badges.
+
+### Ordre proposé pour le POC
+1. Notifications (toasts + Windows) — le launcher « vit », et ça sert tout le reste.
+2. Se déconnecter, page de démarrage, lancement au démarrage de Windows.
+3. Vue Stockage dans le Game Shelf.
+4. Téléchargements : limite de vitesse, pause automatique pendant une partie.
+5. Accessibilité : échelle de l'interface, réduction des effets étendue.
+6. Puis les B, dans l'ordre de la liste, selon le temps.
+
 ## Idées plus tard
 0G storage swap (1 fichier : shared/storage.ts) · World ID gating si besoin
 réel · pochettes SD imprimées · provenance embarquée dans le launcher ·
