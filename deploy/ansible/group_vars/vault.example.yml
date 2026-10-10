@@ -1,0 +1,9 @@
+# Copy to vault.yml, fill in, then ENCRYPT it:
+#   ansible-vault encrypt group_vars/vault.yml
+# and run the playbook with --ask-vault-pass (or a vault password file
+# kept outside the repo). vault.yml is git-ignored.
+vault_ticket_signer_privkey: "0x…"   # platform ticket key (its public key is embedded in the launcher)
+vault_attest_signer_privkey: "0x…"   # lending attestations
+vault_keystore_master_key: "…"       # content keys at rest — keep a copy OUTSIDE the cluster
+vault_pinata_jwt: "…"
+vault_registry_password: ""          # only for a private image registry

@@ -1,0 +1,36 @@
+# GameVault — full deployment on fresh Ubuntu servers:
+#   ansible-playbook site.yml --ask-vault-pass
+# Steps (re-runnable, each one idempotent):
+#   1. common     — updates, firewall, kernel settings        (all nodes)
+#   2. k3s_server — Kubernetes control plane                   (k3s_server)
+#   3. k3s_agent  — worker nodes join                          (k3s_agents)
+#   4. platform   — ingress-nginx (load balancer, rate limits), cert-manager (TLS)
+#   5. gamevault  — secrets, manifests, rollout, smoke test
+# Only one part: --tags common|k3s|platform|gamevault
+
+- name: Prepare every node
+  hosts: k3s
+  become: true
+  roles:
+    - { role: common, tags: [common] }
+
+- name: Kubernetes control plane
+  hosts: k3s_server
+  become: true
+  roles:
+    - { role: k3s_server, tags: [k3s] }
+
+- name: Kubernetes workers
+  hosts: k3s_agents
+  become: true
+  roles:
+    - { role: k3s_agent, tags: [k3s] }
+
+- name: Platform and application
+  hosts: k3s_server[0]
+  become: true
+  vars_files:
+    - group_vars/vault.yml
+  roles:
+    - { role: platform, tags: [platform] }
+    - { role: gamevault, tags: [gamevault] }

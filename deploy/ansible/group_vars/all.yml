@@ -1,0 +1,35 @@
+# Public settings for the GameVault deployment. Secrets go in vault.yml
+# (encrypted: `ansible-vault encrypt group_vars/vault.yml`).
+
+# Domains (DNS A records -> the nodes / the load balancer in front of them)
+web_domain: gamevault.example
+api_domain: api.gamevault.example
+acme_email: ops@gamevault.example
+
+# Images, built and pushed beforehand (docs/infra.md, .github/workflows/images.yml)
+image_registry: ghcr.io/gamevault
+ticketd_image_tag: "0.1.0"
+web_image_tag: "0.1.0"
+# private registry? a docker-registry Secret named `registry` is created when set
+registry_username: ""
+
+# Pinned versions (reproducible installs)
+k3s_version: v1.30.6+k3s1
+helm_version: v3.16.3
+ingress_nginx_chart_version: "4.11.3"
+cert_manager_version: v1.16.2
+
+# Runtime
+rpc_url: https://sepolia.base.org
+gamelicense_address: "0x844cb5292c7Fe7a186F1dF0914f2463c7fFC3fE8"
+ticketd_storage: 50Gi
+web_min_replicas: 2
+web_max_replicas: 20
+
+# Firewall: SSH from here only (CIDR); 80/443 open to the world
+admin_cidr: 0.0.0.0/0
+# node-to-node traffic (k3s API, kubelet, flannel VXLAN)
+cluster_cidr: 10.0.0.0/8
+
+# Where the manifests are rendered on the control-plane node
+remote_k8s_dir: /opt/gamevault/k8s

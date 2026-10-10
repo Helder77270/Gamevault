@@ -1,0 +1,45 @@
+# Nothing reaches the pods except the ingress controller (and, for
+# ticketd, the web pods). Egress stays open: ticketd calls the Base RPC,
+# Pinata and the IPFS gateways; pinning those by CIDR is not practical.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: gamevault
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-from-ingress
+  namespace: gamevault
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: web }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+      ports:
+        - { protocol: TCP, port: 3000 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ticketd-from-ingress-and-web
+  namespace: gamevault
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: ticketd }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress-nginx }
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: web }
+      ports:
+        - { protocol: TCP, port: 8787 }

@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gamevault
+  labels:
+    app.kubernetes.io/part-of: gamevault
+    # Pod Security Admission: no privileged pods in this namespace
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted

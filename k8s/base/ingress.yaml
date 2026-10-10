@@ -1,0 +1,128 @@
+# Entry points (ingress-nginx + cert-manager). One Ingress per traffic
+# class, because rate limits, body sizes and timeouts are per Ingress:
+#   web            — the marketplace, generous limits
+#   api            — ticketd JSON (profiles, friends, chat, wishlist…)
+#   api-auth       — signatures and keys (/ticket, /session, /devices/revoke): strict
+#   api-publish    — studio uploads: 110 MB body, long timeouts, strict rate
+#   api-stream     — /events (SSE, held open) and /build (game downloads)
+# Limits are PER CLIENT IP (ingress-nginx); behind a CDN or another proxy,
+# set `use-forwarded-headers` in the controller so the real IP is used.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: gamevault
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rps: "30"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
+    nginx.ingress.kubernetes.io/limit-connections: "40"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [gamevault.example]
+      secretName: web-tls
+  rules:
+    - host: gamevault.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: web, port: { name: http } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api
+  namespace: gamevault
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "4"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+    nginx.ingress.kubernetes.io/proxy-body-size: "1m" # JSON; avatars are ~40 KB after client-side resize
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [api.gamevault.example]
+      secretName: api-tls
+  rules:
+    - host: api.gamevault.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: ticketd, port: { name: http } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-auth
+  namespace: gamevault
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rpm: "30" # brute force / signature spam: 30 per minute per IP
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
+    nginx.ingress.kubernetes.io/proxy-body-size: "64k"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [api.gamevault.example]
+      secretName: api-tls
+  rules:
+    - host: api.gamevault.example
+      http:
+        paths:
+          - { path: /ticket, pathType: Exact, backend: { service: { name: ticketd, port: { name: http } } } }
+          - { path: /session, pathType: Prefix, backend: { service: { name: ticketd, port: { name: http } } } }
+          - { path: /devices/revoke, pathType: Exact, backend: { service: { name: ticketd, port: { name: http } } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-publish
+  namespace: gamevault
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/limit-rpm: "6"
+    nginx.ingress.kubernetes.io/proxy-body-size: "110m" # ticketd caps uploads at 100 MB
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [api.gamevault.example]
+      secretName: api-tls
+  rules:
+    - host: api.gamevault.example
+      http:
+        paths:
+          - { path: /publish, pathType: Exact, backend: { service: { name: ticketd, port: { name: http } } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-stream
+  namespace: gamevault
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # a download is ~1 request per 4 MiB chunk on 4 parallel workers
+    nginx.ingress.kubernetes.io/limit-rps: "40"
+    nginx.ingress.kubernetes.io/limit-connections: "12"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off" # stream SSE and build bytes as they come
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600" # SSE connections stay open
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [api.gamevault.example]
+      secretName: api-tls
+  rules:
+    - host: api.gamevault.example
+      http:
+        paths:
+          - { path: /events, pathType: Exact, backend: { service: { name: ticketd, port: { name: http } } } }
+          - { path: /build, pathType: Prefix, backend: { service: { name: ticketd, port: { name: http } } } }

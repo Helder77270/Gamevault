@@ -1,0 +1,72 @@
+# Cluster add-ons: Helm, ingress-nginx (the load balancer in front of the
+# pods: TLS termination, per-IP rate limits, body sizes, timeouts) and
+# cert-manager (Let's Encrypt certificates).
+- name: Is Helm installed at the pinned version?
+  ansible.builtin.command: helm version --short
+  register: helm_present
+  changed_when: false
+  failed_when: false
+
+- name: Install Helm
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | DESIRED_VERSION="{{ helm_version }}" bash
+  args:
+    executable: /bin/bash
+  when: helm_version not in (helm_present.stdout | default(''))
+
+- name: Helm repositories
+  ansible.builtin.command: helm repo add {{ item.name }} {{ item.url }} --force-update
+  loop:
+    - { name: ingress-nginx, url: "https://kubernetes.github.io/ingress-nginx" }
+    - { name: jetstack, url: "https://charts.jetstack.io" }
+  changed_when: false
+  environment: { KUBECONFIG: /etc/rancher/k3s/k3s.yaml }
+
+- name: ingress-nginx (2+ replicas, real client IPs, HPA)
+  ansible.builtin.command: >
+    helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx
+    --namespace ingress-nginx --create-namespace
+    --version {{ ingress_nginx_chart_version }}
+    --set controller.replicaCount=2
+    --set controller.service.externalTrafficPolicy=Local
+    --set controller.config.use-forwarded-headers="true"
+    --set controller.config.limit-req-status-code="429"
+    --set controller.config.limit-conn-status-code="429"
+    --set controller.autoscaling.enabled=true
+    --set controller.autoscaling.minReplicas=2
+    --set controller.autoscaling.maxReplicas=6
+    --set controller.metrics.enabled=true
+    --wait --timeout 10m
+  environment: { KUBECONFIG: /etc/rancher/k3s/k3s.yaml }
+  register: ingress_nginx
+  changed_when: "'has been upgraded' in ingress_nginx.stdout or 'STATUS: deployed' in ingress_nginx.stdout"
+
+- name: cert-manager
+  ansible.builtin.command: >
+    helm upgrade --install cert-manager jetstack/cert-manager
+    --namespace cert-manager --create-namespace
+    --version {{ cert_manager_version }}
+    --set crds.enabled=true
+    --wait --timeout 10m
+  environment: { KUBECONFIG: /etc/rancher/k3s/k3s.yaml }
+  register: cert_manager
+  changed_when: "'STATUS: deployed' in cert_manager.stdout"
+
+- name: Working directory
+  ansible.builtin.file:
+    path: /opt/gamevault
+    state: directory
+    mode: "0700"
+
+- name: Let's Encrypt issuer
+  ansible.builtin.template:
+    src: cluster-issuer.yaml.j2
+    dest: /opt/gamevault/cluster-issuer.yaml
+    mode: "0600"
+
+- name: Apply the issuer
+  ansible.builtin.command: kubectl apply -f /opt/gamevault/cluster-issuer.yaml
+  environment: { KUBECONFIG: /etc/rancher/k3s/k3s.yaml }
+  register: issuer
+  changed_when: "'configured' in issuer.stdout or 'created' in issuer.stdout"

@@ -1,0 +1,16 @@
+# Non-secret runtime settings. Secrets live in the `gamevault-secrets`
+# Secret (see secret.example.yaml — created by Ansible from its vault).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ticketd-config
+  namespace: gamevault
+data:
+  PORT: "8787"
+  HOST: "0.0.0.0"
+  # Base Sepolia RPC; a paid endpoint is advised under load (public RPCs rate-limit)
+  RPC_URL: "https://sepolia.base.org"
+  # Browser origins allowed to call ticketd (the public web app)
+  CORS_ORIGINS: "https://gamevault.example"
+  # GameLicense v1.1 on Base Sepolia (shared/src/deployments.ts)
+  GAMELICENSE_ADDRESS: "0x844cb5292c7Fe7a186F1dF0914f2463c7fFC3fE8"

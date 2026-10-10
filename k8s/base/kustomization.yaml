@@ -1,0 +1,20 @@
+# GameVault base manifests. Render: `kubectl kustomize k8s/base`.
+# Real deployments use an overlay (domains, image tags) — Ansible writes
+# one from deploy/ansible/roles/gamevault/templates. The Secret is NOT in
+# here: Ansible creates it from its encrypted vault (secret.example.yaml
+# shows the shape).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: gamevault
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - ticketd.yaml
+  - web.yaml
+  - ingress.yaml
+  - networkpolicy.yaml
+images:
+  - name: ghcr.io/gamevault/ticketd
+    newTag: "0.1.0"
+  - name: ghcr.io/gamevault/web
+    newTag: "0.1.0"

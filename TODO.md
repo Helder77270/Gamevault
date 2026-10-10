@@ -306,26 +306,28 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
       (sinon : le noter, ne pas casser le flux de la démo).
 
 ### 7. Infra : Docker, Kubernetes, Ansible (prêt pour du volume)
-- [ ] Dockerfiles ticketd + web (multi-stage, utilisateur non-root,
+- [x] Dockerfiles ticketd + web (multi-stage, utilisateur non-root,
       healthcheck sur /health).
-- [ ] Manifests Kubernetes (k8s/) : namespace, Deployments, Services,
+- [x] Manifests Kubernetes (k8s/) : namespace, Deployments, Services,
       Ingress (TLS cert-manager, rate limiting par IP, taille de requête,
       timeouts longs pour /events SSE et /build), HPA, probes
       liveness/readiness (redémarrage auto d'un conteneur mort),
       PodDisruptionBudget, ressources requests/limits, Secrets/ConfigMap,
       NetworkPolicy.
-- [ ] Point dur à dire franchement : ticketd garde un état local (SQLite,
+- [x] Point dur à dire franchement : ticketd garde un état local (SQLite,
       présence et flux SSE en mémoire). Tant que ce n'est pas migré vers
       Postgres + Redis, ticketd ne peut tourner qu'en 1 réplique (volume
       persistant) ; le web, lui, monte en charge sans limite. Les manifests
       le reflètent ; la migration est écrite en chantier suivant.
-- [ ] Builds de jeux volumineux : servis derrière un cache (CDN / objet
+- [x] Builds de jeux volumineux : servis derrière un cache (CDN / objet
       storage) plutôt que par ticketd — noté dans le doc d'archi.
-- [ ] Playbook Ansible (deploy/ansible/) : prépare des serveurs (Docker,
+- [x] Playbook Ansible (deploy/ansible/) : prépare des serveurs (Docker,
       k3s ou cluster existant), pose les secrets depuis un vault, applique
       les manifests, vérifie le déploiement.
-- [ ] Validation locale : `kubectl apply --dry-run`, build des images
-      Docker, ansible-lint si dispo (WSL). Pas de vrai cluster cette nuit.
+- [x] Validation locale (partielle, détail dans docs/infra.md) : rendu
+      kustomize + contrôles maison OK, modèles Ansible rendus et contrôlés.
+      PAS faits : build des images (Docker Desktop éteint), ansible-lint
+      (Ansible absent), déploiement réel (pas de cluster).
 
 ### Oublis repérés ce soir (ajoutés)
 - [ ] 5 commits locaux P7 B non poussés (57a13b8 → 3e84fa7) : push après
@@ -337,6 +339,19 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
       téléchargement se met en pause peut laisser le job en pause.
 - [ ] « En attente de mise à jour » dans Téléchargements dépend du modèle
       de versions (contrat v1.2, item C) : prévu dans la vue, pas branché.
+
+## P9 — Avant une vraie mise en ligne (repéré pendant P8 #7, docs/infra.md)
+- [ ] ticketd multi-réplicas : SQLite → Postgres, présence / tickets en
+      attente / événements temps réel → Redis (pub/sub). Puis Deployment + HPA.
+- [ ] Builds servis par stockage objet + CDN (plages d'octets), ticketd ne
+      renvoie que l'adresse ; IPFS reste le secours.
+- [ ] Launcher : adresses de production (aujourd'hui 127.0.0.1:8787 et
+      localhost:3000 en dur) via une config de build.
+- [ ] Sauvegarde automatique de la base ticketd (CronJob ou Postgres
+      managé) ; KEYSTORE_MASTER_KEY gardée hors du cluster.
+- [ ] RPC Base payant ; observabilité (Prometheus/Grafana, logs).
+- [ ] Construire les images et passer ansible-lint / un déploiement de test
+      (k3s sur une VM).
 
 ## Idées plus tard
 0G storage swap (1 fichier : shared/storage.ts) · World ID gating si besoin

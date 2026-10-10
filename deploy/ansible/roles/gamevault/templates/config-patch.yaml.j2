@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ticketd-config
+  namespace: gamevault
+data:
+  RPC_URL: "{{ rpc_url }}"
+  CORS_ORIGINS: "https://{{ web_domain }}"
+  GAMELICENSE_ADDRESS: "{{ gamelicense_address }}"

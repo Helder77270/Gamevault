@@ -1,0 +1,110 @@
+# The application: base manifests from the repo + an overlay rendered from
+# group_vars (domains, images, sizes), the Secret from the vault, then a
+# rollout check and a smoke test through the public HTTPS endpoints.
+- name: Manifest directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - "{{ remote_k8s_dir }}/base"
+    - "{{ remote_k8s_dir }}/overlay"
+
+- name: Base manifests from the repository
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../k8s/base/"
+    dest: "{{ remote_k8s_dir }}/base/"
+    mode: "0600"
+
+- name: Overlay for this environment
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ remote_k8s_dir }}/overlay/{{ item }}"
+    mode: "0600"
+  loop: [kustomization.yaml, config-patch.yaml]
+
+- name: Namespace first (the Secret lives in it)
+  ansible.builtin.command: kubectl apply -f {{ remote_k8s_dir }}/base/namespace.yaml
+  environment: { KUBECONFIG: /etc/rancher/k3s/k3s.yaml }
+  register: ns
+  changed_when: "'created' in ns.stdout or 'configured' in ns.stdout"
+
+- name: Application Secret from the vault (written 0600, applied, removed)
+  ansible.builtin.template:
+    src: secret.yaml.j2
+    dest: /opt/gamevault/secret.yaml
+    mode: "0600"
+  no_log: true
+
+- name: Apply the Secret
+  ansible.builtin.command: kubectl apply -f /opt/gamevault/secret.yaml
+  environment: { KUBECONFIG: /etc/rancher/k3s/k3s.yaml }
+  register: secret_apply
+  changed_when: "'configured' in secret_apply.stdout or 'created' in secret_apply.stdout"
+  no_log: true
+
+- name: Remove the rendered Secret file
+  ansible.builtin.file:
+    path: /opt/gamevault/secret.yaml
+    state: absent
+
+- name: Private registry credentials
+  when: registry_username | length > 0
+  no_log: true
+  block:
+    - name: Registry pull Secret
+      ansible.builtin.shell: |
+        set -o pipefail
+        kubectl -n gamevault create secret docker-registry registry \
+          --docker-server={{ image_registry.split('/')[0] }} \
+          --docker-username={{ registry_username }} \
+          --docker-password="$REGISTRY_PASSWORD" \
+          --dry-run=client -o yaml | kubectl apply -f -
+      args: { executable: /bin/bash }
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        REGISTRY_PASSWORD: "{{ vault_registry_password }}"
+      changed_when: true
+    - name: Pods pull with it
+      ansible.builtin.command: >
+        kubectl -n gamevault patch serviceaccount default
+        -p '{"imagePullSecrets":[{"name":"registry"}]}'
+      environment: { KUBECONFIG: /etc/rancher/k3s/k3s.yaml }
+      changed_when: true
+
+- name: Apply GameVault
+  ansible.builtin.command: kubectl apply -k {{ remote_k8s_dir }}/overlay
+  environment: { KUBECONFIG: /etc/rancher/k3s/k3s.yaml }
+  register: app_apply
+  changed_when: "'configured' in app_apply.stdout or 'created' in app_apply.stdout"
+
+- name: Rollout — ticketd
+  ansible.builtin.command: kubectl -n gamevault rollout status statefulset/ticketd --timeout=5m
+  environment: { KUBECONFIG: /etc/rancher/k3s/k3s.yaml }
+  changed_when: false
+
+- name: Rollout — web
+  ansible.builtin.command: kubectl -n gamevault rollout status deployment/web --timeout=5m
+  environment: { KUBECONFIG: /etc/rancher/k3s/k3s.yaml }
+  changed_when: false
+
+- name: Smoke test — ticketd through HTTPS (waits for the certificate)
+  ansible.builtin.uri:
+    url: "https://{{ api_domain }}/health"
+    return_content: true
+  register: health
+  retries: 30
+  delay: 10
+  until: health.status == 200 and '"ok":true' in (health.content | replace(' ', ''))
+  delegate_to: localhost
+  become: false
+
+- name: Smoke test — web through HTTPS
+  ansible.builtin.uri:
+    url: "https://{{ web_domain }}/"
+  register: web_up
+  retries: 30
+  delay: 10
+  until: web_up.status == 200
+  delegate_to: localhost
+  become: false

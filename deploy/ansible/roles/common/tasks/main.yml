@@ -1,0 +1,73 @@
+- name: Update the package cache and upgrade
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: safe
+    cache_valid_time: 3600
+
+- name: Base packages
+  ansible.builtin.apt:
+    name: [curl, ca-certificates, ufw, unattended-upgrades, open-iscsi, nfs-common, jq]
+    state: present
+
+- name: Automatic security updates
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    mode: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+- name: Kernel settings for Kubernetes networking
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    sysctl_set: true
+    reload: true
+  loop:
+    - { name: net.ipv4.ip_forward, value: "1" }
+    - { name: net.bridge.bridge-nf-call-iptables, value: "1" }
+    - { name: fs.inotify.max_user_instances, value: "1024" }
+
+- name: Swap off (kubelet requirement)
+  ansible.builtin.command: swapoff -a
+  changed_when: false
+
+- name: Swap stays off after reboot
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^([^#].*\sswap\s.*)$'
+    replace: '# \1'
+
+- name: Firewall — SSH from the admin network
+  community.general.ufw:
+    rule: allow
+    port: "22"
+    proto: tcp
+    src: "{{ admin_cidr }}"
+
+- name: Firewall — HTTP and HTTPS from anywhere
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop: ["80", "443"]
+
+- name: Firewall — node-to-node (k3s API, kubelet, metrics)
+  community.general.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+    src: "{{ cluster_cidr }}"
+  loop: ["6443", "10250"]
+
+- name: Firewall — flannel VXLAN between nodes
+  community.general.ufw:
+    rule: allow
+    port: "8472"
+    proto: udp
+    src: "{{ cluster_cidr }}"
+
+- name: Firewall on, deny the rest
+  community.general.ufw:
+    state: enabled
+    policy: deny

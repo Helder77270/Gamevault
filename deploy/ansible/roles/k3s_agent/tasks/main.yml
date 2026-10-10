@@ -1,0 +1,22 @@
+- name: Is k3s already installed at the pinned version?
+  ansible.builtin.command: k3s --version
+  register: k3s_present
+  changed_when: false
+  failed_when: false
+
+- name: Join the cluster as an agent
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ k3s_version }}" \
+      K3S_URL="https://{{ hostvars[groups['k3s_server'][0]].ansible_host }}:6443" \
+      K3S_TOKEN="{{ hostvars[groups['k3s_server'][0]].k3s_join_token }}" sh -s - agent
+  args:
+    executable: /bin/bash
+  when: k3s_version not in (k3s_present.stdout | default(''))
+  no_log: true
+
+- name: Agent service running
+  ansible.builtin.systemd:
+    name: k3s-agent
+    state: started
+    enabled: true
