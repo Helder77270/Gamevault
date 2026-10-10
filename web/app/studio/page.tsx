@@ -13,7 +13,7 @@ import { DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { ConnectButton } from "../components/ConnectButton";
 
 const REGISTRY = DEPLOYMENTS.gameRegistry as `0x${string}`;
-const TICKETD_URL = process.env.NEXT_PUBLIC_TICKETD_URL ?? "http://localhost:8787";
+const TICKETD_URL = process.env.NEXT_PUBLIC_TICKETD_URL || "http://localhost:8787";
 
 /** Must match ticketd's publishMessage() byte for byte (canonical form). */
 function publishMessage(f: { wallet: string; studioId: string; sha256: string; name: string; at: string; nonce: string }): string {

@@ -9,7 +9,7 @@ import { RainbowKitProvider, darkTheme, getDefaultConfig } from "@rainbow-me/rai
 // WalletConnect Cloud project id — free at https://cloud.walletconnect.com.
 // The placeholder keeps browser-extension wallets working; mobile QR
 // connections need a real id.
-const projectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? "gamevault-dev-placeholder";
+const projectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID || "gamevault-dev-placeholder";
 
 export const config = getDefaultConfig({
   appName: "GameVault",

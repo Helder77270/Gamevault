@@ -6,7 +6,7 @@ import { useAccount, useChainId, useSignMessage } from "wagmi";
 import { buildPairingMessage } from "@gamevault/shared/siwe";
 import { ConnectButton } from "../components/ConnectButton";
 
-const TICKETD_URL = process.env.NEXT_PUBLIC_TICKETD_URL ?? "http://localhost:8787";
+const TICKETD_URL = process.env.NEXT_PUBLIC_TICKETD_URL || "http://localhost:8787";
 
 type Status = "idle" | "signing" | "sent" | "ticketd-down" | "error";
 type Device = { pubkey: string; pairedAt: number; lastSeen: number };

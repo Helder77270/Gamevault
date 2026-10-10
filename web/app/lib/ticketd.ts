@@ -8,7 +8,7 @@
 import { useCallback } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 
-export const TICKETD_URL = process.env.NEXT_PUBLIC_TICKETD_URL ?? "http://localhost:8787";
+export const TICKETD_URL = process.env.NEXT_PUBLIC_TICKETD_URL || "http://localhost:8787";
 
 type Stored = { token: string; expiresAt: number };
 const key = (addr: string) => `gv-ticketd-session-${addr.toLowerCase()}`;
