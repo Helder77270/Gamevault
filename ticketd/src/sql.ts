@@ -303,7 +303,21 @@ let current: Store | null = null;
 export async function openStore(opts: { sqliteFile: string; databaseUrl?: string }): Promise<Store> {
   if (current) return current;
   if (opts.databaseUrl) {
-    const applied = await migratePostgres(opts.databaseUrl);
+    // Postgres may start after ticketd (same rollout): wait for it instead
+    // of crash-looping. DB_CONNECT_RETRIES x 2 s (default 60 s).
+    const tries = Number(process.env.DB_CONNECT_RETRIES ?? 30);
+    let applied: number[] = [];
+    for (let i = 1; ; i++) {
+      try {
+        applied = await migratePostgres(opts.databaseUrl);
+        break;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (i >= tries || msg.startsWith("migration ")) throw e; // a broken migration is not a connection problem
+        console.warn(`… postgres injoignable (${msg}) — nouvel essai ${i}/${tries} dans 2 s`);
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    }
     if (applied.length) console.log(`✔ postgres : migrations ${applied.join(", ")} appliquées`);
     current = postgresStore(opts.databaseUrl);
   } else {

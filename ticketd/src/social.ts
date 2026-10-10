@@ -153,8 +153,13 @@ export async function setPresence(wallet: string, playing: string | null): Promi
   return { ok: true };
 }
 
+/** Unknown (Redis down) reads as offline: profiles and friends lists keep working. */
 export async function presenceOf(wallet: string): Promise<PresenceState> {
-  return asPresence((await live().presenceGet([lc(wallet)])).get(lc(wallet)));
+  try {
+    return asPresence((await live().presenceGet([lc(wallet)])).get(lc(wallet)));
+  } catch {
+    return OFFLINE;
+  }
 }
 
 /** Presence as `viewer` may see it (hidden = shown offline). */
