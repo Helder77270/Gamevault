@@ -1111,3 +1111,4 @@ button { font-family: inherit; }
 .lc-friend:focus-visible, .sto-card:focus-visible, .set-toggle:focus-visible, .aura-input:focus-visible, .avbtn:focus-visible {
   outline: 2px solid var(--cyan); outline-offset: -3px;
 }
+.dl-sub.bad { color: oklch(0.8 0.13 var(--bad-h)); }

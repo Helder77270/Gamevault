@@ -288,7 +288,7 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
 - [x] Skill art-direction mis à jour (formes : chanfrein, plus de pilules).
 
 ### 6. Téléchargements
-- [ ] La vue n'affiche plus les jeux installés : seulement à installer,
+- [x] La vue n'affiche plus les jeux installés : seulement à installer,
       en attente / en cours / en pause, à réparer, et (plus tard) à mettre
       à jour.
 - [ ] Jeu de test LOURD : un build factice d'~500 Mo généré localement

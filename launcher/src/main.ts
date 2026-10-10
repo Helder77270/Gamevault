@@ -4188,12 +4188,14 @@ function downloadsView(): string {
   const jobs = Object.values(dl.jobs).filter((j) => j.kind === "download");
   const live = jobs.filter((j) => ACTIVE_PHASES.includes(j.phase) || j.phase === "paused" || j.phase === "error");
   const queued = jobs.filter((j) => j.phase === "queued");
-  const doneIds = new Set(jobs.filter((j) => j.phase === "done").map((j) => j.cid));
-  const installed = [
-    ...jobs.filter((j) => j.phase === "done").map((j) => ({ e: state.catalog.find((c) => c.editionId === j.editionId), where: j.destKind === "card" ? j.dest : j.dest })),
-    ...dl.library.filter((l) => l.status === "installed" && !doneIds.has(l.cid)).map((l) => ({ e: state.catalog.find((c) => c.buildCid === l.cid), where: l.dir })),
-    ...state.games.filter((g) => g.cartridge.has_build).map((g) => ({ e: editionFor(g), where: g.cartridge.mount_point })),
-  ].filter((x): x is { e: OnchainEdition; where: string } => Boolean(x.e));
+  // Installed games are not listed (P8 #6): only what still needs work —
+  // in progress, queued, to install, to repair (updates: contract v1.2).
+  const toInstall = state.catalog.filter((e) => {
+    const mine = state.owned.some((o) => o.editionId === e.editionId) || Boolean(cardForEdition(e.editionId)?.ticket);
+    const hasBuild = Boolean(cardForEdition(e.editionId)?.cartridge.has_build || libraryBuildFor(e));
+    return mine && !hasBuild && !dl.jobs[e.buildCid];
+  });
+  const toRepair = Object.values(dl.jobs).filter((j) => j.kind === "repair" && j.phase === "error");
   const a = activeJob();
   return `
     <div class="shelf dl-screen">
@@ -4209,18 +4211,24 @@ function downloadsView(): string {
         </div>
       </div>
       <div class="dl-list">
-        ${live.length ? live.map(dlCard).join("") : `<div class="dl-empty">${t("dl.empty")}</div>`}
+        ${live.length ? live.map(dlCard).join("") : `<div class="dl-empty">${t(queued.length || toInstall.length || toRepair.length ? "dl.empty" : "dl.allSet")}</div>`}
         ${queued.length ? `<div class="mono-label dl-sec">${t("dl.queued", { n: queued.length })}</div>` + queued.map((j) => `
           <div class="dl-item">
             <div class="dl-thumb" style="${artFor(j.editionId)}"></div>
             <div style="flex:1;min-width:0"><div class="dl-item-t">${esc(j.title)}</div><div class="dl-sub">${esc(j.destKind === "card" ? t("dl.toCard", { d: j.dest }) : t("dl.toDir", { d: j.dest }))}</div></div>
             <button class="sx-btn ghost" data-dlcancel="${j.id}" aria-label="${esc(t("dl.cancel"))}">✕</button>
           </div>`).join("") : ""}
-        ${installed.length ? `<div class="mono-label dl-sec">${t("dl.done")}</div>` + installed.map((x) => `
+        ${toInstall.length ? `<div class="mono-label dl-sec">${t("dl.toInstall", { n: toInstall.length })}</div>` + toInstall.map((e) => `
           <div class="dl-item">
-            <div class="dl-thumb" style="${artFor(x.e.editionId)}"></div>
-            <div style="flex:1;min-width:0"><div class="dl-item-t">${esc(x.e.title)}</div><div class="dl-sub ok">${esc(t("dl.installedAt", { d: x.where }))}</div></div>
-            <button class="sx-btn" data-repair="${esc(x.e.editionId)}">${t("dl.verify")}</button>
+            <div class="dl-thumb" style="${artFor(e.editionId)}"></div>
+            <div style="flex:1;min-width:0"><div class="dl-item-t">${esc(e.title)}</div><div class="dl-sub">${esc(t("dl.notInstalled"))}</div></div>
+            <button class="sx-btn primary" data-dlopen="${esc(e.editionId)}">${t("dl.btn")}</button>
+          </div>`).join("") : ""}
+        ${toRepair.length ? `<div class="mono-label dl-sec">${t("dl.toRepair")}</div>` + toRepair.map((j) => `
+          <div class="dl-item">
+            <div class="dl-thumb" style="${artFor(j.editionId)}"></div>
+            <div style="flex:1;min-width:0"><div class="dl-item-t">${esc(j.title)}</div><div class="dl-sub bad">${esc(j.error || t("dl.repairFailed"))}</div></div>
+            <button class="sx-btn" data-repair="${esc(j.editionId)}">${t("dl.verify")}</button>
           </div>`).join("") : ""}
       </div>
     </div>`;
