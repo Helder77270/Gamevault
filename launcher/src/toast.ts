@@ -13,6 +13,7 @@ interface Toast {
   body: string;
   hint?: string;
   out?: boolean; // card toasts: removed rather than inserted
+  calm?: boolean; // accessibility: no slide, no drop animation
 }
 
 const LIFE_MS = 6500;
@@ -46,7 +47,7 @@ function remove(el: HTMLElement): void {
 function add(t: Toast): void {
   while (stack.children.length >= MAX) stack.firstElementChild?.remove();
   const el = document.createElement("div");
-  el.className = `t t-${t.kind}`;
+  el.className = `t t-${t.kind}${t.calm ? " calm" : ""}`;
   el.setAttribute("role", "status");
   el.style.setProperty("--life", `${LIFE_MS}ms`);
   const ico =

@@ -391,6 +391,14 @@ fn dl_repair(
     download::repair(app, Arc::clone(&dl), id, cid, sha256, target)
 }
 
+/// Interface scale (accessibility): native zoom of the launcher's webview,
+/// so everything — text, layout, overlays — grows together.
+#[tauri::command]
+fn set_ui_scale(app: AppHandle, scale: f64) -> Result<(), String> {
+    let w = app.get_webview_window("main").ok_or("fenêtre introuvable")?;
+    w.set_zoom(scale.clamp(0.75, 2.0)).map_err(|e| e.to_string())
+}
+
 /// Download speed limit in bytes per second (0 = unlimited), live.
 #[tauri::command]
 fn dl_set_limit(bps: u64) {
@@ -731,6 +739,7 @@ pub fn run() {
             dl_repair,
             dl_pause,
             dl_set_limit,
+            set_ui_scale,
             dl_cancel,
             disk_space,
             library_scan,

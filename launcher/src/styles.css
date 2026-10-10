@@ -981,3 +981,12 @@ button { font-family: inherit; }
 .stg-acts { display: flex; gap: 6px; flex: none; }
 .stg-none { margin-top: 12px; font-size: 13px; color: var(--dim); }
 .dl-sub.warn { color: oklch(0.86 0.12 85); }
+
+/* ── Photosensitivity mode (P7 #5): nothing moves, nothing flickers ──────
+   On top of reduced motion: no animation at all, no transition, and the
+   purely decorative light layers go (crackling aura arcs, sheens, halos,
+   drifting blobs, pulsing glows). Information never relies on them. */
+.calm-fx *, .calm-fx *::before, .calm-fx *::after { animation: none !important; transition: none !important; }
+.calm-fx .aura-arcs, .calm-fx .sheen, .calm-fx .dl-sheen, .calm-fx .blob-a, .calm-fx .blob-b, .calm-fx .orb-halo { display: none !important; }
+.calm-fx .sx-play { box-shadow: 0 0 0 1px rgba(255,255,255,0.55) !important; }
+.calm-fx .sx-art { transform: none !important; }

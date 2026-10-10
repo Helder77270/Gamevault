@@ -79,7 +79,13 @@ interface Settings {
   localServices: boolean; // POC: start ticketd + the site from the repo when they are down
   dlLimitMBs: number; // download speed limit in MB/s, 0 = unlimited
   dlDuringPlay: boolean; // false: downloads pause while a game runs, resume after
+  uiScale: number; // interface scale (native zoom), 1 = 100 %
+  calmFx: boolean; // photosensitivity: no animation, no flicker, no decorative effects
 }
+
+const UI_SCALES = [0.9, 1, 1.1, 1.25, 1.5];
+/** Windows "animation effects" off → reduced motion, whatever the setting says. */
+const osReducedMotion = (): boolean => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const DL_LIMITS = [0, 1, 5, 10, 25, 50];
 
@@ -89,7 +95,8 @@ type StartPage = (typeof START_PAGES)[number];
 const VEILLE_CHOICES = [1, 3, 5, 10, 0];
 const SETTINGS_DEFAULT: Settings = { skin: "midnight", sound: true, volume: 0.8, reducedMotion: false, dev: true, veilleMin: 3, libraries: [],
   notif: { download: true, message: true, card: true, security: true },
-  startPage: "home", startInTray: false, localServices: true, dlLimitMBs: 0, dlDuringPlay: false };
+  startPage: "home", startInTray: false, localServices: true, dlLimitMBs: 0, dlDuringPlay: false,
+  uiScale: 1, calmFx: false };
 
 function loadSettings(): Settings {
   try {
@@ -103,6 +110,8 @@ function loadSettings(): Settings {
     s.localServices = s.localServices !== false;
     if (!DL_LIMITS.includes(Number(s.dlLimitMBs))) s.dlLimitMBs = 0;
     s.dlDuringPlay = Boolean(s.dlDuringPlay);
+    if (!UI_SCALES.includes(Number(s.uiScale))) s.uiScale = 1;
+    s.calmFx = Boolean(s.calmFx);
     s.notif = { ...SETTINGS_DEFAULT.notif, ...(typeof s.notif === "object" && s.notif ? s.notif : {}) };
     s.libraries = Array.isArray(s.libraries) ? s.libraries.filter((x) => typeof x === "string" && x.length > 2).slice(0, 8) : [];
     return s;
@@ -116,7 +125,9 @@ const settings: Settings = loadSettings();
 function applySettings(): void {
   const root = document.documentElement;
   root.dataset.skin = settings.skin;
-  root.classList.toggle("reduced-motion", settings.reducedMotion);
+  root.classList.toggle("reduced-motion", settings.reducedMotion || settings.calmFx || osReducedMotion());
+  root.classList.toggle("calm-fx", settings.calmFx);
+  void invoke("set_ui_scale", { scale: settings.uiScale }).catch(() => {});
   root.lang = getLang();
 }
 
@@ -1782,6 +1793,17 @@ function settingsView(): string {
           ${toggle("set-localServices", settings.localServices, t("set.localServices"), t("set.localServicesSub"))}
         </section>
         <section class="set-card">
+          <div class="mono-label">${t("set.a11y")}</div>
+          <div class="set-row">
+            <div><div class="set-label">${esc(t("set.scale"))}</div><div class="set-sub">${esc(t("set.scaleSub"))}</div></div>
+            <div class="seg">
+              ${UI_SCALES.map((n) => `<button class="seg-btn ${settings.uiScale === n ? "on" : ""}" data-uiscale="${n}">${Math.round(n * 100)} %</button>`).join("")}
+            </div>
+          </div>
+          ${toggle("set-motion", settings.reducedMotion || osReducedMotion(), t("set.motion"), osReducedMotion() ? t("set.motionOs") : t("set.motionSub"))}
+          ${toggle("set-calmFx", settings.calmFx, t("set.calm"), t("set.calmSub"))}
+        </section>
+        <section class="set-card">
           <div class="mono-label">${t("set.dl")}</div>
           <div class="set-row">
             <div><div class="set-label">${esc(t("set.libraries"))}</div><div class="set-sub">${esc(t("set.librariesSub"))}</div>
@@ -1826,7 +1848,6 @@ function settingsView(): string {
             <div><div class="set-label">${esc(t("set.volume"))}</div></div>
             <input type="range" id="set-volume" min="0" max="100" step="5" value="${Math.round(settings.volume * 100)}" ${settings.sound ? "" : "disabled"} aria-label="${esc(t("set.volume"))}" />
           </div>
-          ${toggle("set-motion", settings.reducedMotion, t("set.motion"), t("set.motionSub"))}
           ${toggle("set-dev", settings.dev, t("set.dev"), t("set.devSub"))}
           <div class="set-row">
             <div><div class="set-label">${esc(t("set.veille"))}</div><div class="set-sub">${esc(t("set.veilleSub"))}</div></div>
@@ -2906,6 +2927,18 @@ function wireStartup(root: HTMLElement): void {
     await refreshAutostart();
     render();
   });
+  root.querySelectorAll<HTMLButtonElement>("[data-uiscale]").forEach((b) =>
+    b.addEventListener("click", () => {
+      settings.uiScale = Number(b.dataset.uiscale);
+      saveSettings(); // applySettings → native zoom
+      render();
+    }),
+  );
+  document.getElementById("set-calmFx")?.addEventListener("click", () => {
+    settings.calmFx = !settings.calmFx;
+    saveSettings();
+    render();
+  });
   root.querySelectorAll<HTMLButtonElement>("[data-dllimit]").forEach((b) =>
     b.addEventListener("click", () => {
       settings.dlLimitMBs = Number(b.dataset.dllimit);
@@ -2984,6 +3017,7 @@ async function notify(n: Notif): Promise<void> {
       body: n.body,
       hint: n.action ? t("nt.clickHint") : undefined,
       out: n.out ?? false,
+      calm: settings.calmFx || settings.reducedMotion || osReducedMotion(),
     },
   }).catch(() => {});
 }

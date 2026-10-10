@@ -193,8 +193,8 @@ décision de conception, un redéploiement ou une infra en plus).
       (PC ou carte), espace libre.
 
 ### Accessibilité
-- [ ] **A** Échelle de l'interface (90 % à 150 %).
-- [ ] **A** Réduction des mouvements et des effets étendue : plus de
+- [x] **A** (2026-10-10) Échelle de l'interface (90 % à 150 %).
+- [x] **A** (2026-10-10) Réduction des mouvements et des effets étendue : plus de
       flash, de glitch ni d'animation clignotante (photosensibilité).
       Déjà là : le réglage « réduire les animations ».
 - [ ] **B** Modes daltonisme : palettes adaptées, et des états qui ne
