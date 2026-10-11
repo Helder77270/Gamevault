@@ -1,0 +1,8 @@
+{
+  "$comment": "The docker-compose stack (docker compose up -d): ticketd replica 1 on 18787, site on 13000. Same ticketd/.env, so same ticket key as local.",
+  "name": "compose",
+  "ticketdUrl": "http://127.0.0.1:18787",
+  "webUrl": "http://127.0.0.1:13000",
+  "ticketSignerPubKeys": ["02f993342ee3df755c386e4ec261eed2d439738c284887ca657faa33d2b353292c"],
+  "localServices": false
+}

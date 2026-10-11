@@ -29,11 +29,12 @@ fn parse_licence_contract(src: &str) -> Option<String> {
     is_hex(addr, Some(40)).then(|| addr.to_lowercase())
 }
 
-/// Ticket-signer public keys trusted by this binary. The DEV fixture key is
+/// Ticket-signer public keys trusted by this binary: the build profile's
+/// (build.rs, launcher/profiles/*.json — each server has its own). The DEV fixture key is
 /// derived from a PUBLIC seed (shared/devkeys) — debug builds only, exactly
 /// like the TS side (`import.meta.env.DEV`).
 fn trusted_signers() -> Vec<&'static str> {
-    let mut keys = vec!["02f993342ee3df755c386e4ec261eed2d439738c284887ca657faa33d2b353292c"];
+    let mut keys: Vec<&'static str> = env!("GV_TICKET_SIGNERS").split(',').filter(|k| !k.is_empty()).collect();
     if cfg!(debug_assertions) {
         keys.push("038d78e7c9ea67e401f6e9dbf8fccae4563dc21c0e3f569338012ba95c50700f2b");
     }

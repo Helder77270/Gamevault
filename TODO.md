@@ -326,12 +326,11 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
       les manifests, vérifie le déploiement.
 - [x] Validation locale (partielle, détail dans docs/infra.md) : rendu
       kustomize + contrôles maison OK, modèles Ansible rendus et contrôlés.
-      PAS faits : build des images (Docker Desktop éteint), ansible-lint
-      (Ansible absent), déploiement réel (pas de cluster).
+      Complétée le 2026-10-11 : images construites, ansible-lint 0/0,
+      déploiement minikube (voir P9). Reste : un vrai serveur.
 
 ### Oublis repérés ce soir (ajoutés)
-- [ ] 5 commits locaux P7 B non poussés (57a13b8 → 3e84fa7) : push après
-      ton test.
+- [x] 5 commits locaux P7 B poussés (2026-10-11, avec la suite).
 - [x] Repli IPFS jamais testé en vrai : le tester avec le gros build
       (ticketd coupé → morceaux depuis IPFS) si le pin passe (taille
       Pinata), sinon le noter.
@@ -348,8 +347,13 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
       0 requête perdue en rolling update).
 - [ ] Builds servis par stockage objet + CDN (plages d'octets), ticketd ne
       renvoie que l'adresse ; IPFS reste le secours.
-- [ ] Launcher : adresses de production (aujourd'hui 127.0.0.1:8787 et
-      localhost:3000 en dur) via une config de build.
+- [x] (2026-10-11) Launcher : profils de build (launcher/profiles/*.json :
+      local, compose, production) gravés à la compilation (Vite + build.rs +
+      CSP/opener générés), garde-fous release, testé en release contre
+      docker compose. Reste : remplir production.json quand un serveur
+      existe (marche à suivre : launcher/profiles/README.md).
+- [ ] Launcher : signature Authenticode de l'installeur + mise à jour
+      automatique (plugin updater Tauri, clé dédiée) avant distribution.
 - [x] (2026-10-11) Sauvegarde automatique (CronJob pg_dump, 14 jours) +
       Job de restauration testé. Reste : copie hors cluster, et
       KEYSTORE_MASTER_KEY gardée hors du cluster.

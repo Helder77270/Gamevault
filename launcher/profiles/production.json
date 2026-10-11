@@ -1,0 +1,10 @@
+{
+  "$comment": "TEMPLATE until a real server exists. The release build REFUSES this file while it still names *.example hosts or has no ticket key. Fill in: the two hosts (same as the Kubernetes Ingress), the PUBLIC key of production ticketd's TICKET_SIGNER_PRIVKEY, a paid Base RPC. See profiles/README.md.",
+  "name": "production",
+  "ticketdUrl": "https://api.gamevault.example",
+  "webUrl": "https://gamevault.example",
+  "buildsUrl": "https://api.gamevault.example/build/",
+  "rpcUrl": "https://sepolia.base.org",
+  "ticketSignerPubKeys": [],
+  "localServices": false
+}

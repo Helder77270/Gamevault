@@ -1,0 +1,9 @@
+{
+  "$comment": "Default profile: ticketd and the site on this machine (npm run dev / dev.cmd). See profiles/README.md.",
+  "name": "local",
+  "ticketdUrl": "http://localhost:8787",
+  "webUrl": "http://localhost:3000",
+  "buildsUrl": "http://127.0.0.1:8787/build/",
+  "ticketSignerPubKeys": ["02f993342ee3df755c386e4ec261eed2d439738c284887ca657faa33d2b353292c"],
+  "localServices": true
+}

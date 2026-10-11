@@ -28,6 +28,7 @@ import {
   revokeDevice,
   takePendingTicket,
   publishBuild,
+  ticketSignerPublicKey,
 } from "./service.ts";
 import {
   Unauthorized,
@@ -69,6 +70,7 @@ const PORT = Number(process.env.PORT ?? 8787);
 /** Unset = loopback only (IPv4 + IPv6, so "localhost" works either way). */
 const HOST = process.env.HOST;
 const DEV = process.env.GAMEVAULT_DEV === "1";
+const SIGNER_PUB = ticketSignerPublicKey();
 
 const ALLOWED_ORIGINS = new Set([
   "http://localhost:3000",
@@ -160,7 +162,8 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
   };
 
   if (req.method === "OPTIONS") return send(204, {});
-  if (GET && path === "/health") return send(200, { ok: true });
+  // ticketSigner: lets ops check a launcher build profile against this server.
+  if (GET && path === "/health") return send(200, { ok: true, ticketSigner: SIGNER_PUB });
   if (GET && path === "/ready") {
     if (draining) return send(503, { ready: false, reason: "arrêt en cours" });
     // Only the database gates readiness: without Redis, downloads, tickets

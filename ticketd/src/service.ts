@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import { signTicket, wrapKey, hex, unhex, encryptBuild, type SignedTicket, type Ticket } from "@gamevault/shared";
 import { parsePairingMessage } from "@gamevault/shared/siwe";
 import { DEV_PLATFORM_PRIV, devContentKeyFor } from "@gamevault/shared/devkeys";
+import { secp256k1 } from "@noble/curves/secp256k1";
 import { LICENSE_ABI, REGISTRY_ABI } from "@gamevault/shared/abi";
 import { CHAIN, DEPLOYMENTS } from "@gamevault/shared/deployments";
 import { fetchBuild, putBuild, type StoredBuild } from "@gamevault/shared/storage";
@@ -38,6 +39,19 @@ function ticketSignerPriv(): Uint8Array {
   if (!DEV_MODE) throw new Error("TICKET_SIGNER_PRIVKEY manquant — refus de signer avec la clé DEV publique");
   console.warn("⚠ TICKET_SIGNER_PRIVKEY not set — using the DEV platform key (fixtures only)");
   return DEV_PLATFORM_PRIV;
+}
+
+/**
+ * PUBLIC key of the ticket signer (compressed, hex without 0x) — what a
+ * launcher build profile must list in ticketSignerPubKeys
+ * (launcher/profiles/*.json). Public by nature; "" when no key is set.
+ */
+export function ticketSignerPublicKey(): string {
+  try {
+    return Buffer.from(secp256k1.getPublicKey(ticketSignerPriv(), true)).toString("hex");
+  } catch {
+    return "";
+  }
 }
 
 /** Signs friendship attestations (EIP-712). No dev fallback: lending is on-chain. */

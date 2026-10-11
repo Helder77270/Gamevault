@@ -131,6 +131,7 @@ html { scroll-behavior: smooth; }
         <li><a href="#dep-compose">Docker Compose</a></li>
         <li><a href="#dep-k8s">Kubernetes</a></li>
         <li><a href="#dep-ansible">Serveurs (Ansible)</a></li>
+        <li><a href="#dep-launcher">Launcher : profils de build</a></li>
       </ol>
     </li>
     <li><a href="#donnees">5. Données</a>
@@ -303,6 +304,22 @@ flowchart TB
 
   <h3 id="dep-ansible">Serveurs (Ansible)</h3>
   <p><code>deploy/ansible/site.yml</code> : rôles <code>common</code> (mises à jour, pare-feu ufw, réglages noyau), <code>k3s_server</code> / <code>k3s_agent</code> (Kubernetes léger, secrets chiffrés au repos, Traefik désactivé), <code>platform</code> (Helm, ingress-nginx, cert-manager, émetteur Let's Encrypt), <code>gamevault</code> (overlay rendu depuis <code>group_vars</code>, Secrets depuis un vault chiffré, déploiement, attente des rollouts, test HTTPS sur <code>/ready</code>). Variante Postgres managé : <code>vault_external_database_url</code>. ansible-lint passe au profil « production ».</p>
+
+  <h3 id="dep-launcher">Launcher : profils de build</h3>
+  <p>Le launcher est la seule pièce installée chez le joueur : il ne peut pas lire ses adresses dans un fichier de configuration (n'importe qui pourrait le rediriger vers un faux serveur). Les adresses sont donc <b>gravées à la compilation</b>, depuis un profil <code>launcher/profiles/&lt;nom&gt;.json</code> choisi par <code>GAMEVAULT_PROFILE</code> (défaut <code>local</code>).</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Profil</th><th>ticketd</th><th>Site</th><th>Usage</th></tr></thead>
+    <tbody>
+      <tr><td><code>local</code></td><td><code>localhost:8787</code></td><td><code>localhost:3000</code></td><td>développement ; seul profil où le launcher peut démarrer ticketd et le site depuis le dépôt</td></tr>
+      <tr><td><code>compose</code></td><td><code>127.0.0.1:18787</code></td><td><code>127.0.0.1:13000</code></td><td>la stack Docker Compose ; testé en release le 11 octobre (seul ce ticketd est contacté)</td></tr>
+      <tr><td><code>production</code></td><td><code>api.gamevault.example</code></td><td><code>gamevault.example</code></td><td>modèle à remplir quand un serveur existe ; une release est refusée tant qu'il vise des hôtes d'exemple ou n'a pas de clé de ticket</td></tr>
+    </tbody>
+  </table></div>
+  <p>Un même fichier alimente trois consommateurs : la webview (Vite injecte <code>__GV_PROFILE__</code>, lu par <code>src/profile.ts</code>), le cœur Rust (<code>build.rs</code> produit des variables <code>GV_*</code> pour <code>download.rs</code>, <code>ticket.rs</code>, <code>lib.rs</code>) et Tauri (<code>scripts/profile.mjs</code> génère <code>src-tauri/profile.conf.json</code> : CSP limitée aux hôtes du profil, seule adresse ouvrable dans le navigateur = le site). Champs : <code>ticketdUrl</code>, <code>webUrl</code>, <code>buildsUrl</code> (futur CDN), <code>rpcUrl</code> (RPC payant), <code>ipfsGateways</code>, <code>ticketSignerPubKeys</code> (plusieurs clés = rotation sans casser les cartes), <code>localServices</code>. La chaîne et les contrats restent dans <code>shared/src/deployments.ts</code>.</p>
+  <pre class="code">npm run profile -- production              # profil complété, CSP, contrôle release
+npm run build:profile -- production        # exe + installeurs (trouve vcvars64 seul)
+curl https://api.&lt;domaine&gt;/health          # {"ok":true,"ticketSigner":"02…"} → à mettre dans le profil</pre>
+  <p class="note">Marche à suivre de mise en production, rotation de clé et pièges : <code>launcher/profiles/README.md</code>.</p>
 </section>
 
 <section id="donnees">
@@ -387,7 +404,7 @@ D:\GameVault\                bibliothèque PC (proposée à la création)
     <tbody>
       <tr><td>Wallet du joueur / studio</td><td>wallet (navigateur, téléphone)</td><td>achats, ventes, prêts, appairage, sessions web, révocation d'appareil, publication</td><td>c'est le compte : vol des licences</td></tr>
       <tr><td>Clé d'appareil</td><td>coffre Windows, lue par le cœur Rust seul</td><td>déballe les clés de contenu des tickets de cette machine ; signe la preuve de session du launcher</td><td>déchiffrer les tickets de cette machine, agir socialement jusqu'à la révocation</td></tr>
-      <tr><td><code>TICKET_SIGNER_PRIVKEY</code></td><td>Secret ticketd</td><td>les tickets ; sa clé publique est dans le launcher</td><td>tickets valides hors ligne ; rotation = nouvelle version du launcher</td></tr>
+      <tr><td><code>TICKET_SIGNER_PRIVKEY</code></td><td>Secret ticketd</td><td>les tickets ; sa clé publique est dans le profil de build du launcher (<code>ticketSignerPubKeys</code>, lisible sur <code>/health</code>)</td><td>tickets valides hors ligne ; rotation = nouvelle version du launcher qui accepte les deux clés</td></tr>
       <tr><td><code>ATTEST_SIGNER_PRIVKEY</code></td><td>Secret ticketd</td><td>attestations d'amitié EIP-712 lues par <code>lend()</code></td><td>contourner la règle des 3 jours ; rotation par <code>setAttestationSigner</code></td></tr>
       <tr><td><code>KEYSTORE_MASTER_KEY</code></td><td>Secret ticketd + copie hors des serveurs</td><td>chiffre les clés de contenu au repos</td><td>avec la base : toutes les clés de jeux ; <b>perdue : plus aucun jeu servi</b> (absente des sauvegardes, volontairement)</td></tr>
       <tr><td>Mot de passe Postgres / <code>DATABASE_URL</code></td><td>Secret <code>postgres-credentials</code> ou vault</td><td>accès à la base</td><td>lecture des données sociales ; les clés de jeux restent chiffrées</td></tr>
@@ -502,7 +519,7 @@ sequenceDiagram
   <div class="tbl"><table>
     <thead><tr><th>Route</th><th>Appelant</th><th>Auth</th><th>Rôle</th></tr></thead>
     <tbody>
-      <tr><td><code>GET /health</code> · <code>/ready</code> · <code>/metrics</code></td><td>Kubernetes, Prometheus</td><td>—</td><td>vivacité ; disponibilité (Postgres, arrêt) ; métriques</td></tr>
+      <tr><td><code>GET /health</code> · <code>/ready</code> · <code>/metrics</code></td><td>Kubernetes, Prometheus, exploitation</td><td>—</td><td>vivacité (+ clé publique des tickets <code>ticketSigner</code>) ; disponibilité (Postgres, arrêt) ; métriques</td></tr>
       <tr><td><code>POST /ticket</code></td><td>site /pair</td><td>message SIWE signé</td><td>émet un ticket</td></tr>
       <tr><td><code>GET /pending/:nonce</code></td><td>launcher</td><td>le nonce</td><td>remet le ticket une fois</td></tr>
       <tr><td><code>POST /publish</code></td><td>site /studio</td><td>message « Publish » signé (en-têtes)</td><td>chiffre, épingle, garde la clé</td></tr>
@@ -573,7 +590,7 @@ sequenceDiagram
     <tbody>
       <tr><td>ticketd</td><td class="wrap"><code>TICKET_SIGNER_PRIVKEY</code>, <code>ATTEST_SIGNER_PRIVKEY</code>, <code>KEYSTORE_MASTER_KEY</code>, <code>PINATA_JWT</code>, <code>GAMELICENSE_ADDRESS</code>, <code>RPC_URL</code>, <code>PORT</code>, <code>HOST</code>, <code>CORS_ORIGINS</code>, <code>DATABASE_URL</code>, <code>REDIS_URL</code>, <code>PG_POOL_MAX</code> (10), <code>PG_STATEMENT_TIMEOUT_MS</code>, <code>DB_CONNECT_RETRIES</code> (30 × 2 s), <code>SHUTDOWN_DELAY_MS</code>, <code>SHUTDOWN_GRACE_MS</code>, <code>GAMEVAULT_DEV</code>, <code>GAMEVAULT_SKIP_OWNER_CHECK</code> et <code>GAMEVAULT_TEST_BACKENDS</code> (tests)</td></tr>
       <tr><td>Site</td><td class="wrap"><code>NEXT_PUBLIC_TICKETD_URL</code>, <code>NEXT_PUBLIC_SUBGRAPH_URL</code>, <code>NEXT_PUBLIC_WC_PROJECT_ID</code> (figées au build)</td></tr>
-      <tr><td>Launcher</td><td class="wrap">adresses de POC dans le code (ticketd <code>127.0.0.1:8787</code>, site <code>localhost:3000</code>) ; <code>GAMEVAULT_DEV_MEDIA_DIR</code> fait passer un dossier pour une carte</td></tr>
+      <tr><td>Launcher</td><td class="wrap">à la compilation : <code>GAMEVAULT_PROFILE</code> (nom ou chemin d'un profil, défaut <code>local</code>) ; à l'exécution : <code>GAMEVAULT_DEV_MEDIA_DIR</code> fait passer un dossier pour une carte (développement)</td></tr>
     </tbody>
   </table></div>
 
@@ -638,7 +655,7 @@ sequenceDiagram
   <div class="tbl"><table>
     <thead><tr><th>Zone</th><th>Écart</th><th>Nature</th></tr></thead>
     <tbody>
-      <tr><td>Launcher</td><td>Adresses de ticketd et du site en dur (POC) dans <code>main.ts</code> et <code>download.rs</code> : il faut une configuration de build production.</td><td>avant mise en ligne</td></tr>
+      <tr><td>Launcher</td><td>Profils de build en place (11 octobre) ; reste à remplir <code>production.json</code>, signer l'installeur (Authenticode) et ajouter la mise à jour automatique.</td><td>avant mise en ligne</td></tr>
       <tr><td>Distribution</td><td>Chaque pod ticketd recharge les builds depuis IPFS ; à grande échelle : stockage objet + CDN.</td><td>à l'échelle</td></tr>
       <tr><td>Launcher</td><td>La session SIWE n'est pas revérifiée au lancement ; la possession de la clé d'appareil est prouvée implicitement par le déballage ECIES.</td><td>décision</td></tr>
       <tr><td>Lectures chaîne</td><td>Le site et le launcher parcourent les jetons un par un sur le RPC (licences, annonces, prêts) ; basculer sur le subgraph quand le volume grandira.</td><td>à l'échelle</td></tr>

@@ -13,20 +13,23 @@ import { fetchOnchainCatalog, BLURBS, GENRES, type OnchainEdition } from "@gamev
 import { DEPLOYMENTS, CHAIN } from "@gamevault/shared/deployments";
 import { LICENSE_ABI, MARKETPLACE_ABI } from "@gamevault/shared/abi";
 import { getLang, locale, setLang, t, type Lang } from "./i18n";
+import { PROFILE } from "./profile";
 
-const MARKETPLACE_URL = "http://localhost:3000";
-const TICKETD_URL = "http://localhost:8787";
+// Server addresses come from the build profile (launcher/profiles/*.json).
+const MARKETPLACE_URL = PROFILE.webUrl;
+const TICKETD_URL = PROFILE.ticketdUrl;
 const GAME_URL = navigator.userAgent.includes("Windows") ? "http://game.localhost/" : "game://localhost/";
 // Builds come from ticketd (local cache, no CORS); IPFS gateways are the
 // backup. Integrity is checked HERE against the on-chain sha256 either way.
 
-// Ticket-signer public keys embedded in the launcher. The ticket key is
+// Ticket-signer public keys embedded in the launcher, from the build
+// profile (each server has its own key). The ticket key is
 // DEDICATED (audit K1, rotated 2026-10-07 — the previous platform key had
 // leaked; cards signed with it must be re-paired). The DEV fixture key is
 // derived from a PUBLIC seed (shared/devkeys) — anyone can sign with it —
 // so it is accepted in `vite dev` builds only, never in a release (audit L1).
 const PLATFORM_PUBS = [
-  unhex("0x02f993342ee3df755c386e4ec261eed2d439738c284887ca657faa33d2b353292c"),
+  ...PROFILE.ticketSignerPubKeys.map((k) => unhex(`0x${k}`)),
   ...(import.meta.env.DEV ? [unhex("0x038d78e7c9ea67e401f6e9dbf8fccae4563dc21c0e3f569338012ba95c50700f2b")] : []),
 ];
 const verifyPlatformSig = (t: SignedTicket): boolean => PLATFORM_PUBS.some((k) => verifyTicket(t, k));
@@ -571,7 +574,7 @@ const isOurs = (g: Game): boolean =>
 // ── Chain reads ───────────────────────────────────────────────
 
 const chainClient = DEPLOYMENTS.gameLicense
-  ? createPublicClient({ transport: http(CHAIN.rpcUrl, { timeout: 2000, retryCount: 0 }) })
+  ? createPublicClient({ transport: http(PROFILE.rpcUrl, { timeout: 2000, retryCount: 0 }) })
   : null;
 
 type OwnerCheck = "ok" | "revoked" | "evicted" | "offline";
@@ -2414,7 +2417,7 @@ function settingsView(): string {
           </div>
           ${toggle("set-autostart", autostartOn, t("set.autostart"), t("set.autostartSub"))}
           <div class="${autostartOn ? "" : "dim"}">${toggle("set-trayStart", settings.startInTray, t("set.trayStart"), t("set.trayStartSub"))}</div>
-          ${toggle("set-localServices", settings.localServices, t("set.localServices"), t("set.localServicesSub"))}
+          ${PROFILE.localServices ? toggle("set-localServices", settings.localServices, t("set.localServices"), t("set.localServicesSub")) : ""}
         </section>
         <section class="set-card">
           <div class="mono-label">${t("set.a11y")}</div>
@@ -2519,6 +2522,10 @@ function settingsView(): string {
           <div class="set-row">
             <div><div class="set-label">${esc(t("sys.restart"))}</div><div class="set-sub">${esc(t("sys.restartSub"))}</div></div>
             <button class="pillbtn" id="set-restart">${esc(t("sys.restartBtn"))}</button>
+          </div>
+          <div class="set-row">
+            <div><div class="set-label">${esc(t("sys.server"))}</div><div class="set-sub">${esc(new URL(PROFILE.ticketdUrl).host)} · ${esc(new URL(PROFILE.webUrl).host)}</div></div>
+            <span class="mono-label">${esc(PROFILE.name.toUpperCase())}</span>
           </div>
         </section>
         <section class="set-card">
@@ -3350,7 +3357,7 @@ async function runBoot(): Promise<void> {
   } catch {
     setLine(2, "OFFLINE", false);
   }
-  if (settings.localServices) {
+  if (PROFILE.localServices && settings.localServices) {
     state.bootLines[3] = { ...state.bootLines[3], value: t("svc.starting"), state: "idle" };
     if (state.screen === "boot") render();
     try {
@@ -4004,7 +4011,7 @@ async function openDownload(editionId: string): Promise<void> {
   if (!e) return;
   let size: number | null = null;
   try {
-    const r = await fetch(`${TICKETD_URL}/build/${e.buildCid}/manifest`);
+    const r = await fetch(`${PROFILE.buildsUrl}${e.buildCid}/manifest`);
     if (r.ok) size = Number(((await r.json()) as { size: number }).size) || null;
   } catch {
     /* size unknown: the Rust side still checks the space */

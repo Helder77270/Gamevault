@@ -207,6 +207,7 @@ Vérifié le 11 octobre, migration Postgres + Redis :
 
 La liste complète, avec le pourquoi de chaque point, est dans
 **`docs/runbook.md` §7** (Postgres managé, builds sur stockage objet + CDN,
-adresses de production du launcher, gestionnaire de secrets et rotation des
+profil de production du launcher à remplir (`launcher/profiles/README.md`),
+signature de l'installeur, gestionnaire de secrets et rotation des
 clés, sauvegardes hors cluster, observabilité, RPC payant, NetworkPolicy
 éprouvées avec Calico/Cilium, tir de charge).

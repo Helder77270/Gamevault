@@ -123,6 +123,13 @@ vehicle, the blockchain is the lock."
   buying / taking an offer opens the web page.
 - No internal/technical explanations on customer screens; they live in
   Settings › Comment ça marche.
+- Build profiles (2026-10-11): `launcher/profiles/<name>.json` (local =
+  default, compose, production template) say which ticketd/site/RPC/ticket
+  keys a build trusts; baked in at compile time (`GAMEVAULT_PROFILE`, Vite
+  `__GV_PROFILE__` → src/profile.ts, build.rs → `GV_*` env, generated
+  src-tauri/profile.conf.json for CSP + opener). Never hardcode a server URL
+  or ticket key again. `npm run build:profile -- <name>` (finds vcvars64).
+  Guide: launcher/profiles/README.md.
 - Look at the UI without Tauri: `node launcher/dev/make-preview.mjs`, then
   http://localhost:1420/preview.html during `npm run dev` (mocked core).
 - Heavy test game: edition #4 "Stress Test 500" (480 MiB, 121 chunks),

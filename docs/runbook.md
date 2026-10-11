@@ -166,14 +166,18 @@ Décisions déjà prises (ne pas les refaire sans raison) :
 3. **Builds sur stockage objet + CDN** (plages d'octets) : ticketd ne
    renverrait que l'adresse ; l'intégrité ne change pas (morceaux + empreinte
    on-chain). Évite que chaque pod télécharge 500 Mo depuis IPFS.
-4. **Launcher en mode production** : ses adresses sont aujourd'hui en dur
-   (`127.0.0.1:8787` dans `launcher/src/main.ts` et dans
-   `launcher/src-tauri/src/download.rs`, le site en `localhost:3000`) →
-   configuration de build vers `https://api.<domaine>`.
+4. **Launcher en mode production** : FAIT côté code (2026-10-11) — profils
+   de build `launcher/profiles/*.json`. Reste à remplir
+   `launcher/profiles/production.json` (domaines, clé publique des tickets
+   lue par `curl https://api.<domaine>/health` → `ticketSigner`, RPC payant)
+   puis `npm run build:profile -- production` ; marche à suivre complète
+   dans `launcher/profiles/README.md`. Avant distribution publique :
+   signature Authenticode de l'installeur et mise à jour automatique.
 5. **Secrets** : passer du vault Ansible à un gestionnaire (External Secrets,
    Sealed Secrets, ou celui du cloud) ; plan de rotation des clés de
    signature (`TICKET_SIGNER_PRIVKEY` : sa clé publique est embarquée dans le
-   launcher → rotation = nouvelle version du launcher qui accepte les deux).
+   launcher → rotation = nouvelle version du launcher qui accepte les deux,
+   procédure dans `launcher/profiles/README.md`).
 6. **Sauvegardes hors cluster** et un exercice de restauration trimestriel.
 7. **Observabilité** : Prometheus (scrape `/metrics` de ticketd et
    d'ingress-nginx), Grafana, logs centralisés, alertes : pods non prêts,

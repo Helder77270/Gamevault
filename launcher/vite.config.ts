@@ -1,11 +1,19 @@
 import { defineConfig } from "vite";
 import { fileURLToPath } from "node:url";
+// @ts-expect-error plain JS module (also run by node directly)
+import { loadProfile } from "./scripts/profile.mjs";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ command }) => ({
+  // Build profile (scripts/profile.mjs): where this build talks to. Release
+  // checks apply to `vite build` unless Tauri asked for a debug build.
+  define: {
+    // @ts-expect-error process is a nodejs global
+    __GV_PROFILE__: JSON.stringify(loadProfile(undefined, { release: command === "build" && process.env.TAURI_ENV_DEBUG !== "true" })),
+  },
   resolve: {
     alias: {
       // Import shared/ as first-party TS source so Vite transpiles it directly.

@@ -36,7 +36,8 @@ fn app_sink(app: &AppHandle) -> Sink {
     })
 }
 
-const SERVER: &str = "http://127.0.0.1:8787/build/";
+/// Build mirror of the GameVault server, from the build profile (build.rs).
+const SERVER: &str = env!("GV_BUILDS_URL");
 
 /// The GameVault server base. Tests can point it at a dead port to force
 /// the IPFS mirrors (never settable outside `cargo test`).
@@ -85,7 +86,9 @@ pub fn damage_chunks(path: &Path, count: u32) -> Result<Vec<u64>, String> {
     f.sync_all().map_err(|e| e.to_string())?;
     Ok(hit)
 }
-const GATEWAYS: [&str; 3] = ["https://gateway.pinata.cloud/ipfs/", "https://ipfs.io/ipfs/", "https://dweb.link/ipfs/"];
+fn gateways() -> impl Iterator<Item = &'static str> {
+    env!("GV_IPFS_GATEWAYS").split(',').filter(|g| !g.is_empty())
+}
 const WORKERS: usize = 4;
 const TRIES_PER_CHUNK: usize = 3;
 const DEFAULT_CHUNK: u64 = 4 * 1024 * 1024;
@@ -272,7 +275,7 @@ fn agent() -> ureq::Agent {
 
 fn sources(cid: &str) -> Vec<(String, String)> {
     let mut v = vec![("SERVEUR GAMEVAULT".to_string(), format!("{}{cid}", server()))];
-    for g in GATEWAYS {
+    for g in gateways() {
         let label = g.trim_start_matches("https://").split('/').next().unwrap_or(g).to_uppercase();
         v.push((format!("IPFS · {label}"), format!("{g}{cid}")));
     }

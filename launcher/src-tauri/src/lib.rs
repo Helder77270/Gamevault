@@ -571,6 +571,9 @@ fn port_open(port: u16) -> bool {
 
 #[tauri::command]
 async fn start_local_services(services: tauri::State<'_, Services>) -> Result<Value, String> {
+    if env!("GV_LOCAL_SERVICES") != "1" {
+        return Err("services locaux désactivés dans ce build (profil serveur)".into());
+    }
     let root = PathBuf::from(REPO_ROOT);
     if !root.join("ticketd").join("package.json").is_file() {
         return Err("dépôt GameVault introuvable : services locaux indisponibles".into());
