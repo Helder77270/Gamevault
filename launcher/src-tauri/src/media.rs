@@ -30,13 +30,13 @@ pub fn ticket_for_this_device(gv: &Path) -> Option<String> {
 /// (the newest), mirroring the 2-device rule.
 pub fn store_ticket(gv: &Path, device: &str, ticket_json: &str, keep: usize) -> Result<(), String> {
     let dir = gv.join("tickets");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("tickets: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| write_err("tickets", e))?;
     let dev = device.trim_start_matches("0x").to_lowercase();
     if dev.len() != 66 || !dev.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err("clé d'appareil invalide".into());
     }
-    std::fs::write(dir.join(format!("{dev}.json")), ticket_json).map_err(|e| format!("ticket: {e}"))?;
-    std::fs::write(gv.join("ticket.json"), ticket_json).map_err(|e| format!("ticket.json: {e}"))?;
+    std::fs::write(dir.join(format!("{dev}.json")), ticket_json).map_err(|e| write_err("ticket", e))?;
+    std::fs::write(gv.join("ticket.json"), ticket_json).map_err(|e| write_err("ticket.json", e))?;
     let mut all: Vec<_> = std::fs::read_dir(&dir)
         .map_err(|e| e.to_string())?
         .flatten()
@@ -63,6 +63,52 @@ pub struct Cartridge {
     pub has_build: bool,
     /// Size of /gamevault/build.enc in bytes (0 when absent)
     pub build_size: u64,
+    /// The volume refuses writes (SD lock switch): playable, not writable
+    pub read_only: bool,
+}
+
+/// Marker the UI turns into its own "card locked" screen.
+pub const CARD_LOCKED: &str = "CARD_LOCKED";
+
+/// Write error on a card -> message; a write-protected medium (Windows
+/// ERROR_WRITE_PROTECT, os error 19 — the SD lock switch) gets the marker.
+pub fn write_err(what: &str, e: std::io::Error) -> String {
+    if e.raw_os_error() == Some(19) {
+        format!("{CARD_LOCKED} · {what}: {e}")
+    } else {
+        format!("{what}: {e}")
+    }
+}
+
+/// Refuse up front, before anything is half-written or a signature is spent.
+pub fn ensure_writable(root: &Path) -> Result<(), String> {
+    if read_only(root) {
+        return Err(format!("{CARD_LOCKED} · carte en lecture seule"));
+    }
+    Ok(())
+}
+
+/// Read-only volume (SD lock switch, write-protected medium), asked to
+/// Windows without writing anything — cards are scanned every 2 s.
+#[cfg(windows)]
+pub fn read_only(root: &Path) -> bool {
+    use windows_sys::Win32::Storage::FileSystem::GetVolumeInformationW;
+    const FILE_READ_ONLY_VOLUME: u32 = 0x0008_0000;
+    let mut r = root.as_os_str().to_string_lossy().into_owned();
+    if !r.ends_with('\\') {
+        r.push('\\');
+    }
+    let wide: Vec<u16> = r.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut flags = 0u32;
+    let ok = unsafe {
+        GetVolumeInformationW(wide.as_ptr(), std::ptr::null_mut(), 0, std::ptr::null_mut(), std::ptr::null_mut(), &mut flags, std::ptr::null_mut(), 0)
+    };
+    ok != 0 && flags & FILE_READ_ONLY_VOLUME != 0
+}
+
+#[cfg(not(windows))]
+pub fn read_only(root: &Path) -> bool {
+    std::fs::metadata(root).map(|m| m.permissions().readonly()).unwrap_or(false)
 }
 
 fn read_cartridge(root: &Path, label: String) -> Option<Cartridge> {
@@ -79,6 +125,7 @@ fn read_cartridge(root: &Path, label: String) -> Option<Cartridge> {
         meta_json: std::fs::read_to_string(gv.join("meta.json")).ok(),
         has_build: gv.join("build.enc").is_file(),
         build_size: std::fs::metadata(gv.join("build.enc")).map(|m| m.len()).unwrap_or(0),
+        read_only: read_only(root),
     })
 }
 
@@ -88,6 +135,8 @@ pub struct Volume {
     pub volume_label: String,
     /// true if a /gamevault/ folder already exists on it
     pub has_gamevault: bool,
+    /// The volume refuses writes (SD lock switch)
+    pub read_only: bool,
 }
 
 /// Every removable volume, cartridge or blank — install targets.
@@ -99,6 +148,7 @@ pub fn list_removable() -> Vec<Volume> {
             mount_point: p.to_string_lossy().into_owned(),
             volume_label: "DEV".into(),
             has_gamevault: p.join("gamevault").is_dir(),
+            read_only: false,
         });
     }
     for disk in Disks::new_with_refreshed_list().list() {
@@ -109,6 +159,7 @@ pub fn list_removable() -> Vec<Volume> {
             mount_point: disk.mount_point().to_string_lossy().into_owned(),
             volume_label: disk.name().to_string_lossy().into_owned(),
             has_gamevault: disk.mount_point().join("gamevault").is_dir(),
+            read_only: read_only(disk.mount_point()),
         });
     }
     found
@@ -135,4 +186,25 @@ pub fn scan() -> Vec<Cartridge> {
         }
     }
     found
+}
+
+#[cfg(test)]
+mod lock_tests {
+    use super::*;
+
+    #[test]
+    fn write_protect_error_becomes_card_locked() {
+        let locked = write_err("meta.json", std::io::Error::from_raw_os_error(19));
+        assert!(locked.starts_with(CARD_LOCKED), "{locked}");
+        let other = write_err("meta.json", std::io::Error::from_raw_os_error(5)); // access denied
+        assert!(!other.contains(CARD_LOCKED), "{other}");
+    }
+
+    #[test]
+    fn a_writable_disk_is_not_read_only() {
+        let tmp = std::env::temp_dir();
+        let root: PathBuf = tmp.ancestors().last().map(Path::to_path_buf).unwrap_or(tmp);
+        assert!(!read_only(&root), "system drive reported read-only: {}", root.display());
+        assert!(ensure_writable(&root).is_ok());
+    }
 }

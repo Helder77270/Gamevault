@@ -313,8 +313,9 @@ fn install_cartridge(
     serde_json::from_str::<Value>(&meta_json).map_err(|e| format!("meta invalide: {e}"))?;
     serde_json::from_str::<Value>(&ticket_json).map_err(|e| format!("ticket invalide: {e}"))?;
 
+    media::ensure_writable(Path::new(&mount_point))?;
     let gv = Path::new(&mount_point).join("gamevault");
-    std::fs::create_dir_all(&gv).map_err(|e| format!("création dossier: {e}"))?;
+    std::fs::create_dir_all(&gv).map_err(|e| media::write_err("création dossier", e))?;
     // A card re-written for ANOTHER game must not keep the previous game's
     // build: launches would try to open it with the new licence's key
     // (ERR 0x21 on a stale build.enc, 2026-10-14). Same game: kept.
@@ -331,10 +332,10 @@ fn install_cartridge(
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(data_b64)
             .map_err(|e| format!("base64: {e}"))?;
-        std::fs::write(gv.join("build.enc"), bytes).map_err(|e| format!("build.enc: {e}"))?;
+        std::fs::write(gv.join("build.enc"), bytes).map_err(|e| media::write_err("build.enc", e))?;
     }
-    std::fs::write(gv.join("meta.json"), meta_json).map_err(|e| format!("meta.json: {e}"))?;
-    std::fs::write(gv.join("ticket.json"), ticket_json).map_err(|e| format!("ticket.json: {e}"))?;
+    std::fs::write(gv.join("meta.json"), meta_json).map_err(|e| media::write_err("meta.json", e))?;
+    std::fs::write(gv.join("ticket.json"), ticket_json).map_err(|e| media::write_err("ticket.json", e))?;
     Ok(())
 }
 
@@ -352,7 +353,7 @@ fn write_build(mount_point: String, data_b64: String) -> Result<(), String> {
         return Err("build trop petit pour être valide".into());
     }
     let path = Path::new(&mount_point).join("gamevault").join("build.enc");
-    std::fs::write(&path, bytes).map_err(|e| format!("écriture build: {e}"))
+    std::fs::write(&path, bytes).map_err(|e| media::write_err("écriture build", e))
 }
 
 /// Write a freshly issued ticket back onto the cartridge (why USB/SD > CD-R).
@@ -363,6 +364,7 @@ fn write_ticket(mount_point: String, ticket_json: String) -> Result<(), String> 
     let parsed = serde_json::from_str::<Value>(&ticket_json).map_err(|e| format!("ticket invalide: {e}"))?;
     let device = crypto::device_pubkey_hex()?;
     ticket::verify_for_write(&parsed, ticket::licence_contract(), &device)?;
+    media::ensure_writable(Path::new(&mount_point))?;
     // one ticket per paired machine, 2 kept (the account's device limit)
     media::store_ticket(&Path::new(&mount_point).join("gamevault"), &device, &ticket_json, 2)
 }
@@ -419,6 +421,9 @@ fn dl_start(
     title: String,
     edition: String,
 ) -> Result<String, String> {
+    if dest_kind == "card" {
+        media::ensure_writable(Path::new(&dest))?;
+    }
     let target = dl_target(&dest_kind, &dest, &cid, &title)?;
     if dest_kind == "library" {
         download::mark_game_folder(&target, &cid, &title, &edition)?;
@@ -755,6 +760,7 @@ fn uninstall_game(
         }
         "card" => {
             known_mount(&path)?;
+            media::ensure_writable(Path::new(&path))?;
             if download::any_active(&dl) {
                 return Err("un téléchargement est en cours : attendez la fin ou annulez-le".into());
             }

@@ -38,6 +38,7 @@ const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
 
 interface Cartridge {
   build_size: number;
+  read_only: boolean; // SD lock switch: playable, not writable
   mount_point: string;
   volume_label: string;
   ticket_json: string;
@@ -48,6 +49,7 @@ interface Volume {
   mount_point: string;
   volume_label: string;
   has_gamevault: boolean;
+  read_only: boolean; // SD lock switch: the card cannot be written
 }
 type Verdict = "authentic" | "tampered" | "expired" | "unreadable" | "unpaired";
 interface Game {
@@ -859,6 +861,8 @@ let pollTimer: number | undefined;
 
 async function startPairing(g: Game): Promise<void> {
   if (!g.ticket) return;
+  // before the owner signs anything: the ticket could not be written back
+  if (g.cartridge.read_only) return fail(t("lock.title"), "CARD_LOCKED", "", "detail");
   const nonce = crypto.randomUUID();
   const url =
     `${MARKETPLACE_URL}/pair?device=${encodeURIComponent(state.devicePubKey)}` +
@@ -905,7 +909,14 @@ async function completePairing(g: Game, ticket: SignedTicket): Promise<void> {
     fail(t("err.cardReadT"), t("err.badTicketM"), "ERR 0x21 · LICENCE CHECKSUM MISMATCH · SLOT A", "detail");
     return;
   }
-  await invoke("write_ticket", { mountPoint: g.cartridge.mount_point, ticketJson: JSON.stringify(ticket, null, 2) });
+  try {
+    await invoke("write_ticket", { mountPoint: g.cartridge.mount_point, ticketJson: JSON.stringify(ticket, null, 2) });
+  } catch (e) {
+    // was swallowed by the polling loop: the pairing just hung
+    state.pairing = null;
+    fail(t("err.cardWriteT"), String(e), "ERR 0x42 · CARD WRITE FAILED", "detail");
+    return;
+  }
   state.session = { address: ticket.ownerAddress };
   localStorage.setItem("gv-session", JSON.stringify(state.session));
   state.pairing = null;
@@ -940,6 +951,10 @@ async function openInstall(edition: OnchainEdition, prefillTokenId = ""): Promis
 async function installTo(volume: Volume): Promise<void> {
   const inst = state.installing;
   if (!inst?.edition.buildCid) return;
+  if (volume.read_only) {
+    inst.status = t("lock.short");
+    return render();
+  }
   const tokenId = (document.getElementById("install-token") as HTMLInputElement | null)?.value.trim() ?? inst.tokenId;
   inst.tokenId = tokenId;
   if (!/^\d+$/.test(tokenId)) {
@@ -1313,6 +1328,13 @@ function artFor(editionId: string): string {
 }
 
 function fail(title: string, msg: string, code: string, back: Screen): void {
+  // A locked card (SD write-protect switch) gets its own explanation,
+  // whichever write hit it (install, pairing, download, uninstall).
+  if (msg.includes("CARD_LOCKED")) {
+    title = t("lock.title");
+    msg = t("lock.body");
+    code = "ERR 0x43 · CARD LOCKED";
+  }
   state.fatal = { title, msg, code, back };
   state.screen = "error";
   render();
@@ -2691,7 +2713,7 @@ function insertView(): string {
             inst.volumes.length
               ? inst.volumes
                   .map(
-                    (v) => `<button class="pillbtn" data-volume="${esc(v.mount_point)}">💾 ${esc(v.volume_label || "CARD")} — ${esc(v.mount_point)}${v.has_gamevault ? " · REWRITE" : ""}</button>`,
+                    (v) => `<button class="pillbtn" data-volume="${esc(v.mount_point)}">💾 ${esc(v.volume_label || "CARD")} — ${esc(v.mount_point)}${v.read_only ? ` · ${t("lock.badge")}` : v.has_gamevault ? " · REWRITE" : ""}</button>`,
                   )
                   .join("")
               : `<span class="slot-dim">${t("ins.noCard")}</span>`
@@ -3448,6 +3470,7 @@ async function refresh(): Promise<void> {
             if (!settings.notif.card) sfxInsert("notif"); // otherwise the slot toast plays it
           }
           void cardEvent("in", g.meta.title ?? g.cartridge.volume_label ?? "CARD", g);
+          if (g.cartridge.read_only) toast(t("lock.toast"));
         });
       state.games
         .filter((g) => !cur.has(g.cartridge.mount_point))
