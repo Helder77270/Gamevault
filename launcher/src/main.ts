@@ -1096,7 +1096,8 @@ async function play(g: Game): Promise<void> {
       launched = await minMs(
         invoke<{ kind: string; pid?: number }>("play_game", {
           mountPoint: g.cartridge.mount_point,
-          buildPath: g.cartridge.has_build ? null : (libraryBuildFor(editionFor(g))?.path ?? null),
+          // always offered: the core falls back to it if the card's build is not this game's
+          buildPath: libraryBuildFor(editionFor(g))?.path ?? null,
         }),
         900,
       );

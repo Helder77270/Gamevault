@@ -92,24 +92,41 @@ fn play_game(
     };
 
     // The card is the key; the game itself may live on the card or in a
-    // library folder of this PC (<dir>/gamevault-library/<cid>/build.enc).
+    // library folder of this PC (<library>/<title> (<cid 8>)/build.enc).
+    // Both are tried, card first: only the build of THIS licence opens with
+    // its content key (AES-GCM is authenticated), so a card still holding
+    // another game's build falls back to the library instead of failing.
+    let mut candidates = Vec::new();
     let on_card = gv.join("build.enc");
-    let build = if on_card.is_file() {
-        on_card
-    } else {
-        let p = PathBuf::from(build_path.ok_or("jeu absent de la carte et de la bibliothèque")?);
+    if on_card.is_file() {
+        candidates.push(on_card);
+    }
+    if let Some(p) = build_path.map(PathBuf::from) {
         // a library game folder: build.enc beside its gamevault.json
         let in_library = p.file_name().is_some_and(|n| n == "build.enc")
             && p.parent().is_some_and(|f| f.join("gamevault.json").is_file());
         if !in_library || !p.is_file() {
             return Err("chemin de jeu refusé".into());
         }
-        p
-    };
-    let enc = std::fs::read(&build).map_err(|e| format!("build.enc: {e}"))?;
-    let plain = crypto::decrypt_build(&enc, &content_key)
-        .map_err(|e| format!("déchiffrement du build: {e}"))?;
-    drop(enc); // big builds: never hold the ciphertext and the plaintext longer than needed
+        candidates.push(p);
+    }
+    if candidates.is_empty() {
+        return Err("jeu absent de la carte et de la bibliothèque".into());
+    }
+    let mut plain = None;
+    let mut last_err = String::new();
+    for build in &candidates {
+        let enc = std::fs::read(build).map_err(|e| format!("build.enc: {e}"))?;
+        match crypto::decrypt_build(&enc, &content_key) {
+            Ok(p) => {
+                plain = Some(p);
+                break;
+            }
+            Err(e) => last_err = e,
+        }
+        // enc dropped here: never hold two big buffers longer than needed
+    }
+    let plain = plain.ok_or_else(|| format!("déchiffrement du build: {last_err}"))?;
 
     // The bytes describe their own runtime: PE executable ("MZ") -> native
     // process beside the launcher; anything else -> HTML in the webview.
@@ -298,6 +315,16 @@ fn install_cartridge(
 
     let gv = Path::new(&mount_point).join("gamevault");
     std::fs::create_dir_all(&gv).map_err(|e| format!("création dossier: {e}"))?;
+    // A card re-written for ANOTHER game must not keep the previous game's
+    // build: launches would try to open it with the new licence's key
+    // (ERR 0x21 on a stale build.enc, 2026-10-14). Same game: kept.
+    let edition_of = |s: &str| serde_json::from_str::<Value>(s).ok()?.get("edition")?.as_str().map(str::to_string);
+    let old_edition = std::fs::read_to_string(gv.join("meta.json")).ok().and_then(|s| edition_of(&s));
+    if old_edition != edition_of(&meta_json) {
+        for f in ["build.enc", "build.enc.part", "build.enc.dl.json", "build.enc.manifest.json"] {
+            let _ = std::fs::remove_file(gv.join(f));
+        }
+    }
     // Empty data = a key-only card (the game lives on this PC or comes later
     // through the download manager).
     if !data_b64.is_empty() {
