@@ -191,7 +191,8 @@ décision de conception, un redéploiement ou une infra en plus).
 ### Game Shelf
 - [x] **A** (2026-10-10) Vue Stockage : dossiers de jeux, taille de chaque jeu, où il est
       (PC ou carte), espace libre.
-- [ ] **A** (demandé le 2026-10-14) Désinstaller un jeu : aujourd'hui on ne
+- [x] **A** (FAIT le 2026-10-14 : commande Rust uninstall_game, boutons fiche
+      + Stockage, Corbeille vérifiée) Désinstaller un jeu : aujourd'hui on ne
       sait qu'installer. Bouton DÉSINSTALLER sur la fiche du jeu et dans la
       vue Stockage, avec confirmation et la place libérée affichée.
       - Côté Rust : commande dédiée qui n'efface QUE un dossier de jeu

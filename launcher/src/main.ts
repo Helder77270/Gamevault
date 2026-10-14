@@ -2654,7 +2654,7 @@ function detailView(): string {
           ${action}
           <div class="detail-hint">${esc(hint)}</div>
           ${offersBlock(e)}
-          <div style="flex-basis:100%;display:flex;gap:8px;flex-wrap:wrap">${dealButton(e, "pillbtn violet")}${wishButton(e, "pillbtn")}${marketRow}${provRow}${g?.cartridge.has_build || libraryBuildFor(e) ? `<button class="pillbtn" data-repair="${esc(e.editionId)}">${t("dl.verify")}</button>` : ""}</div>
+          <div style="flex-basis:100%;display:flex;gap:8px;flex-wrap:wrap">${dealButton(e, "pillbtn violet")}${wishButton(e, "pillbtn")}${marketRow}${provRow}${g?.cartridge.has_build || libraryBuildFor(e) ? `<button class="pillbtn" data-repair="${esc(e.editionId)}">${t("dl.verify")}</button>` : ""}${uninstallPlaces(e).length ? `<button class="pillbtn" data-uninstall="${esc(e.editionId)}">${t("un.btn")}</button>` : ""}</div>
         </div>
       </div>
     </div>`;
@@ -2985,6 +2985,7 @@ function sigOf(): string {
     dj: Object.values(dl.jobs).map((j) => [j.id, j.phase, j.kind]),
     dli: dl.library.map((l) => l.cid + l.status + l.dir),
     dp: dl.picker ? [dl.picker.editionId, dl.picker.choice, dl.picker.options.length] : null,
+    un: uninstallAsk ? [uninstallAsk.editionId, uninstallAsk.busy, uninstallAsk.error, uninstallAsk.places.length] : null,
     dr: dl.repair,
     ses: state.session?.address ?? null,
     lo: logoutAsk,
@@ -3026,7 +3027,7 @@ function render(): void {
     lastSig = sigOf();
     return;
   }
-  root.innerHTML = SCREENS[state.screen]() + pickerView() + repairView();
+  root.innerHTML = SCREENS[state.screen]() + pickerView() + repairView() + uninstallView();
   wire(root);
   lastSig = sigOf();
 }
@@ -3506,7 +3507,7 @@ const ICON_DIR = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" st
 const ICON_CARD = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"></path><path d="M10 3v4M13 3v4"></path></svg>`;
 
 function storageBody(): string {
-  type Row = { title: string; editionId: string | null; size: number; status: string; cls: string; reveal: string | null; repair: string | null; resume: string | null };
+  type Row = { title: string; editionId: string | null; size: number; status: string; cls: string; reveal: string | null; repair: string | null; resume: string | null; place: string | null };
   const sections: { kind: "dir" | "card"; name: string; path: string; reveal: string | null; rows: Row[] }[] = [];
 
   for (const dir of settings.libraries) {
@@ -3524,6 +3525,7 @@ function storageBody(): string {
           reveal: folder,
           repair: l.status === "installed" && e ? e.editionId : null,
           resume: l.status === "partial" && e ? e.buildCid : null,
+          place: e ? `library|${folder}` : null,
         };
       });
     sections.push({ kind: "dir", name: t("dl.dirName", { d: dir }), path: dir, reveal: dir, rows });
@@ -3533,8 +3535,8 @@ function storageBody(): string {
     const title = g.meta.title ?? e?.title ?? "GAME";
     const lib = libraryBuildFor(e);
     const row: Row = g.cartridge.has_build
-      ? { title, editionId: e?.editionId ?? null, size: g.cartridge.build_size, status: t("stg.onCard"), cls: "ok", reveal: null, repair: e?.editionId ?? null, resume: null }
-      : { title, editionId: e?.editionId ?? null, size: 0, status: lib ? t("stg.keyOnlyPc") : t("stg.keyOnly"), cls: lib ? "" : "warn", reveal: null, repair: null, resume: null };
+      ? { title, editionId: e?.editionId ?? null, size: g.cartridge.build_size, status: t("stg.onCard"), cls: "ok", reveal: null, repair: e?.editionId ?? null, resume: null, place: e ? `card|${g.cartridge.mount_point}` : null }
+      : { title, editionId: e?.editionId ?? null, size: 0, status: lib ? t("stg.keyOnlyPc") : t("stg.keyOnly"), cls: lib ? "" : "warn", reveal: null, repair: null, resume: null, place: null };
     const m = g.cartridge.mount_point;
     sections.push({ kind: "card", name: t("dl.cardName", { d: m }), path: m, reveal: `${m.replace(/[\\/]$/, "")}\\gamevault`, rows: [row] });
   }
@@ -3582,6 +3584,7 @@ function storageBody(): string {
               ${r.resume ? `<button class="sx-btn primary" data-dlresume="${esc(r.resume)}">${t("dl.resume")}</button>` : ""}
               ${r.repair ? `<button class="sx-btn" data-repair="${esc(r.repair)}">${t("dl.verify")}</button>` : ""}
               ${r.reveal ? `<button class="sx-btn ghost" data-reveal="${esc(r.reveal)}" aria-label="${esc(t("stg.openGame"))}">${t("stg.open")}</button>` : ""}
+              ${r.place && r.editionId ? `<button class="sx-btn ghost" data-uninstall="${esc(r.editionId)}" data-unplace="${esc(r.place)}">${t("un.btn")}</button>` : ""}
               ${settings.dev && r.reveal && r.repair ? `<button class="sx-btn ghost" data-damage="${esc(r.reveal)}" title="${esc(t("dev.damageTitle"))}">${t("dev.damage")}</button>` : ""}
             </div>
           </div>`,
@@ -4334,6 +4337,112 @@ function downloadsView(): string {
     </div>`;
 }
 
+// ── Uninstall (2026-10-14) ───────────────────────────────────
+// Removes a game's FILES from this PC or a card; the licence is never
+// touched — the game simply goes back to "to install". The Rust core only
+// accepts AURA-64 places (uninstall_game) and uses the Recycle Bin.
+
+interface UninstallPlace {
+  kind: "library" | "card";
+  path: string; // library: the game folder · card: the mount point
+  label: string;
+  size: number;
+}
+let uninstallAsk: null | { editionId: string; title: string; places: UninstallPlace[]; busy: boolean; error: string } = null;
+
+function uninstallPlaces(e: OnchainEdition): UninstallPlace[] {
+  const out: UninstallPlace[] = [];
+  for (const l of dl.library.filter((x) => x.cid === e.buildCid)) {
+    out.push({ kind: "library", path: l.path.replace(/[\\/][^\\/]+$/, ""), label: t("dl.dirName", { d: l.dir }), size: l.size });
+  }
+  for (const g of state.games) {
+    if (g.cartridge.has_build && editionFor(g)?.editionId === e.editionId) {
+      out.push({ kind: "card", path: g.cartridge.mount_point, label: t("dl.cardName", { d: g.cartridge.mount_point }), size: g.cartridge.build_size });
+    }
+  }
+  return out;
+}
+
+/** `only` = one place (a Storage row); otherwise every copy of the game. */
+function openUninstall(editionId: string, only?: string): void {
+  const e = state.catalog.find((c) => c.editionId === editionId);
+  if (!e) return;
+  const places = uninstallPlaces(e).filter((p) => !only || `${p.kind}|${p.path}` === only);
+  if (!places.length) return toast(t("un.nothing"));
+  uninstallAsk = { editionId, title: e.title, places, busy: false, error: "" };
+  render();
+}
+
+async function confirmUninstall(): Promise<void> {
+  const u = uninstallAsk;
+  if (!u || u.busy) return;
+  const e = state.catalog.find((c) => c.editionId === u.editionId);
+  if (state.playing || state.nativeRun) {
+    u.error = t("un.playing");
+    return render();
+  }
+  if (e && dl.jobs[e.buildCid] && ACTIVE_PHASES.includes(dl.jobs[e.buildCid].phase)) {
+    u.error = t("un.downloading");
+    return render();
+  }
+  u.busy = true;
+  u.error = "";
+  render();
+  let freed = 0;
+  for (const p of u.places) {
+    try {
+      freed += (await invoke<{ freed: number }>("uninstall_game", { kind: p.kind, path: p.path })).freed;
+    } catch (err) {
+      u.error = String(err);
+    }
+  }
+  // a paused, resumable job of this game no longer has anything to resume
+  if (e && dl.jobs[e.buildCid] && !ACTIVE_PHASES.includes(dl.jobs[e.buildCid].phase)) delete dl.jobs[e.buildCid];
+  await refreshLibrary();
+  await refresh();
+  if (u.error) {
+    u.busy = false;
+    return render();
+  }
+  uninstallAsk = null;
+  toast(t("un.done", { t: u.title, n: fmtBytes(Math.max(freed, 1)) }));
+  render();
+}
+
+function uninstallView(): string {
+  const u = uninstallAsk;
+  if (!u) return "";
+  const total = u.places.reduce((a, p) => a + p.size, 0);
+  const onCard = u.places.some((p) => p.kind === "card");
+  return `
+    <div class="dp-scrim" id="un-scrim"></div>
+    <div class="dp" role="dialog" aria-labelledby="un-title">
+      <div class="mono-label">${t("un.btn")}</div>
+      <h2 id="un-title">${esc(t("un.ask", { t: u.title }))}</h2>
+      <p>${esc(t("un.sub"))}</p>
+      <div class="dp-opts">
+        ${u.places
+          .map(
+            (p) => `
+          <div class="dp-opt on">
+            <span class="dp-body">
+              <span class="dp-name">${esc(p.label)}</span>
+              <span class="dp-path">${esc(p.kind === "card" ? t("un.cardKeeps") : p.path)}</span>
+            </span>
+            <span class="dp-free">${p.size ? fmtBytes(p.size) : "—"}</span>
+          </div>`,
+          )
+          .join("")}
+      </div>
+      <div class="dp-rules">${t("un.freed", { n: total ? fmtBytes(total) : "—" })}<br>${t(onCard ? "un.ruleCard" : "un.ruleBin")}</div>
+      ${u.error ? `<div class="errbox" style="margin-top:12px">${esc(u.error)}</div>` : ""}
+      <div class="dp-actions">
+        <button class="sx-btn ghost" id="un-cancel" ${u.busy ? "disabled" : ""}>${t("dl.cancel")}</button>
+        <button class="pillbtn danger" id="un-go" ${u.busy ? "disabled" : ""}>${u.busy ? t("un.busy") : t("un.go")}</button>
+      </div>
+    </div>`;
+}
+
 function pickerView(): string {
   const p = dl.picker;
   if (!p) return "";
@@ -4527,6 +4636,17 @@ function wireDownloads(root: HTMLElement): void {
     render();
   };
   document.getElementById("dp-cancel")?.addEventListener("click", closePicker);
+  root.querySelectorAll<HTMLButtonElement>("[data-uninstall]").forEach((b) =>
+    b.addEventListener("click", () => openUninstall(b.dataset.uninstall!, b.dataset.unplace)),
+  );
+  const closeUninstall = () => {
+    if (uninstallAsk?.busy) return;
+    uninstallAsk = null;
+    render();
+  };
+  document.getElementById("un-cancel")?.addEventListener("click", closeUninstall);
+  document.getElementById("un-scrim")?.addEventListener("click", closeUninstall);
+  document.getElementById("un-go")?.addEventListener("click", () => void confirmUninstall());
   document.getElementById("dp-scrim")?.addEventListener("click", closePicker);
   document.getElementById("rp-close")?.addEventListener("click", () => {
     if (dl.repair && dl.jobs[dl.repair]?.kind === "repair" && !ACTIVE_PHASES.includes(dl.jobs[dl.repair].phase)) delete dl.jobs[dl.repair];

@@ -14,7 +14,9 @@
     device_key_mode: "tpm",
     scan_cartridges: [],
     list_removable_volumes: [],
-    library_scan: [],
+    // one installed sample game, so the detail / Storage / uninstall UI shows
+    library_scan: [{ dir: "C:/GameVault", cid: "QmRGYZtATbsDrNv6Fk7L2BrMfk1517XGHMpmJxsoaPeZvr", path: "C:/GameVault/GameVault Runner (QmRGYZtA)/build.enc", size: 1199559, status: "installed" }],
+    uninstall_game: { freed: 1199559 },
     default_library: "C:\\Users\\demo\\GameVault",
     disk_space: [120e9, 500e9],
     native_status: { running: false },

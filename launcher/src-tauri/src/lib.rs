@@ -676,6 +676,105 @@ fn stop_local_services(app: &AppHandle) {
     list.clear();
 }
 
+/// Files AURA-64 writes beside a build (download resume state, chunk list).
+const BUILD_FILES: [&str; 4] = ["build.enc", "build.enc.part", "build.enc.dl.json", "build.enc.manifest.json"];
+
+fn size_of(p: &Path) -> u64 {
+    if p.is_file() {
+        return p.metadata().map(|m| m.len()).unwrap_or(0);
+    }
+    std::fs::read_dir(p).map(|rd| rd.flatten().map(|e| size_of(&e.path())).sum()).unwrap_or(0)
+}
+
+/// Windows Recycle Bin (restorable), never a hard delete. Removable cards
+/// have no Recycle Bin: Windows deletes there — harmless, it is the public
+/// encrypted build, downloadable again.
+#[cfg(windows)]
+fn to_recycle_bin(p: &Path) -> Result<(), String> {
+    use windows_sys::Win32::UI::Shell::{SHFileOperationW, FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, FO_DELETE, SHFILEOPSTRUCTW};
+    // pFrom is a list: each path NUL-terminated, the list double-NUL-terminated
+    let from: Vec<u16> = p.as_os_str().to_string_lossy().encode_utf16().chain([0, 0]).collect();
+    let mut op = SHFILEOPSTRUCTW {
+        hwnd: std::ptr::null_mut(),
+        wFunc: FO_DELETE,
+        pFrom: from.as_ptr(),
+        pTo: std::ptr::null(),
+        fFlags: (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT) as u16,
+        fAnyOperationsAborted: 0,
+        hNameMappings: std::ptr::null_mut(),
+        lpszProgressTitle: std::ptr::null(),
+    };
+    let r = unsafe { SHFileOperationW(&mut op) };
+    if r != 0 || op.fAnyOperationsAborted != 0 {
+        return Err(format!("suppression refusée par Windows (code {r})"));
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn to_recycle_bin(p: &Path) -> Result<(), String> {
+    if p.is_dir() { std::fs::remove_dir_all(p) } else { std::fs::remove_file(p) }.map_err(|e| e.to_string())
+}
+
+/// Uninstall a game's FILES — the licence is never touched, the game goes
+/// back to "to install". Only AURA-64 places, never a free path from the
+/// webview:
+/// - kind "library": a game folder (holds gamevault.json) → the whole
+///   folder, to the Recycle Bin;
+/// - kind "card": a known card mount → its build files only; tickets and
+///   meta stay (the card remains the key).
+/// Refused while a native game runs or while this game downloads.
+#[tauri::command]
+fn uninstall_game(
+    kind: String,
+    path: String,
+    native: tauri::State<NativeSession>,
+    dl: tauri::State<Arc<download::Downloads>>,
+) -> Result<Value, String> {
+    if native.0.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+        return Err("un jeu est en cours : quittez-le avant de désinstaller".into());
+    }
+    match kind.as_str() {
+        "library" => {
+            let folder = PathBuf::from(&path);
+            let marker = folder.join("gamevault.json");
+            if !folder.is_absolute() || !marker.is_file() {
+                return Err("dossier refusé : pas un dossier de jeu AURA-64".into());
+            }
+            let cid = std::fs::read_to_string(&marker)
+                .ok()
+                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                .and_then(|v| v.get("cid").and_then(|c| c.as_str()).map(str::to_string))
+                .unwrap_or_default();
+            if download::is_running(&dl, &cid) {
+                return Err("téléchargement en cours pour ce jeu : annulez-le d'abord".into());
+            }
+            let freed = size_of(&folder);
+            to_recycle_bin(&folder)?;
+            Ok(serde_json::json!({ "freed": freed }))
+        }
+        "card" => {
+            known_mount(&path)?;
+            if download::any_active(&dl) {
+                return Err("un téléchargement est en cours : attendez la fin ou annulez-le".into());
+            }
+            let gv = Path::new(&path).join("gamevault");
+            let files: Vec<PathBuf> = BUILD_FILES.iter().map(|f| gv.join(f)).filter(|p| p.is_file()).collect();
+            if files.is_empty() {
+                return Err("aucun jeu installé sur cette carte".into());
+            }
+            let mut freed = 0;
+            for f in &files {
+                let n = size_of(f);
+                to_recycle_bin(f)?;
+                freed += n;
+            }
+            Ok(serde_json::json!({ "freed": freed }))
+        }
+        _ => Err("emplacement inconnu".into()),
+    }
+}
+
 /// Open a game location in the file explorer — only AURA-64 places: a game
 /// folder (holds gamevault.json), a library (holds game folders) or a
 /// card's /gamevault/. Never an arbitrary path from the webview.
@@ -848,6 +947,7 @@ pub fn run() {
             launched_at_startup,
             start_local_services,
             reveal_folder,
+            uninstall_game,
             dev_damage_build
         ])
         .build(tauri::generate_context!())
@@ -862,4 +962,25 @@ pub fn run() {
                 stop_local_services(app); // POC: the services AURA-64 started go with it
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Live: moves a throwaway game folder to the real Recycle Bin.
+    #[test]
+    #[ignore]
+    fn uninstall_goes_to_recycle_bin_live() {
+        let root = std::env::temp_dir().join(format!("gv-uninstall-test-{}", std::process::id()));
+        let game = root.join("Test Game (QmTest00)");
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::write(game.join("gamevault.json"), r#"{"cid":"QmTest","edition":"0","title":"Test Game"}"#).unwrap();
+        std::fs::write(game.join("build.enc"), vec![7u8; 4096]).unwrap();
+        assert_eq!(size_of(&game), 4096 + 50);
+        to_recycle_bin(&game).expect("recycle");
+        assert!(!game.exists(), "folder must be gone from its place");
+        assert!(root.exists(), "only the game folder moves, not its library");
+        let _ = std::fs::remove_dir(&root);
+    }
 }

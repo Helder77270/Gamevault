@@ -558,6 +558,11 @@ fn register(dl: &Downloads, id: &str) -> Result<Arc<Ctl>, String> {
     Ok(ctl)
 }
 
+/// A job (download or repair) is registered under this id (= the cid).
+pub fn is_running(dl: &Downloads, id: &str) -> bool {
+    !id.is_empty() && dl.0.lock().unwrap_or_else(|e| e.into_inner()).contains_key(id)
+}
+
 pub fn any_active(dl: &Downloads) -> bool {
     !dl.0.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
 }
