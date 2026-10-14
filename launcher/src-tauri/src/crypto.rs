@@ -255,6 +255,27 @@ mod tests {
     use k256::ecdsa::signature::hazmat::PrehashVerifier;
     use k256::ecdsa::{Signature, VerifyingKey};
 
+    /// Speed of the launch path (decrypt + sha256), MB/s — run in debug AND
+    /// release: `cargo test --release -- --ignored decrypt_speed --nocapture`.
+    #[test]
+    #[ignore]
+    fn decrypt_speed() {
+        let key = [9u8; 32];
+        let nonce = [1u8; 12];
+        let plain = vec![0x42u8; 128 << 20];
+        let ct = Aes256Gcm::new_from_slice(&key).unwrap().encrypt(Nonce::from_slice(&nonce), plain.as_slice()).unwrap();
+        let mut enc = nonce.to_vec();
+        enc.extend_from_slice(&ct);
+        let t = std::time::Instant::now();
+        let out = decrypt_build(&enc, &key).unwrap();
+        let dec = t.elapsed();
+        let t = std::time::Instant::now();
+        let _ = Sha256::digest(&out);
+        let sha = t.elapsed();
+        let mbs = |d: std::time::Duration| 128.0 / d.as_secs_f64();
+        eprintln!("decrypt {:.0} MB/s · sha256 {:.0} MB/s", mbs(dec), mbs(sha));
+    }
+
     /// Live: reads THIS machine's real device key (TPM or software) —
     /// prints only the public key and the mode.
     #[test]

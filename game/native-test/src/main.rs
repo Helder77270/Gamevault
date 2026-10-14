@@ -6,8 +6,15 @@ use std::io::Write;
 use std::time::Instant;
 
 fn main() {
+    // Set by the launcher: the edition / licence this build was opened as
+    // (the "Stress Test 500" build embeds this same program).
+    let title = std::env::var("GAMEVAULT_TITLE").unwrap_or_default();
+    let licence = std::env::var("GAMEVAULT_LICENCE").unwrap_or_default();
     println!("==========================================");
     println!("   GAMEVAULT · NATIVE RUNTIME TEST");
+    if !title.is_empty() {
+        println!("   Lance comme : {title} · licence #{licence}");
+    }
     println!("   Licence verifiee, build dechiffre,");
     println!("   processus lance par le launcher.");
     println!("   Fermez la fenetre ou EJECT pour quitter.");

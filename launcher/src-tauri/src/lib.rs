@@ -65,14 +65,18 @@ fn scan_cartridges() -> Vec<media::Cartridge> {
 /// are UX only: an envelope copied from a genuine ticket would still open
 /// with our device key, so the crypto alone does NOT prove the ticket is
 /// authentic or unexpired — this check does.
+///
+/// Async + blocking pool: reading, decrypting and (native) writing a big
+/// build takes seconds — never on the UI thread (the window froze on a
+/// 480 MiB game, 2026-10-14).
 #[tauri::command]
-fn play_game(
-    app: AppHandle,
-    state: tauri::State<GameSession>,
-    native: tauri::State<NativeSession>,
-    mount_point: String,
-    build_path: Option<String>,
-) -> Result<Value, String> {
+async fn play_game(app: AppHandle, mount_point: String, build_path: Option<String>) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || play_game_blocking(app, mount_point, build_path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn play_game_blocking(app: AppHandle, mount_point: String, build_path: Option<String>) -> Result<Value, String> {
     known_mount(&mount_point)?;
     let gv = Path::new(&mount_point).join("gamevault");
 
@@ -131,10 +135,16 @@ fn play_game(
     // The bytes describe their own runtime: PE executable ("MZ") -> native
     // process beside the launcher; anything else -> HTML in the webview.
     if plain.starts_with(b"MZ") {
-        return launch_native(app, native, &verified.token_id, plain).map_err(|e| format!("runtime natif: {e}"));
+        // display only (the card's meta.json): tells the game what it was launched as
+        let title = std::fs::read_to_string(gv.join("meta.json"))
+            .ok()
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+            .and_then(|m| m.get("title").and_then(|t| t.as_str()).map(|t| t.chars().filter(|c| !c.is_control()).take(64).collect::<String>()))
+            .unwrap_or_default();
+        return launch_native(app, &verified.token_id, &title, plain).map_err(|e| format!("runtime natif: {e}"));
     }
 
-    *state.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(plain);
+    *app.state::<GameSession>().0.lock().unwrap_or_else(|e| e.into_inner()) = Some(plain);
     Ok(serde_json::json!({ "kind": "html" }))
 }
 
@@ -143,13 +153,14 @@ fn play_game(
 /// authenticity) -> spawn in its own console -> watch -> delete on exit.
 fn launch_native(
     app: AppHandle,
-    native: tauri::State<NativeSession>,
     token: &str, // from a VERIFIED ticket: digits only (ticket::verify_for_launch)
+    title: &str,
     plain: Vec<u8>,
 ) -> Result<Value, String> {
     use sha2::{Digest, Sha256};
 
-    if native.0.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+    let native_slot = app.state::<NativeSession>().0.clone();
+    if native_slot.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
         return Err("un jeu natif tourne déjà".into());
     }
     let stamp = std::time::SystemTime::now()
@@ -184,6 +195,9 @@ fn launch_native(
 
     let mut cmd = std::process::Command::new(&exe);
     cmd.current_dir(&dir);
+    // What the game was launched as (a studio SDK can read them; the test
+    // game prints them so a shared test binary is not mistaken for another)
+    cmd.env("GAMEVAULT_TITLE", title).env("GAMEVAULT_LICENCE", token);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -192,11 +206,10 @@ fn launch_native(
     let child = cmd.spawn().map_err(|e| format!("spawn: {e}"))?;
     let pid = child.id();
 
-    let slot = native.0.clone();
-    *slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(NativeRun { child, dir, started: Instant::now() });
+    *native_slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(NativeRun { child, dir, started: Instant::now() });
 
     // Watcher: polls the child; on natural exit -> cleanup + event.
-    let watcher_slot = native.0.clone();
+    let watcher_slot = native_slot.clone();
     std::thread::spawn(move || loop {
         std::thread::sleep(std::time::Duration::from_millis(600));
         let mut guard = watcher_slot.lock().unwrap_or_else(|e| e.into_inner());
