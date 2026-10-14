@@ -191,6 +191,19 @@ décision de conception, un redéploiement ou une infra en plus).
 ### Game Shelf
 - [x] **A** (2026-10-10) Vue Stockage : dossiers de jeux, taille de chaque jeu, où il est
       (PC ou carte), espace libre.
+- [ ] **A** (demandé le 2026-10-14) Désinstaller un jeu : aujourd'hui on ne
+      sait qu'installer. Bouton DÉSINSTALLER sur la fiche du jeu et dans la
+      vue Stockage, avec confirmation et la place libérée affichée.
+      - Côté Rust : commande dédiée qui n'efface QUE un dossier de jeu
+        AURA-64 (contient gamevault.json + build.enc, comme reveal_folder)
+        ou le build.enc d'une carte ; jamais un chemin libre venu de la
+        webview. Corbeille Windows plutôt que suppression définitive.
+      - Bibliothèque PC : supprime le dossier du jeu. Carte : supprime
+        build.enc mais GARDE les tickets (la carte reste la clé, le jeu se
+        retélécharge).
+      - Refuser pendant une partie ou un téléchargement en cours de ce jeu ;
+        nettoyer aussi l'état de reprise du téléchargement.
+      - La licence n'est pas touchée : le jeu repasse « à installer ».
 
 ### Accessibilité
 - [x] **A** (2026-10-10) Échelle de l'interface (90 % à 150 %).
