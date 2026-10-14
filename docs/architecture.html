@@ -189,7 +189,7 @@ html { scroll-behavior: smooth; }
   <h2>1. Principes</h2>
   <div class="grid2">
     <div class="card"><h4>Le support transporte, la blockchain verrouille</h4><p>Le build est chiffré une seule fois (AES-256-GCM). La licence est un jeton ERC-721 ; posséder le jeton donne le droit d'obtenir un ticket pour sa machine.</p></div>
-    <div class="card"><h4>La clé suit la machine, pas le wallet</h4><p>Un wallet ne sait pas déchiffrer. La clé de contenu est enveloppée (ECIES) pour une <b>clé d'appareil</b> rangée dans le coffre Windows ; le wallet ne fait que signer l'autorisation.</p></div>
+    <div class="card"><h4>La clé suit la machine, pas le wallet</h4><p>Un wallet ne sait pas déchiffrer. La clé de contenu est enveloppée (ECIES) pour une <b>clé d'appareil</b>, scellée par la puce TPM du PC quand il en a une (sinon coffre Windows) ; le wallet ne fait que signer l'autorisation.</p></div>
     <div class="card"><h4>Contrôle hybride</h4><p>En ligne : <code>ownerOf</code> / <code>userOf</code> en direct (révocation immédiate, toutes les 20 s en partie). Hors ligne : signature plateforme + expiration (30 jours).</p></div>
     <div class="card"><h4>Le clair reste dans Rust</h4><p>Le déchiffrement se fait dans le cœur Rust du launcher ; un jeu web est servi depuis la mémoire, un jeu natif n'existe sur disque que pendant la partie.</p></div>
     <div class="card"><h4>Vérification de propriété, pas DRM</h4><p>Sans puce sécurisée, un utilisateur technique peut extraire une copie avant de revendre. C'est assumé et dit (section 9).</p></div>
@@ -333,7 +333,7 @@ curl https://api.&lt;domaine&gt;/health          # {"ok":true,"ticketSigner":"02
       <tr><td>Build chiffré</td><td>bibliothèque PC ou carte ; cache des pods ticketd ; IPFS</td><td>ticketd (publication), launcher (téléchargement)</td><td>launcher</td></tr>
       <tr><td>Clés de contenu</td><td>table <code>content_keys</code>, chiffrées par <code>KEYSTORE_MASTER_KEY</code></td><td>ticketd (publication)</td><td>ticketd (émission de ticket)</td></tr>
       <tr><td>Tickets</td><td>carte : <code>/gamevault/tickets/&lt;clé d'appareil&gt;.json</code></td><td>launcher</td><td>launcher</td></tr>
-      <tr><td>Clé privée d'appareil</td><td>coffre Windows (service <code>gamevault-launcher</code>, compte <code>device-key</code>)</td><td>launcher (premier lancement)</td><td>cœur Rust uniquement</td></tr>
+      <tr><td>Clé privée d'appareil</td><td>scellée par le TPM (Gestionnaire d'identifiants, <code>gamevault-launcher</code> / <code>device-key-tpm</code>) ; sans TPM 2.0 : en clair dans le coffre Windows (<code>device-key</code>)</td><td>launcher (premier lancement)</td><td>cœur Rust uniquement</td></tr>
       <tr><td>Sessions, nonces, amis, chat, profils, avatars, appareils, activité, souhaits, confidentialité, pages studio, temps de jeu</td><td>Postgres (ou SQLite)</td><td>ticketd</td><td>ticketd → site, launcher</td></tr>
       <tr><td>Présence, tickets d'appairage en attente, compteurs du chat</td><td>Redis (ou mémoire), avec durée de vie</td><td>ticketd</td><td>ticketd</td></tr>
       <tr><td>Réglages, langue, historique de jeu local, session, compte suivi, vue du shelf</td><td>localStorage du launcher (<code>gv-settings</code>, <code>gv-lang</code>, <code>gv-playlog</code>, <code>gv-session</code>, <code>gv-watch</code>, <code>gv-shelfmode</code>)</td><td>launcher</td><td>launcher</td></tr>
@@ -403,7 +403,7 @@ D:\GameVault\                bibliothèque PC (proposée à la création)
     <thead><tr><th>Clé</th><th>Où elle vit</th><th>Ce qu'elle signe ou protège</th><th>Si elle fuit</th></tr></thead>
     <tbody>
       <tr><td>Wallet du joueur / studio</td><td>wallet (navigateur, téléphone)</td><td>achats, ventes, prêts, appairage, sessions web, révocation d'appareil, publication</td><td>c'est le compte : vol des licences</td></tr>
-      <tr><td>Clé d'appareil</td><td>coffre Windows, lue par le cœur Rust seul</td><td>déballe les clés de contenu des tickets de cette machine ; signe la preuve de session du launcher</td><td>déchiffrer les tickets de cette machine, agir socialement jusqu'à la révocation</td></tr>
+      <tr><td>Clé d'appareil</td><td>scellée par une clé RSA non exportable du TPM (sinon coffre Windows) ; descellée par le cœur Rust seul, effacée de la mémoire après chaque usage</td><td>déballe les clés de contenu des tickets de cette machine ; signe la preuve de session du launcher</td><td>déchiffrer les tickets de cette machine, agir socialement jusqu'à la révocation</td></tr>
       <tr><td><code>TICKET_SIGNER_PRIVKEY</code></td><td>Secret ticketd</td><td>les tickets ; sa clé publique est dans le profil de build du launcher (<code>ticketSignerPubKeys</code>, lisible sur <code>/health</code>)</td><td>tickets valides hors ligne ; rotation = nouvelle version du launcher qui accepte les deux clés</td></tr>
       <tr><td><code>ATTEST_SIGNER_PRIVKEY</code></td><td>Secret ticketd</td><td>attestations d'amitié EIP-712 lues par <code>lend()</code></td><td>contourner la règle des 3 jours ; rotation par <code>setAttestationSigner</code></td></tr>
       <tr><td><code>KEYSTORE_MASTER_KEY</code></td><td>Secret ticketd + copie hors des serveurs</td><td>chiffre les clés de contenu au repos</td><td>avec la base : toutes les clés de jeux ; <b>perdue : plus aucun jeu servi</b> (absente des sauvegardes, volontairement)</td></tr>
@@ -629,6 +629,16 @@ sequenceDiagram
     <li><b>ticketd est un tiers de confiance</b> : il détient les clés de contenu et la clé des tickets.</li>
     <li><b>Chat non chiffré de bout en bout</b> ; une session volée permet des actions sociales pendant 24 h.</li>
     <li><b>Exe natifs non signés</b> (Authenticode pas encore vérifié).</li>
+    <li><b>Clé d'appareil en mémoire pendant un usage</b> : même scellée par le TPM, elle est descellée quelques millisecondes en mémoire du launcher (un logiciel malveillant sur la machine pourrait la lire à ce moment). L'étape 2 (calcul dans la puce, clé P-256) supprimerait ce point ; sans TPM 2.0, la clé reste dans le coffre Windows.</li>
+  </ul>
+  <h3 id="tpm">Clé d'appareil et puce TPM</h3>
+  <p>Depuis le 14 octobre, le launcher crée dans la puce TPM 2.0 (fournisseur « Microsoft Platform Crypto Provider », par utilisateur Windows) une clé RSA-2048 <b>non exportable</b>, qui chiffre la clé d'appareil secp256k1. Seul ce blob scellé est stocké : copié sur un autre PC, il ne s'ouvre pas. Le format des tickets, ticketd et les cartes ne changent pas.</p>
+  <ul>
+    <li><b>Migration automatique</b> : au premier démarrage, la clé existante est scellée puis l'entrée en clair est supprimée ; même identité, aucun réappairage (vérifié sur le PC de dev).</li>
+    <li><b>Deux modes, un seul code</b> : pas de TPM 2.0 (vieux PC, machine virtuelle) ou <code>GAMEVAULT_NO_TPM=1</code> → clé logicielle comme avant. Le mode s'affiche dans Réglages › Système.</li>
+    <li><b>Puce réinitialisée ou carte mère changée</b> : la clé est perdue pour de bon, le launcher en crée une nouvelle et les cartes demandent un réappairage. Une erreur passagère de la puce ne détruit jamais la clé ; une puce désactivée bloque avec un message plutôt que de créer une seconde identité.</li>
+    <li><b>Hygiène mémoire</b> : clé privée, secret ECDH et clé de contenu effacés dès qu'ils ont servi (<code>zeroize</code>) ; la clé publique est mise en cache, la clé privée n'est plus chargée pour l'afficher.</li>
+    <li>Coût mesuré : descellement ≈ 0,4 s (au lancement d'un jeu, à l'ouverture de session) ; création de la clé TPM une seule fois.</li>
   </ul>
 </section>
 

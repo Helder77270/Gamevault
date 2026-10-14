@@ -76,7 +76,11 @@ vehicle, the blockchain is the lock."
     via a custom protocol handler serving FROM MEMORY (never write decrypted
     build to disk).
   - Offline after first pairing: first launch generates a DEVICE keypair
-    (Rust side, OS keystore), shows a QR embedding the device pubkey → owner
+    (Rust side; since 2026-10-14 sealed by the TPM 2.0 when present —
+    src-tauri/src/tpm.rs, RSA-OAEP wrap key in the Platform Crypto
+    Provider, entry `device-key-tpm`; else plain in Credential Manager,
+    `device-key`; GAMEVAULT_NO_TPM=1 forces software; key zeroized after
+    each use), shows a QR embedding the device pubkey → owner
     signs SIWE on the web page (message binds device pubkey) → launcher
     caches the signed pairing session; subsequent launches are fully offline.
     Online only for pairing and ticket refresh.

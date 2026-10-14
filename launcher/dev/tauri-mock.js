@@ -11,6 +11,7 @@
   let next = 1;
   const answers = {
     get_device_pubkey: "0x02" + "ab".repeat(32),
+    device_key_mode: "tpm",
     scan_cartridges: [],
     list_removable_volumes: [],
     library_scan: [],

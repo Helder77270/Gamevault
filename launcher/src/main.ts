@@ -173,6 +173,7 @@ const state = {
   games: [] as Game[],
   session: null as { address: string } | null,
   devicePubKey: "",
+  keyMode: "" as "" | "tpm" | "software", // where the device key rests (Settings › System)
   pairing: null as Pairing | null,
   lastScan: "",
   ownerCheck: "",
@@ -2527,6 +2528,10 @@ function settingsView(): string {
             <div><div class="set-label">${esc(t("sys.server"))}</div><div class="set-sub">${esc(new URL(PROFILE.ticketdUrl).host)} · ${esc(new URL(PROFILE.webUrl).host)}</div></div>
             <span class="mono-label">${esc(PROFILE.name.toUpperCase())}</span>
           </div>
+          <div class="set-row">
+            <div><div class="set-label">${esc(t("sys.key"))}</div><div class="set-sub">${esc(t(state.keyMode === "tpm" ? "sys.keyTpm" : "sys.keySoft"))}</div></div>
+            <span class="mono-label">${state.keyMode === "tpm" ? "TPM 2.0" : state.keyMode === "software" ? "WINDOWS" : "—"}</span>
+          </div>
         </section>
         <section class="set-card">
           <div class="mono-label">${t("how.title")}</div>
@@ -3340,7 +3345,8 @@ async function runBoot(): Promise<void> {
 
   try {
     state.devicePubKey = await invoke<string>("get_device_pubkey");
-    setLine(0, "KEY READY", true);
+    state.keyMode = await invoke<"tpm" | "software">("device_key_mode").catch(() => "" as const);
+    setLine(0, state.keyMode === "tpm" ? "KEY READY · TPM" : "KEY READY", true);
   } catch {
     setLine(0, "KEYSTORE ERROR", false);
   }

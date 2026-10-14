@@ -31,4 +31,8 @@ hex = "0.4"
 # feature it silently uses an in-memory mock (a new key per call!)
 keyring = { version = "3", features = ["windows-native"] }
 getrandom = "0.2"
+zeroize = "1"
 base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }

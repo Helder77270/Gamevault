@@ -364,6 +364,52 @@ Pas de vérification visuelle possible de mon côté : tout ce qui est UI est
       secrets et rotation des clés de signature ; tir de charge (k6) ;
       NetworkPolicy éprouvées (Calico/Cilium). Détail : docs/runbook.md §7.
 
+## P10 — Protection anti-copie (discuté avec Helder le 2026-10-14)
+Positionnement : aucun système sans puce sécurisée n'empêche la copie du jeu
+une fois déchiffré (GOG l'assume, Steam / Denuvo retardent, les consoles
+tiennent grâce au matériel). On relève la barre sans gêner le joueur.
+- [ ] **Clé d'appareil dans la puce TPM** — étape 1 et hygiène mémoire
+      FAITES le 2026-10-14 (src-tauri/src/tpm.rs, crypto.rs) : clé
+      secp256k1 scellée par une clé RSA-2048 non exportable du TPM, migration
+      automatique (même identité, vérifiée sur le PC de dev, Intel fTPM),
+      repli logiciel, mode affiché dans Réglages › Système, descellement
+      ≈ 0,4 s. Reste : l'étape 2 si besoin.
+      Description d'origine : (Windows : NCrypt + « Microsoft
+      Platform Crypto Provider », clé non exportable). Empêche de cloner une
+      machine appairée (copier le coffre ne suffit plus). Validé avec Helder
+      le 2026-10-14 : TPM là où il existe, clé actuelle sinon — deux MODES
+      dans le même code (détection au démarrage), pas deux branches git.
+      - [x] Étape 1 « coffre scellé » (2026-10-14) : la clé secp256k1 actuelle est chiffrée
+        par une clé RSA/P-256 non exportable du TPM ; elle n'est déchiffrée
+        qu'en mémoire, sur cette machine. Aucun changement de protocole
+        (tickets, ticketd, carte inchangés). Limite : un logiciel malveillant
+        qui tourne sur la machine peut lire la clé pendant l'utilisation.
+      - [x] Hygiène mémoire (2026-10-14) : effacer la clé
+        privée de la mémoire juste après usage (crate `zeroize`, y compris
+        la copie hex lue du coffre), ne plus charger la clé privée pour
+        simplement afficher la clé publique (la garder en cache, elle est
+        publique), garder la clé hors du TS (déjà le cas).
+      - Étape 2 « calcul dans la puce » (si besoin) : la clé ne sort jamais,
+        même en mémoire. Le TPM ne fait PAS secp256k1 (P-256 / P-384 seulement) : passer la
+        clé d'appareil en P-256 → ECIES P-256 dans shared (noble/curves
+        p256), champ de courbe dans le ticket, signature de session
+        d'appareil en P-256, vérification Rust adaptée. Garder secp256k1
+        pour les tickets déjà émis le temps d'une fenêtre hors ligne (30 j).
+      - Repli : PC sans TPM 2.0 ou machine virtuelle → clé logicielle
+        actuelle (Gestionnaire d'identifiants). Un studio pourra plus tard
+        exiger le TPM (réglage d'édition, comme la revente).
+      - Multi-appareils inchangé : une clé par machine, chacune dans sa
+        propre puce, 2 appareils actifs max, un ticket par machine sur la
+        carte. Réinstaller Windows, effacer le TPM ou changer de carte mère
+        = nouvelle clé = réappairer (l'ancienne place se libère par
+        révocation ou éviction).
+- [ ] **Kit studio** (façon Steamworks) : petite bibliothèque que le jeu
+      appelle au démarrage (« suis-je lancé par AURA-64 pour une licence
+      valide ? »), réponse signée par le launcher pour la session en cours.
+      Une copie extraite sans launcher refuse de démarrer tant qu'elle n'est
+      pas modifiée. Versions : JS (jeux web dans la webview) et DLL native
+      (C ABI → Unity / Unreal / Godot). Optionnel pour le studio.
+
 ## Idées plus tard
 0G storage swap (1 fichier : shared/storage.ts) · World ID gating si besoin
 réel · pochettes SD imprimées · provenance embarquée dans le launcher

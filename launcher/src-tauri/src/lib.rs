@@ -2,6 +2,7 @@ mod crypto;
 mod download;
 mod media;
 mod ticket;
+mod tpm;
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -84,9 +85,11 @@ fn play_game(
         .unwrap_or(u64::MAX); // broken clock = treat as expired, fail closed
     let verified = ticket::verify_for_launch(&ticket, ticket::licence_contract(), &crypto::device_pubkey_hex()?, now)?;
 
-    let device_priv = crypto::device_priv()?; // OS keystore (Credential Manager)
-    let content_key = crypto::ecies_unwrap(&verified.wrapped_content_key, &device_priv)
-        .map_err(|e| format!("clé d'appareil refusée: {e}"))?;
+    // Device key (TPM-sealed or Credential Manager): held only for the unwrap.
+    let content_key = {
+        let device_priv = crypto::device_priv()?;
+        crypto::ecies_unwrap(&verified.wrapped_content_key, &device_priv).map_err(|e| format!("clé d'appareil refusée: {e}"))?
+    };
 
     // The card is the key; the game itself may live on the card or in a
     // library folder of this PC (<dir>/gamevault-library/<cid>/build.enc).
@@ -258,9 +261,18 @@ fn device_session_proof(wallet: String) -> Result<Value, String> {
     Ok(serde_json::json!({ "message": message, "signature": hex::encode(signature) }))
 }
 
+/// Async: the very first call may create the TPM key (seconds on some
+/// chips) — never on the UI thread.
 #[tauri::command]
-fn get_device_pubkey() -> Result<String, String> {
-    crypto::device_pubkey_hex()
+async fn get_device_pubkey() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(crypto::device_pubkey_hex).await.map_err(|e| e.to_string())?
+}
+
+/// Where the device key rests: "tpm" (sealed, bound to this PC) or "software".
+#[tauri::command]
+async fn device_key_mode() -> Result<String, String> {
+    let mode = tauri::async_runtime::spawn_blocking(crypto::device_key_mode).await.map_err(|e| e.to_string())??;
+    Ok(if mode == crypto::KeyMode::Tpm { "tpm" } else { "software" }.into())
 }
 
 /// Every removable volume (cartridge or blank) — install targets.
@@ -783,6 +795,7 @@ pub fn run() {
             stop_game,
             native_status,
             get_device_pubkey,
+            device_key_mode,
             write_ticket,
             write_build,
             list_removable_volumes,
