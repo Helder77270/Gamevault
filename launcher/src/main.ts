@@ -863,6 +863,10 @@ async function startPairing(g: Game): Promise<void> {
   if (!g.ticket) return;
   // before the owner signs anything: the ticket could not be written back
   if (g.cartridge.read_only) return fail(t("lock.title"), "CARD_LOCKED", "", "detail");
+  // One pairing at a time: a previous wait left running (another licence,
+  // card re-written meanwhile) caught the new ticket and compared it with
+  // the OLD card -> ERR 0x21 (2026-10-14).
+  stopPolling();
   const nonce = crypto.randomUUID();
   const url =
     `${MARKETPLACE_URL}/pair?device=${encodeURIComponent(state.devicePubKey)}` +
@@ -873,8 +877,10 @@ async function startPairing(g: Game): Promise<void> {
   render();
 
   const startedAt = Date.now();
-  pollTimer = window.setInterval(async () => {
-    if (!state.pairing) return stopPolling();
+  // This loop serves ITS pairing only: its own nonce, and it ends itself as
+  // soon as another pairing (or none) is the current one.
+  const timer = window.setInterval(async () => {
+    if (state.pairing?.nonce !== nonce) return window.clearInterval(timer);
     if (Date.now() - startedAt > 10 * 60 * 1000) {
       stopPolling();
       state.pairing = null;
@@ -882,14 +888,15 @@ async function startPairing(g: Game): Promise<void> {
       return;
     }
     try {
-      const res = await fetch(`${TICKETD_URL}/pending/${state.pairing.nonce}`, { signal: AbortSignal.timeout(3000) });
-      if (!res.ok) return;
+      const res = await fetch(`${TICKETD_URL}/pending/${nonce}`, { signal: AbortSignal.timeout(3000) });
+      if (!res.ok || state.pairing?.nonce !== nonce) return;
       const ticket = (await res.json()) as SignedTicket;
       await completePairing(g, ticket);
     } catch {
       /* ticketd briefly unreachable */
     }
   }, 1500);
+  pollTimer = timer;
 }
 
 function stopPolling(): void {
@@ -897,8 +904,16 @@ function stopPolling(): void {
   pollTimer = undefined;
 }
 
-async function completePairing(g: Game, ticket: SignedTicket): Promise<void> {
+async function completePairing(started: Game, ticket: SignedTicket): Promise<void> {
   stopPolling();
+  // The card as it is NOW (it is rescanned every 2 s), not as it was when
+  // the pairing started.
+  const g = state.games.find((x) => x.cartridge.mount_point === started.cartridge.mount_point) ?? started;
+  if (isTicketShape(ticket) && g.ticket && ticket.tokenId !== g.ticket.tokenId) {
+    state.pairing = null;
+    fail(t("err.cardReadT"), t("err.pairOtherLicence", { a: ticket.tokenId, b: g.ticket.tokenId }), "ERR 0x22 · TICKET FOR ANOTHER LICENCE", "detail");
+    return;
+  }
   if (
     !isTicketShape(ticket) ||
     !verifyPlatformSig(ticket) ||

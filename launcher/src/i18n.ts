@@ -165,6 +165,7 @@ const FR = {
   "err.scrambledM":
     "Le bloc licence est revenu brouillé — le ticket n'est pas scellé pour cette machine, ou le build est corrompu. Re-téléchargez le build ou ré-appairez, puis réessayez.",
   "err.cardWriteT": "Cette carte ne s'écrit pas.",
+  "err.pairOtherLicence": "Le ticket reçu est pour la licence #{a}, mais la carte porte maintenant la licence #{b}. Relancez l'appairage depuis la carte.",
   "lock.title": "Cette carte est verrouillée.",
   "lock.body": "Le petit curseur sur le côté de la carte SD (ou de son adaptateur microSD) est en position LOCK. Retirez la carte, poussez le curseur à fond vers les contacts dorés, réinsérez-la et réessayez. Une carte verrouillée se joue, mais ne peut pas recevoir de nouveau jeu ni de nouveau ticket.",
   "lock.short": "Carte verrouillée : poussez le curseur de la carte SD vers les contacts, puis réinsérez-la.",
@@ -699,6 +700,7 @@ const EN: Record<Key, string> = {
   "err.scrambledM":
     "The licence block came back scrambled — the ticket isn't sealed to this machine, or the build is corrupt. Re-download the build or re-pair, then try again.",
   "err.cardWriteT": "This card won't write.",
+  "err.pairOtherLicence": "The ticket received is for licence #{a}, but the card now holds licence #{b}. Start pairing again from the card.",
   "lock.title": "This card is locked.",
   "lock.body": "The small switch on the side of the SD card (or its microSD adapter) is set to LOCK. Remove the card, push the switch all the way towards the gold contacts, insert it again and retry. A locked card still plays, but cannot receive a new game or a new ticket.",
   "lock.short": "Card locked: push the SD card's switch towards the contacts, then insert it again.",
