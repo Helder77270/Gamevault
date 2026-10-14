@@ -148,6 +148,8 @@ html { scroll-behavior: smooth; }
         <li><a href="#p16">P16 Réglages</a></li>
         <li><a href="#p17">P17 Provenance</a></li>
         <li><a href="#p18">P18 Gains en attente</a></li>
+        <li><a href="#p19">P19 Désinstaller un jeu</a></li>
+        <li><a href="#p20">P20 Changer de jeu sur une carte</a></li>
       </ol>
     </li>
     <li><a href="#limites">8. Limites et pistes</a></li>
@@ -156,7 +158,7 @@ html { scroll-behavior: smooth; }
 
 <main>
 <header class="hero">
-  <div class="eyebrow">Dossier fonctionnel · état au 11 octobre 2026 · contrats v1.1 · Base Sepolia</div>
+  <div class="eyebrow">Dossier fonctionnel · état au 14 octobre 2026 · contrats v1.1 · Base Sepolia</div>
   <h1>Dossier fonctionnel GameVault</h1>
   <p class="lede">Ce que fait GameVault pour les joueurs et les studios : les règles, les écrans du launcher AURA-64, les pages du site, et chaque parcours de bout en bout.</p>
 </header>
@@ -230,6 +232,9 @@ html { scroll-behavior: smooth; }
       <tr><td>Souhaits</td><td>50 jeux maximum, liste privée ; « baisse de prix » = une occasion en vente sous le dernier prix vu (le prix neuf ne change jamais)</td></tr>
       <tr><td>Téléchargement</td><td>morceaux de 4 Mio vérifiés un par un, puis l'empreinte inscrite dans le contrat ; reprise après pause ou fermeture ; destination au choix (PC par défaut, carte en option, contrôle de place)</td></tr>
       <tr><td>Session</td><td>24 h ; une signature sur le site, la clé de la machine dans le launcher</td></tr>
+      <tr><td>Carte</td><td>une carte porte <b>une licence à la fois</b> ; la réécrire pour un autre jeu retire l'ancien jeu et ses tickets ; une carte verrouillée (curseur LOCK) se joue mais ne s'écrit pas</td></tr>
+      <tr><td>Désinstallation</td><td>retire les fichiers du jeu, jamais la licence ; sur le PC le dossier part dans la Corbeille ; sur une carte les tickets restent (elle reste la clé) ; impossible pendant une partie ou un téléchargement de ce jeu</td></tr>
+      <tr><td>Clé de la machine</td><td>verrouillée dans la puce de sécurité du PC (TPM 2.0) quand il en a une, sinon dans le coffre Windows ; changer de carte mère ou réinitialiser la puce impose de réappairer</td></tr>
     </tbody>
   </table></div>
 </section>
@@ -243,13 +248,13 @@ html { scroll-behavior: smooth; }
       <tr><td>Démarrage</td><td>séquence de vérification façon console (coffre de la machine, lecteur de cartes, chaîne, service, bibliothèque)</td></tr>
       <tr><td>Accueil</td><td>sans carte : grande horloge orbitale, « INSERT SD CARD TO PLAY ». Avec une carte : le jeu en grand, l'action du moment (JOUER, APPAIRER, RENOUVELER, TÉLÉCHARGER), un widget de la carte, l'ami qui joue, la rangée de la bibliothèque, l'accès à la Boutique</td></tr>
       <tr><td>Boutique</td><td>tout le catalogue : prix neuf, « occasion dès … », badges « dans ta bibliothèque » et « souhaité » ; recherche, filtres TOUT · OCCASIONS · SOUHAITS, tri (plus joués, prix, nouveautés). La fiche liste les occasions et leurs vendeurs ; acheter ou prendre une offre ouvre la page web</td></tr>
-      <tr><td>Game Shelf</td><td>mes jeux seulement (possédés, sur carte, prêtés, empruntés, en vente, souhaités) ; filtres TOUS · JOUABLES · SOUHAITS · EN VENTE · PRÊTS ; vues grille, liste avec aperçu, et stockage (dossiers, tailles, place libre, VÉRIFIER, ouvrir le dossier)</td></tr>
-      <tr><td>Fiche d'un jeu</td><td>action principale (JOUER, APPAIRER, RENOUVELER, TÉLÉCHARGER, ÉCRIRE SUR LA CARTE, ACHETER) ; revendre, prêter, souhaiter, meilleure occasion, provenance, vérifier</td></tr>
+      <tr><td>Game Shelf</td><td>mes jeux seulement (possédés, sur carte, prêtés, empruntés, en vente, souhaités) ; filtres TOUS · JOUABLES · SOUHAITS · EN VENTE · PRÊTS ; vues grille, liste avec aperçu, et stockage (dossiers, tailles, place libre, VÉRIFIER, DÉSINSTALLER, ouvrir le dossier)</td></tr>
+      <tr><td>Fiche d'un jeu</td><td>action principale (JOUER, APPAIRER, RENOUVELER, TÉLÉCHARGER, ÉCRIRE SUR LA CARTE, ACHETER) ; revendre, prêter, souhaiter, meilleure occasion, provenance, vérifier, désinstaller</td></tr>
       <tr><td>Lecteur de carte</td><td>installer sur une carte, appairer (QR à scanner avec le téléphone du propriétaire, ou ouverture dans le navigateur)</td></tr>
       <tr><td>Amis</td><td>amis par présence (en jeu, en ligne, hors ligne), prêts en cours, chat en direct avec bouton emoji ; accès au profil public et au prêt</td></tr>
       <tr><td>Téléchargements</td><td>seulement ce qui reste à faire : en cours (carte des morceaux, vitesses réseau et disque, source), en attente, à installer, à réparer ; limite de vitesse ; choix de la destination ; fenêtre de réparation</td></tr>
       <tr><td>Profil</td><td>le même que la page publique du site : bannière, avatar, présence, À propos, vitrine, bibliothèque, activité, statistiques, badges, jeux en vente, amis ; « Modifier mon profil » (pseudo, bio, avatar) sans wallet</td></tr>
-      <tr><td>Paramètres</td><td>compte, démarrage, accessibilité, téléchargements, langue, skin, son, notifications, confidentialité, système (redémarrer), « Comment ça marche », cache, mode développeur</td></tr>
+      <tr><td>Paramètres</td><td>compte, démarrage, accessibilité, téléchargements, langue, skin, son, notifications, confidentialité, système (redémarrer, serveur GameVault utilisé, où est rangée la clé de la machine), « Comment ça marche », cache, mode développeur</td></tr>
       <tr><td>Veille</td><td>après un temps sans activité, l'horloge plein écran (jamais pendant une partie)</td></tr>
       <tr><td>Notifications de bureau</td><td>des cartes qui passent par-dessus les autres logiciels (téléchargement fini, message, carte insérée ou retirée, sécurité, baisse de prix) ; dans le launcher, le widget SLOT A anime la carte qui entre dans la fente</td></tr>
     </tbody>
@@ -324,12 +329,13 @@ html { scroll-behavior: smooth; }
       <li><div><span class="who w-ticketd">plateforme</span>Vérifie sur la blockchain que le signataire a le droit de jouer (propriétaire, ou emprunteur pendant un prêt), puis délivre le ticket.</div></li>
       <li><div><span class="who w-launcher">launcher</span>Récupère le ticket et l'écrit sur la carte.</div></li>
     </ol>
+    <p class="note">Une carte verrouillée est refusée <b>avant</b> la signature (inutile de signer pour rien). Un seul appairage est attendu à la fois ; si la carte a changé de licence entre-temps, le launcher le dit (« le ticket reçu est pour la licence #X, la carte porte la #Y ») et il faut relancer l'appairage.</p>
   </div>
 
   <div class="scenario" id="p6"><h3>P6 · Jouer</h3>
     <div class="meta"><span><b>Prérequis</b> carte insérée, ticket valide pour cette machine, jeu installé</span></div>
     <ol class="steps">
-      <li><div><span class="who w-player">joueur</span>Clique JOUER : une cinématique de lancement (vérification, déverrouillage, démarrage) précède le jeu.</div></li>
+      <li><div><span class="who w-player">joueur</span>Clique JOUER : une cinématique de lancement (vérification, déverrouillage, démarrage) précède le jeu. La fenêtre reste réactive pendant l'ouverture, même pour un gros jeu (quelques secondes pour 500 Mo).</div></li>
       <li><div><span class="who w-launcher">launcher</span>En ligne, vérifie que la licence est toujours au joueur et que la machine est toujours autorisée ; hors ligne, s'appuie sur le ticket.</div></li>
       <li><div><span class="who w-launcher">launcher</span>Le jeu web s'ouvre dans la fenêtre ; un jeu natif s'ouvre à côté. Les amis voient « en jeu » (selon la confidentialité) ; le temps de jeu est compté.</div></li>
       <li><div><span class="who w-launcher">launcher</span>Si la licence est revendue pendant la partie, elle est coupée sous 20 secondes.</div></li>
@@ -427,6 +433,26 @@ html { scroll-behavior: smooth; }
   <div class="scenario" id="p18"><h3>P18 · Gains en attente</h3>
     <p>Rare : si un paiement de revente n'a pas pu être envoyé (adresse qui refuse les ETH), il reste crédité. La section « Gains en attente » apparaît alors dans Mon profil, avec un bouton Retirer.</p>
   </div>
+
+  <div class="scenario" id="p19"><h3>P19 · Désinstaller un jeu</h3>
+    <div class="meta"><span><b>Où</b> fiche du jeu (toutes les copies) ou vue Stockage (une copie)</span><span><b>Licence</b> inchangée</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Clique DÉSINSTALLER. Une fenêtre liste où le jeu est installé (dossier du PC, carte), la taille de chaque copie et l'espace qui sera libéré.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Sur le PC : le dossier du jeu part dans la Corbeille de Windows (restaurable). Sur une carte : le jeu est retiré, les tickets restent ; une carte n'a pas de corbeille, mais le jeu se retélécharge.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Affiche « … désinstallé · N Mo libérés ». Le jeu repasse « à installer » ; on peut le retélécharger à tout moment.</div></li>
+    </ol>
+    <p class="note">Refusé pendant une partie ou pendant un téléchargement de ce jeu (le launcher dit pourquoi). Une carte verrouillée ne peut pas être vidée.</p>
+  </div>
+
+  <div class="scenario" id="p20"><h3>P20 · Changer de jeu sur une carte</h3>
+    <div class="meta"><span><b>Principe</b> une carte, une licence à la fois</span><span><b>Coût</b> 1 signature (appairage)</span></div>
+    <ol class="steps">
+      <li><div><span class="who w-player">joueur</span>Sur la fiche du nouveau jeu : ÉCRIRE SUR LA CARTE, choisit la carte et sa licence.</div></li>
+      <li><div><span class="who w-launcher">launcher</span>Réécrit la carte pour cette licence : l'ancien jeu et ses tickets sont retirés de la carte (la licence de l'ancien jeu, elle, ne bouge pas : elle peut aller sur une autre carte).</div></li>
+      <li><div><span class="who w-player">joueur</span>Appaire la carte (P5), puis joue. Le jeu s'ouvre depuis la carte ou depuis le dossier du PC.</div></li>
+    </ol>
+    <p class="note">Garantie : une licence n'ouvre que le jeu de son édition. Un fichier qui ne correspond pas est refusé (ERR 0x21) ; il ne peut jamais lancer un autre jeu. Cas particulier : « Stress Test 500 », édition de test, contient le programme de test natif et affiche donc « NATIVE RUNTIME TEST ».</p>
+  </div>
 </section>
 
 <section id="limites">
@@ -437,6 +463,8 @@ html { scroll-behavior: smooth; }
     <li><b>30 jours hors ligne</b> : un vendeur resté déconnecté peut encore jouer jusqu'à la fin de son ticket.</li>
     <li><b>Chat non chiffré de bout en bout</b> ; stocké par la plateforme.</li>
     <li><b>Testnet</b> : tout fonctionne sur Base Sepolia (ETH de test) ; la plateforme tourne en local, pas encore en ligne.</li>
+    <li><b>Cartes et corbeille</b> : un jeu désinstallé d'une carte SD ou d'une clé USB est supprimé directement (Windows n'a pas de corbeille sur ces supports).</li>
+    <li><b>Clé de la machine en mémoire</b> : même scellée par la puce TPM, elle est en clair quelques millisecondes pendant une opération.</li>
   </ul>
   <h3>Pistes déjà notées</h3>
   <ul>
@@ -448,7 +476,7 @@ html { scroll-behavior: smooth; }
   </ul>
 </section>
 
-<footer>Document établi à partir du produit le 11 octobre 2026. Compagnon : <a href="architecture.html"><b>Architecture technique GameVault</b></a>.</footer>
+<footer>Document établi à partir du produit le 14 octobre 2026. Compagnon : <a href="architecture.html"><b>Architecture technique GameVault</b></a>.</footer>
 </main>
 </div>
 

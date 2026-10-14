@@ -149,6 +149,8 @@ html { scroll-behavior: smooth; }
         <li><a href="#f-pair">Appairage</a></li>
         <li><a href="#f-launch">Lancement</a></li>
         <li><a href="#f-dl">Téléchargement</a></li>
+        <li><a href="#f-switch">Changer de jeu sur une carte</a></li>
+        <li><a href="#f-uninstall">Désinstallation</a></li>
         <li><a href="#f-resale">Revente</a></li>
         <li><a href="#f-live">Temps réel multi-réplicas</a></li>
       </ol>
@@ -173,7 +175,7 @@ html { scroll-behavior: smooth; }
 
 <main>
 <header class="hero">
-  <div class="eyebrow">Architecture technique · état au 11 octobre 2026 · contrats v1.1 · Base Sepolia</div>
+  <div class="eyebrow">Architecture technique · état au 14 octobre 2026 · contrats v1.1 · Base Sepolia</div>
   <h1>Architecture technique GameVault</h1>
   <p class="lede">Comment le système est construit, où vivent les données et les clés, comment les pièces se parlent, et comment on le déploie, du poste de développement au cluster Kubernetes.</p>
 </header>
@@ -394,6 +396,12 @@ D:\GameVault\                bibliothèque PC (proposée à la création)
     ├── build.enc.dl.json    état des morceaux
     └── build.enc.manifest.json  liste des morceaux (réparation hors ligne)</div>
   <p>Détection : tout volume amovible qui contient <code>/gamevault/ticket.json</code> (Rust, <code>sysinfo</code>, <code>launcher/src-tauri/src/media.rs</code>). Le ticket porte <code>tokenId</code>, <code>contract</code>, <code>chainId</code>, <code>ownerAddress</code>, <code>devicePubKey</code>, <code>wrappedContentKey</code>, <code>issuedAt</code>, <code>expiresAt</code> et la signature plateforme sur le SHA-256 d'un JSON canonique (<code>shared/src/ticket.ts</code>, miroir Rust <code>ticket.rs</code>). <code>build.enc</code> = nonce 12 octets ‖ données ‖ tag GCM, identique pour toutes les copies.</p>
+  <h4>Règles d'écriture d'une carte (14 octobre)</h4>
+  <ul>
+    <li><b>Une carte = une licence à la fois.</b> Réécrire une carte pour une autre licence (<code>install_cartridge</code>) retire les fichiers de jeu de l'ancienne édition (<code>build.enc</code>, <code>.part</code>, <code>.dl.json</code>, <code>.manifest.json</code>) et les tickets de machine de toute autre licence (<code>media::drop_other_tickets</code>). Même édition : le jeu est gardé.</li>
+    <li><b>Lecture défensive.</b> <code>media::ticket_for_this_device</code> n'utilise <code>tickets/&lt;clé&gt;.json</code> que s'il porte le même <code>tokenId</code> que <code>ticket.json</code> ; sinon <code>ticket.json</code> (une carte restée dans un état incohérent se répare d'elle-même).</li>
+    <li><b>Carte verrouillée.</b> Le scan lit l'attribut « volume en lecture seule » de Windows (<code>GetVolumeInformationW</code>, <code>FILE_READ_ONLY_VOLUME</code>), sans rien écrire : champ <code>read_only</code> de la carte et du volume. Toute écriture sur une carte passe par <code>media::ensure_writable</code> / <code>media::write_err</code> : l'erreur Windows 19 (<code>ERROR_WRITE_PROTECT</code>, curseur LOCK de la carte ou de l'adaptateur) porte le marqueur <code>CARD_LOCKED</code>, que l'interface transforme en écran dédié (<code>ERR 0x43</code>). Une carte verrouillée se joue, mais ne s'appaire pas (refus avant la signature) et ne reçoit pas de jeu.</li>
+  </ul>
 </section>
 
 <section id="cles">
@@ -454,13 +462,14 @@ sequenceDiagram
 </pre>
   <figcaption>Le ticket peut être retiré auprès d'un autre réplica que celui qui l'a émis : il passe par Redis.</figcaption>
   </figure>
+  <p><b>Une seule attente à la fois</b> (corrigé le 14 octobre) : lancer un appairage arrête toute boucle d'attente précédente ; chaque boucle interroge <code>/pending/</code> avec <b>son</b> nonce et s'arrête d'elle-même dès que son appairage n'est plus le courant. Avant, une boucle orpheline (appairage lancé deux fois) tournait indéfiniment et pouvait récupérer le ticket d'un appairage suivant. À la réception, le ticket est comparé à la carte <b>telle qu'elle est maintenant</b> (rescannée toutes les 2 s) ; un ticket d'une autre licence donne <code>ERR 0x22</code>. Le ticket refusé est consommé : il faut signer à nouveau.</p>
 
   <h3 id="f-launch">Lancement d'un jeu</h3>
   <ol class="steps">
     <li><div><span class="who w-launcher">launcher</span>PLAY n'est actif que si la carte est authentique (forme, chaîne, signature, expiration, machine) et le build présent (carte ou bibliothèque).<span class="where">judge · isOurs · playableNow</span></div></li>
     <li><div><span class="who w-launcher">launcher</span>En ligne (2 s) : <code>ownerOf</code> / <code>userOf</code> ; pendant un prêt seul l'emprunteur joue. Puis : cet appareil est-il encore actif ? Hors ligne : fenêtre de 30 jours.<span class="where">checkOwnerOnline · deviceStillActive</span></div></li>
-    <li><div><span class="who w-launcher">cœur Rust</span>Revérifie tout le ticket (contrat lu à la compilation dans <code>deployments.ts</code>), lit la clé d'appareil, déballe la clé de contenu, déchiffre en mémoire, libère aussitôt le chiffré.<span class="where">play_game · ticket.rs · crypto.rs</span></div></li>
-    <li><div><span class="who w-launcher">cœur Rust</span>Web : HTML servi depuis la mémoire par <code>game://</code>. Natif : exe écrit dans <code>%LOCALAPPDATA%\GameVault\run\…</code>, empreinte revérifiée en flux, lancé et surveillé ; dossier effacé à la fin.<span class="where">lib.rs · launch_native</span></div></li>
+    <li><div><span class="who w-launcher">cœur Rust</span>Hors du fil de l'interface (commande asynchrone, pool bloquant) : revérifie tout le ticket (contrat lu à la compilation dans <code>deployments.ts</code>), descelle la clé d'appareil, déballe la clé de contenu, puis essaie <b>le build de la carte, puis celui de la bibliothèque</b> : seul le build de cette licence s'ouvre avec sa clé (AES-GCM authentifié), un fichier périmé ne bloque donc pas. Le chiffré est libéré aussitôt.<span class="where">play_game → play_game_blocking · ticket.rs · crypto.rs</span></div></li>
+    <li><div><span class="who w-launcher">cœur Rust</span>Web : HTML servi depuis la mémoire par <code>game://</code>. Natif : exe écrit dans <code>%LOCALAPPDATA%\GameVault\run\…</code>, empreinte revérifiée en flux, lancé avec <code>GAMEVAULT_TITLE</code> et <code>GAMEVAULT_LICENCE</code> (ce pour quoi il a été lancé) et surveillé ; dossier effacé à la fin.<span class="where">lib.rs · launch_native</span></div></li>
     <li><div><span class="who w-launcher">launcher</span>Pendant la partie, contrôle en ligne toutes les 20 s : revente ou appareil déconnecté → partie coupée (ERR 0x52 / 0x53).<span class="where">startSessionWatchdog</span></div></li>
   </ol>
 
@@ -473,6 +482,26 @@ sequenceDiagram
     <li><div><span class="who w-launcher">launcher</span>VÉRIFIER relit les morceaux, ne retélécharge que les abîmés, puis revérifie l'empreinte finale.<span class="where">run_repair</span></div></li>
   </ol>
   <p class="note">Vérifié sur le build de 480 Mio : 121 morceaux, pause et reprise, 3 morceaux abîmés réparés exactement, 2 morceaux réparés via IPFS avec le serveur coupé.</p>
+
+  <h3 id="f-switch">Changer de jeu sur une carte</h3>
+  <p>Parcours central (« la carte est la clé ») qui a cassé trois fois le 14 octobre, tous corrigés :</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Symptôme</th><th>Cause</th><th>Correction</th></tr></thead>
+    <tbody>
+      <tr><td><code>ERR 0x21</code> au lancement (Runner)</td><td>la carte réécrite gardait le <code>build.enc</code> du jeu précédent, préféré au build de la bibliothèque</td><td>réécriture : fichiers de jeu de l'ancienne édition retirés ; lancement : carte puis bibliothèque</td></tr>
+      <tr><td><code>ERR 0x21</code> au lancement (Stress Test 500)</td><td>le ticket de machine de l'ancienne licence restait dans <code>tickets/</code> et était lu en premier</td><td>tickets des autres licences retirés ; lecture limitée au même <code>tokenId</code> que <code>ticket.json</code></td></tr>
+      <tr><td><code>ERR 0x21</code> à la fin d'un appairage</td><td>boucle d'attente orpheline d'un appairage précédent</td><td>une boucle par appairage, sur son propre nonce (voir l'appairage)</td></tr>
+    </tbody>
+  </table></div>
+  <p>Séquence correcte : ÉCRIRE SUR LA CARTE (licence B) → <code>install_cartridge</code> écrit <code>meta.json</code> + un ticket vide pour B, retire le jeu et les tickets de A → appairage de B → <code>write_ticket</code> → JOUER ouvre le build de B (carte ou bibliothèque). Un test automatique de ce parcours (côté Rust) est proposé ; il n'existe pas encore.</p>
+
+  <h3 id="f-uninstall">Désinstallation</h3>
+  <ol class="steps">
+    <li><div><span class="who w-player">joueur</span>DÉSINSTALLER sur la fiche (toutes les copies du jeu) ou sur une ligne de la vue Stockage (cette copie) ; une fenêtre liste les emplacements, les tailles et l'espace libéré.<span class="where">main.ts · uninstallPlaces · openUninstall · uninstallView</span></div></li>
+    <li><div><span class="who w-launcher">cœur Rust</span><code>uninstall_game(kind, path)</code> n'accepte que des lieux AURA-64 : un dossier de jeu de bibliothèque (contient <code>gamevault.json</code>) → le dossier entier ; une carte connue (<code>known_mount</code>, inscriptible) → ses fichiers de jeu seulement, <b>les tickets restent</b>. Refus pendant une partie native ou un téléchargement de ce jeu.<span class="where">lib.rs · uninstall_game · download::is_running</span></div></li>
+    <li><div><span class="who w-launcher">cœur Rust</span>Corbeille de Windows (<code>SHFileOperationW</code>, <code>FOF_ALLOWUNDO</code>), jamais de suppression définitive. Les cartes amovibles n'ont pas de corbeille : Windows y supprime directement (le build chiffré se retélécharge).<span class="where">lib.rs · to_recycle_bin</span></div></li>
+    <li><div><span class="who w-launcher">launcher</span>Rescan bibliothèque et cartes ; une tâche de téléchargement en pause du jeu est abandonnée ; la licence ne change pas, le jeu repasse « à installer ».</div></li>
+  </ol>
 
   <h3 id="f-resale">Revente et révocation</h3>
   <figure class="diagram">
@@ -542,9 +571,10 @@ sequenceDiagram
   <div class="tbl"><table>
     <thead><tr><th>Domaine</th><th>Commandes</th></tr></thead>
     <tbody>
-      <tr><td>Identité</td><td><code>get_device_pubkey</code>, <code>device_session_proof</code></td></tr>
-      <tr><td>Cartes</td><td><code>scan_cartridges</code>, <code>list_removable_volumes</code>, <code>install_cartridge</code>, <code>write_ticket</code> (vérification complète, 2 tickets gardés), <code>write_build</code></td></tr>
-      <tr><td>Jeu</td><td><code>play_game(mount_point, build_path)</code>, <code>stop_game</code>, <code>native_status</code>, protocole <code>game://</code></td></tr>
+      <tr><td>Identité</td><td><code>get_device_pubkey</code> (asynchrone, clé publique en cache), <code>device_key_mode</code> (<code>tpm</code> / <code>software</code>), <code>device_session_proof</code></td></tr>
+      <tr><td>Cartes</td><td><code>scan_cartridges</code> et <code>list_removable_volumes</code> (avec <code>read_only</code>), <code>install_cartridge</code> (nettoie l'ancienne licence), <code>write_ticket</code> (vérification complète, 2 tickets gardés), <code>write_build</code></td></tr>
+      <tr><td>Jeu</td><td><code>play_game(mount_point, build_path)</code> (asynchrone ; carte puis bibliothèque), <code>stop_game</code>, <code>native_status</code>, protocole <code>game://</code></td></tr>
+      <tr><td>Désinstallation</td><td><code>uninstall_game(kind, path)</code> : <code>library</code> (dossier de jeu) ou <code>card</code> (fichiers de jeu de la carte) ; Corbeille ; renvoie l'espace libéré</td></tr>
       <tr><td>Téléchargements</td><td><code>dl_start</code>, <code>dl_repair</code>, <code>dl_pause</code>, <code>dl_cancel</code>, <code>dl_set_limit</code>, <code>dl_preview</code>, <code>disk_space</code>, <code>library_scan</code>, <code>default_library</code>, <code>create_library</code>, <code>cache_info</code>, <code>clear_cache</code> ; événements <code>dl-progress</code>, <code>dl-log</code></td></tr>
       <tr><td>Fenêtres, système</td><td><code>desktop_toast</code>, <code>toast_ready</code>, <code>toast_fit</code>, <code>toast_close</code>, <code>focus_main</code>, <code>launched_at_startup</code>, <code>start_local_services</code>, <code>reveal_folder</code>, <code>set_ui_scale</code></td></tr>
       <tr><td>Développement</td><td><code>dev_damage_build</code> (abîme 3 morceaux, mode développeur)</td></tr>
@@ -590,7 +620,7 @@ sequenceDiagram
     <tbody>
       <tr><td>ticketd</td><td class="wrap"><code>TICKET_SIGNER_PRIVKEY</code>, <code>ATTEST_SIGNER_PRIVKEY</code>, <code>KEYSTORE_MASTER_KEY</code>, <code>PINATA_JWT</code>, <code>GAMELICENSE_ADDRESS</code>, <code>RPC_URL</code>, <code>PORT</code>, <code>HOST</code>, <code>CORS_ORIGINS</code>, <code>DATABASE_URL</code>, <code>REDIS_URL</code>, <code>PG_POOL_MAX</code> (10), <code>PG_STATEMENT_TIMEOUT_MS</code>, <code>DB_CONNECT_RETRIES</code> (30 × 2 s), <code>SHUTDOWN_DELAY_MS</code>, <code>SHUTDOWN_GRACE_MS</code>, <code>GAMEVAULT_DEV</code>, <code>GAMEVAULT_SKIP_OWNER_CHECK</code> et <code>GAMEVAULT_TEST_BACKENDS</code> (tests)</td></tr>
       <tr><td>Site</td><td class="wrap"><code>NEXT_PUBLIC_TICKETD_URL</code>, <code>NEXT_PUBLIC_SUBGRAPH_URL</code>, <code>NEXT_PUBLIC_WC_PROJECT_ID</code> (figées au build)</td></tr>
-      <tr><td>Launcher</td><td class="wrap">à la compilation : <code>GAMEVAULT_PROFILE</code> (nom ou chemin d'un profil, défaut <code>local</code>) ; à l'exécution : <code>GAMEVAULT_DEV_MEDIA_DIR</code> fait passer un dossier pour une carte (développement)</td></tr>
+      <tr><td>Launcher</td><td class="wrap">à la compilation : <code>GAMEVAULT_PROFILE</code> (nom ou chemin d'un profil, défaut <code>local</code>) ; à l'exécution : <code>GAMEVAULT_DEV_MEDIA_DIR</code> fait passer un dossier pour une carte (développement), <code>GAMEVAULT_NO_TPM=1</code> force la clé logicielle. Transmises aux jeux natifs : <code>GAMEVAULT_TITLE</code>, <code>GAMEVAULT_LICENCE</code></td></tr>
     </tbody>
   </table></div>
 
@@ -598,9 +628,11 @@ sequenceDiagram
   <div class="tbl"><table>
     <thead><tr><th>Code</th><th>Quand</th></tr></thead>
     <tbody>
-      <tr><td><code>ERR 0x21</code></td><td>ticket invalide à l'appairage, ou refusé par le cœur Rust au lancement</td></tr>
+      <tr><td><code>ERR 0x21</code></td><td>ticket invalide à l'appairage (signature, machine), ou lancement refusé par le cœur Rust : ticket non valide, ou aucun build disponible ne s'ouvre avec la clé de cette licence (« authentication failed »)</td></tr>
+      <tr><td><code>ERR 0x22 · TICKET FOR ANOTHER LICENCE</code></td><td>le ticket reçu à l'appairage est pour une autre licence que celle que porte la carte maintenant</td></tr>
       <tr><td><code>ERR 0x31 · PAIRING TIMEOUT</code></td><td>appairage ouvert plus de 10 minutes</td></tr>
-      <tr><td><code>ERR 0x42 · CARD WRITE FAILED</code></td><td>téléchargement ou écriture de la carte en échec</td></tr>
+      <tr><td><code>ERR 0x42 · CARD WRITE FAILED</code></td><td>téléchargement ou écriture de la carte en échec (dont l'écriture du ticket en fin d'appairage, autrefois silencieuse)</td></tr>
+      <tr><td><code>ERR 0x43 · CARD LOCKED</code></td><td>carte en lecture seule (curseur LOCK de la carte SD ou de l'adaptateur microSD) : écran qui explique quoi faire</td></tr>
       <tr><td><code>ERR 0x51 · LICENCE MOVED</code></td><td>licence revendue, ou prêtée (pour le prêteur)</td></tr>
       <tr><td><code>ERR 0x52 · RESOLD MID-SESSION</code></td><td>revente détectée pendant une partie</td></tr>
       <tr><td><code>ERR 0x53 · DEVICE SLOT RELEASED</code></td><td>machine déconnectée du compte</td></tr>
@@ -651,12 +683,13 @@ sequenceDiagram
       <tr><td>Selftest shared</td><td><code>npm run selftest -w @gamevault/shared</code></td><td>tickets, ECIES, chiffrement</td></tr>
       <tr><td>Selftest ticketd</td><td><code>npm run selftest -w @gamevault/ticketd</code> (+ <code>GAMEVAULT_TEST_BACKENDS=1</code>)</td><td>40 contrôles : émission, sessions, amis, chat, temps réel, avatars, souhaits, confidentialité, limite — en mémoire et sur Postgres + Redis</td></tr>
       <tr><td>Contrats</td><td><code>cd contracts &amp;&amp; forge test</code></td><td>48 tests Foundry</td></tr>
-      <tr><td>Launcher</td><td><code>cargo test</code> (avec vcvars64)</td><td>15 tests ; 2 tests réels ignorés par défaut (<code>download_repair_live</code>, <code>download_big_live</code>)</td></tr>
+      <tr><td>Launcher</td><td><code>cargo test</code> (avec vcvars64)</td><td>19 tests (tickets, clé d'appareil, téléchargement, cache, carte verrouillée, tickets d'une autre licence) ; tests réels ignorés par défaut : <code>download_repair_live</code>, <code>download_big_live</code>, <code>seal_roundtrip_live</code> et <code>device_key_live</code> (puce TPM), <code>uninstall_goes_to_recycle_bin_live</code>, <code>decrypt_speed</code> (débit)</td></tr>
       <tr><td>Manifests</td><td><code>kubectl kustomize k8s/overlays/minikube | python deploy/check-manifests.py</code></td><td>sondes, ressources, sécurité, références, Ingress, HPA</td></tr>
       <tr><td>Multi-réplicas</td><td><code>node deploy/e2e-multireplica.mjs --rollout</code></td><td>état partagé entre pods, redémarrage progressif sans perte</td></tr>
       <tr><td>CI GitHub</td><td>à chaque push</td><td>typecheck, selftests, build du site, <code>npm audit</code> bloquant (high), Foundry, bundle et tests Rust du launcher</td></tr>
     </tbody>
   </table></div>
+  <p><b>Builds de développement rapides en crypto</b> : <code>Cargo.toml</code> optimise en dev le crate du launcher (niveau 2 — AES-GCM est générique, donc compilé dedans) et les crates de chiffrement (niveau 3). Mesuré : déchiffrement 5 → 487 Mo/s, SHA-256 20 → 289 Mo/s ; un jeu de 480 Mio s'ouvre en quelques secondes au lieu de deux minutes.</p>
   <p>Exploitation, incidents, capacité, sauvegardes et restauration (testées), liste de mise en production : <code>docs/runbook.md</code>. Infra détaillée : <code>docs/infra.md</code>.</p>
 </section>
 
@@ -670,13 +703,16 @@ sequenceDiagram
       <tr><td>Launcher</td><td>La session SIWE n'est pas revérifiée au lancement ; la possession de la clé d'appareil est prouvée implicitement par le déballage ECIES.</td><td>décision</td></tr>
       <tr><td>Lectures chaîne</td><td>Le site et le launcher parcourent les jetons un par un sur le RPC (licences, annonces, prêts) ; basculer sur le subgraph quand le volume grandira.</td><td>à l'échelle</td></tr>
       <tr><td>Contrats</td><td>Vente neuve en paiement direct au studio (sans repli en crédit) ; règles 3 j / 24 h et partage 85/10/5 écrits en dur dans le site.</td><td>prochain redéploiement</td></tr>
+      <tr><td>Tests</td><td>Pas de test automatique du parcours « changer de jeu sur une carte » (proposé, côté Rust) ; la boucle d'appairage est côté interface, sans test automatique.</td><td>à faire</td></tr>
+      <tr><td>Jeu de test</td><td>« Stress Test 500 » (édition #4) contient le programme de test natif + 480 Mio de remplissage : il affiche « NATIVE RUNTIME TEST » (ancienne version, sans <code>GAMEVAULT_TITLE</code>). Le republier avec un programme dédié demande une nouvelle édition.</td><td>en attente d'accord</td></tr>
+      <tr><td>Lancement natif</td><td>Un gros jeu natif est écrit en clair dans le dossier <code>run</code> puis son empreinte relue (deux SHA-256 complets) : quelques secondes pour 480 Mio.</td><td>à optimiser</td></tr>
       <tr><td>Mises à jour de jeux</td><td>Une édition porte un seul build figé on-chain : publier une nouvelle version demande un modèle de versions (contrat v1.2).</td><td>conception</td></tr>
       <tr><td>Infra</td><td>NetworkPolicy non éprouvées (le réseau de minikube ne les applique pas), pas encore de tir de charge, secrets dans un vault Ansible plutôt qu'un gestionnaire.</td><td>avant mise en ligne</td></tr>
     </tbody>
   </table></div>
 </section>
 
-<footer>Document établi à partir du code du dépôt le 11 octobre 2026 (après la migration Postgres + Redis). Compagnon : <a href="fonctionnel.html"><b>Dossier fonctionnel GameVault</b></a> · exploitation : <code>docs/runbook.md</code>.</footer>
+<footer>Document établi à partir du code du dépôt le 14 octobre 2026 (profils de build, clé d'appareil TPM, désinstallation, cartes réécrites). Compagnon : <a href="fonctionnel.html"><b>Dossier fonctionnel GameVault</b></a> · exploitation : <code>docs/runbook.md</code>.</footer>
 </main>
 </div>
 

@@ -120,7 +120,7 @@ html { scroll-behavior: smooth; }
 <div class="wrap" style="grid-template-columns: minmax(0, 1fr);">
 <main>
 <header class="hero">
-  <div class="eyebrow">Documentation · mise à jour le 11 octobre 2026</div>
+  <div class="eyebrow">Documentation · mise à jour le 14 octobre 2026</div>
   <h1>Référence GameVault</h1>
   <p class="lede">L'ancienne référence unique (8 octobre) est remplacée par deux documents, tenus à jour séparément : l'un pour comprendre ce que fait le produit, l'autre pour comprendre comment il est construit et déployé.</p>
 </header>
@@ -128,14 +128,14 @@ html { scroll-behavior: smooth; }
   <div class="toc-docs">
     <a class="card" href="fonctionnel.html">
       <h4>Dossier fonctionnel</h4>
-      <p>Le produit, le vocabulaire, les acteurs et leurs droits, les règles métier chiffrées, le launcher AURA-64 écran par écran, les pages du site, et 18 parcours de bout en bout (acheter, télécharger, appairer, jouer, revendre, prêter, souhaits, confidentialité, notifications, réglages…).</p>
+      <p>Le produit, le vocabulaire, les acteurs et leurs droits, les règles métier chiffrées, le launcher AURA-64 écran par écran, les pages du site, et 20 parcours de bout en bout (acheter, télécharger, appairer, jouer, revendre, prêter, désinstaller, changer de jeu sur une carte, souhaits, confidentialité, notifications, réglages…).</p>
     </a>
     <a class="card" href="architecture.html">
       <h4>Architecture technique</h4>
-      <p>Les principes (tickets hors ligne, clé d'appareil, contrôle hybride), les composants, les trois déploiements (poste de dev, Docker Compose, Kubernetes + Ansible), où vivent les données, le schéma Postgres/SQLite et Redis, les clés, les flux (appairage, lancement, téléchargement par morceaux, revente, temps réel multi-réplicas), la référence API / commandes / contrats, la sécurité, la qualité et la dette.</p>
+      <p>Les principes (tickets hors ligne, clé d'appareil, contrôle hybride), les composants, les trois déploiements (poste de dev, Docker Compose, Kubernetes + Ansible), où vivent les données, le schéma Postgres/SQLite et Redis, les clés (dont la clé d'appareil scellée par la puce TPM), les flux (appairage, lancement, téléchargement par morceaux, changement de jeu sur une carte, désinstallation, revente, temps réel multi-réplicas), la référence API / commandes / contrats, la sécurité, la qualité et la dette.</p>
     </a>
   </div>
-  <p class="note">Exploitation au quotidien, incidents, sauvegardes et passage en production : <code>docs/runbook.md</code> · détail de l'infra : <code>docs/infra.md</code>.</p>
+  <p class="note">Exploitation au quotidien, incidents, sauvegardes et passage en production : <code>docs/runbook.md</code> · détail de l'infra : <code>docs/infra.md</code> · profils de build du launcher : <code>launcher/profiles/README.md</code> · pitch : <code>docs/video-pitch.md</code>, <code>docs/pitch-oral.md</code>.</p>
 </section>
 <footer>Ce document sert de sommaire : il garde son adresse, les contenus ont migré.</footer>
 </main>

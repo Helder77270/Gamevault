@@ -53,6 +53,22 @@ vehicle, the blockchain is the lock."
 - Cartridges are written by the LAUNCHER itself (WRITE TO CARD: fetch +
   verify the build, write `/gamevault/`, then pair). The former `station/`
   CLI was removed on 2026-10-08. No xorriso, no IMAPI2.
+- One card = one licence at a time (2026-10-14, after three ERR 0x21 bugs):
+  re-writing a card for another licence removes the old edition's build
+  files and the per-machine tickets of any other tokenId
+  (media::drop_other_tickets); media::ticket_for_this_device only trusts
+  tickets/<device>.json with the same tokenId as ticket.json; play_game
+  tries the card build then the library build (AES-GCM only opens the
+  licence's own build). One pairing poll loop at a time, on its own nonce.
+- Locked cards: scan reads FILE_READ_ONLY_VOLUME (no write); card writes go
+  through media::ensure_writable / media::write_err (os error 19 ->
+  "CARD_LOCKED" marker -> ERR 0x43 screen in the UI).
+- Uninstall: Rust `uninstall_game` (library game folder or card build files,
+  tickets kept), Windows Recycle Bin via SHFileOperationW; refused during a
+  native game or that game's download.
+- play_game is async (blocking pool) — never block the UI thread with big
+  I/O or crypto. Dev builds optimize the launcher crate (opt-level 2) and
+  the crypto crates: unoptimized AES-GCM ran at 5 MB/s.
 
 ## Monorepo layout
 - `contracts/` — Solidity + Foundry
@@ -136,7 +152,10 @@ vehicle, the blockchain is the lock."
   Guide: launcher/profiles/README.md.
 - Look at the UI without Tauri: `node launcher/dev/make-preview.mjs`, then
   http://localhost:1420/preview.html during `npm run dev` (mocked core).
-- Heavy test game: edition #4 "Stress Test 500" (480 MiB, 121 chunks),
+- Heavy test game: edition #4 "Stress Test 500" (480 MiB, 121 chunks) =
+  game/native-test exe + filler, so it shows "NATIVE RUNTIME TEST" (that is
+  expected, not a licence mix-up). Licences of Helder's wallet: #2 Native
+  Runtime Test (ed 3), #3 Runner (ed 2), #4 Stress Test 500 (ed 4);
   `npm run bigbuild -w @gamevault/ticketd`; live test
   `cargo test --release -- --ignored download_big_live`.
 

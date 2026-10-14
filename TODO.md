@@ -424,6 +424,26 @@ tiennent grâce au matériel). On relève la barre sans gêner le joueur.
       pas modifiée. Versions : JS (jeux web dans la webview) et DLL native
       (C ABI → Unity / Unreal / Godot). Optionnel pour le studio.
 
+## P11 — Session du 2026-10-14 (tests de Helder sur la carte SD)
+- [x] Désinstallation (fiche + Stockage, Corbeille, tickets gardés sur carte).
+- [x] Carte verrouillée : détection à l'insertion, ERR 0x43 explicite,
+      appairage refusé avant la signature.
+- [x] Changer de jeu sur une carte : 3 bugs ERR 0x21 corrigés (vieux build
+      gardé, vieux ticket de machine lu en premier, boucle d'appairage
+      orpheline) ; ERR 0x22 « ticket pour une autre licence ».
+- [x] Gros jeu = fenêtre gelée : play_game asynchrone + crypto optimisée en
+      dev (5 → 487 Mo/s).
+- [x] Jeux natifs : GAMEVAULT_TITLE / GAMEVAULT_LICENCE transmis.
+- [ ] Test automatique Rust du parcours « changer de jeu sur une carte »
+      (proposé en session séparée).
+- [ ] Republier « Stress Test 500 » avec un programme qui s'annonce comme
+      tel (nouvelle édition, ETH de test + 480 Mo sur Pinata) — attend
+      l'accord de Helder.
+- [ ] Lancement natif : éviter la double empreinte complète (écriture +
+      relecture) sur les gros jeux.
+- [ ] Vérifier sur une vraie carte verrouillée que Windows remonte bien
+      FILE_READ_ONLY_VOLUME à l'insertion.
+
 ## Idées plus tard
 0G storage swap (1 fichier : shared/storage.ts) · World ID gating si besoin
 réel · pochettes SD imprimées · provenance embarquée dans le launcher
