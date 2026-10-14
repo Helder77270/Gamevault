@@ -17,13 +17,51 @@ fn this_device() -> Option<&'static str> {
 /// /gamevault/tickets/<device pubkey>.json — so the same card works offline
 /// on both. /gamevault/ticket.json stays as the last written one (media
 /// detection convention, and older launchers).
+/// Only a per-machine ticket for the SAME licence as ticket.json counts: a
+/// card re-written for another game may still hold this machine's ticket
+/// of the previous one (ERR 0x21 on 2026-10-14: Runner's key opening
+/// Stress Test 500).
 pub fn ticket_for_this_device(gv: &Path) -> Option<String> {
+    let main = std::fs::read_to_string(gv.join("ticket.json")).ok();
     if let Some(dev) = this_device() {
         if let Ok(s) = std::fs::read_to_string(gv.join("tickets").join(format!("{dev}.json"))) {
-            return Some(s);
+            let same = match &main {
+                Some(m) => token_of(m).is_some() && token_of(m) == token_of(&s),
+                None => true,
+            };
+            if same {
+                return Some(s);
+            }
         }
     }
-    std::fs::read_to_string(gv.join("ticket.json")).ok()
+    main
+}
+
+/// tokenId of a ticket JSON (string in the ticket format).
+pub fn token_of(ticket_json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(ticket_json).ok()?;
+    match v.get("tokenId")? {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// Drop the per-machine tickets of any OTHER licence (card re-written for
+/// another game or another copy). Returns how many were removed.
+pub fn drop_other_tickets(gv: &Path, token: &str) -> usize {
+    let Ok(rd) = std::fs::read_dir(gv.join("tickets")) else { return 0 };
+    let mut n = 0;
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.extension().is_some_and(|x| x == "json") {
+            let other = std::fs::read_to_string(&p).ok().and_then(|s| token_of(&s)).map_or(true, |t| t != token);
+            if other && std::fs::remove_file(&p).is_ok() {
+                n += 1;
+            }
+        }
+    }
+    n
 }
 
 /// Store a ticket for `device` and keep at most `keep` per-machine tickets
@@ -186,6 +224,30 @@ pub fn scan() -> Vec<Cartridge> {
         }
     }
     found
+}
+
+#[cfg(test)]
+mod ticket_tests {
+    use super::*;
+
+    fn ticket(token: &str) -> String {
+        format!(r#"{{"tokenId":"{token}","devicePubKey":"0x02"}}"#)
+    }
+
+    #[test]
+    fn rewritten_card_drops_the_old_licence_tickets() {
+        let gv = std::env::temp_dir().join(format!("gv-tickets-test-{}", std::process::id())).join("gamevault");
+        let dir = gv.join("tickets");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("aaaa.json"), ticket("3")).unwrap(); // previous game
+        std::fs::write(dir.join("bbbb.json"), ticket("4")).unwrap(); // same licence, other PC
+        assert_eq!(drop_other_tickets(&gv, "4"), 1);
+        assert!(!dir.join("aaaa.json").exists());
+        assert!(dir.join("bbbb.json").exists());
+        assert_eq!(token_of(&ticket("12")).as_deref(), Some("12"));
+        assert_eq!(token_of(r#"{"tokenId":7}"#).as_deref(), Some("7"));
+        let _ = std::fs::remove_dir_all(gv.parent().unwrap());
+    }
 }
 
 #[cfg(test)]

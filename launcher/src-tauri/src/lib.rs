@@ -326,6 +326,11 @@ fn install_cartridge(
             let _ = std::fs::remove_file(gv.join(f));
         }
     }
+    // The previous licence's per-machine tickets must go too: they would
+    // still be read first and unlock the wrong game.
+    if let Some(token) = media::token_of(&ticket_json) {
+        media::drop_other_tickets(&gv, &token);
+    }
     // Empty data = a key-only card (the game lives on this PC or comes later
     // through the download manager).
     if !data_b64.is_empty() {
